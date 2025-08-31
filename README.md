@@ -32,7 +32,7 @@ A high-quality image gallery platform where photographers can showcase their wor
   <img src="./docs/screenshots/checkout.png" alt="Checkout" width="30%">
 </div>
 
-*Screenshots coming soon*
+*More Screenshots coming soon*
 
 ## 🚀 Getting Started
 
