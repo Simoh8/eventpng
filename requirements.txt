@@ -10,8 +10,8 @@ dj-rest-auth==5.0.2
 django-allauth==0.60.1
 
 # Database
-psycopg2-binary==2.9.9
-dj-database-url==2.1.0
+mysqlclient==2.2.1
+pymysql==1.1.0
 
 # File storage
 Pillow==10.0.1
@@ -48,3 +48,14 @@ drf-yasg==1.21.7
 # Security
 python-jose==3.3.0
 cryptography==41.0.7
+
+
+
+
+
+# mysql -u root -p
+# CREATE DATABASE eventpng CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+# CREATE USER 'eventpng_admin'@'localhost' IDENTIFIED BY '@Venom19999!.';
+# GRANT ALL PRIVILEGES ON eventpng.* TO 'eventpng_admin'@'localhost';
+# FLUSH PRIVILEGES;
+# EXIT;

@@ -1,0 +1,5 @@
+# Social Authentication
+dj-rest-auth[social]==5.0.2
+django-allauth[socialaccount]==0.60.1
+python-social-auth==0.3.6
+social-auth-app-django==5.4.2
