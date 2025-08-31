@@ -24,7 +24,17 @@ A high-quality image gallery platform where photographers can showcase their wor
 - **Image Processing**: Pillow
 - **Deployment**: Docker, Gunicorn, Nginx
 
-## Getting Started
+## 📸 Screenshots
+
+<div align="center">
+  <img src="./docs/screenshots/events-page.png" alt="Events Page" width="30%">
+  <img src="./docs/screenshots/event-detail.png" alt="Event Detail" width="30%">
+  <img src="./docs/screenshots/checkout.png" alt="Checkout" width="30%">
+</div>
+
+*Screenshots coming soon*
+
+## 🚀 Getting Started
 
 ### Prerequisites
 
