@@ -23,13 +23,19 @@ class UserCreateSerializer(serializers.ModelSerializer):
         required=True,
         style={'input_type': 'password', 'placeholder': 'Confirm Password'}
     )
+    is_photographer = serializers.BooleanField(
+        required=False,
+        default=False,
+        write_only=False
+    )
     
     class Meta:
         model = User
         fields = ('email', 'full_name', 'password', 'confirm_password', 'is_photographer')
         extra_kwargs = {
             'password': {'write_only': True, 'min_length': 8},
-            'is_photographer': {'default': False}
+            'email': {'required': True},
+            'full_name': {'required': True}
         }
     
     def validate(self, attrs):
