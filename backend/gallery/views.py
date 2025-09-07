@@ -187,13 +187,20 @@ class EventDetailView(generics.RetrieveUpdateDestroyAPIView):
         return Event.objects.filter(created_by=user)
 
 
+import logging
+logger = logging.getLogger(__name__)
+
 class PublicEventListView(generics.ListAPIView):
-    """View for listing public events (no authentication required)."""
-    serializer_class = serializers.EventSerializer
+    """View for listing all events (no authentication required)."""
+    serializer_class = serializers.PublicEventSerializer
     permission_classes = [permissions.AllowAny]
+    pagination_class = None  # Disable pagination for this view
     
     def get_queryset(self):
-        return Event.objects.filter(privacy='public')
+        # Return all events, but mark private ones as such in the serializer
+        events = Event.objects.all().order_by('-date')
+        logger.info(f'Returning {events.count()} events from PublicEventListView')
+        return events
 
 
 class VerifyEventPinView(APIView):

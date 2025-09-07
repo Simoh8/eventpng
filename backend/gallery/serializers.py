@@ -2,8 +2,24 @@ from rest_framework import serializers
 from .models import Event, Gallery, Photo, Download
 from accounts.serializers import UserSerializer
 
+class PublicEventSerializer(serializers.ModelSerializer):
+    """Serializer for public event listing (shows all events but marks private ones)."""
+    created_by = UserSerializer(read_only=True)
+    is_private = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Event
+        fields = [
+            'id', 'name', 'slug', 'description', 'date', 'location',
+            'privacy', 'is_private', 'created_by', 'created_at', 'updated_at'
+        ]
+        read_only_fields = fields
+    
+    def get_is_private(self, obj):
+        return obj.privacy == 'private'
+
 class EventSerializer(serializers.ModelSerializer):
-    """Serializer for the Event model."""
+    """Serializer for the Event model with full access."""
     created_by = UserSerializer(read_only=True)
     
     class Meta:
@@ -12,7 +28,7 @@ class EventSerializer(serializers.ModelSerializer):
             'id', 'name', 'slug', 'description', 'date', 'location',
             'privacy', 'pin', 'created_by', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'slug', 'pin', 'created_by', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'slug', 'created_by', 'created_at', 'updated_at']
         extra_kwargs = {
             'pin': {'write_only': True}  # Don't expose PIN in list views
         }
