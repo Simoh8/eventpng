@@ -18,17 +18,29 @@ class UserCreateSerializer(serializers.ModelSerializer):
         required=True,
         style={'input_type': 'password', 'placeholder': 'Password'}
     )
+    confirm_password = serializers.CharField(
+        write_only=True,
+        required=True,
+        style={'input_type': 'password', 'placeholder': 'Confirm Password'}
+    )
     
     class Meta:
         model = User
-        fields = ('email', 'full_name', 'password', 'is_photographer')
+        fields = ('email', 'full_name', 'password', 'confirm_password', 'is_photographer')
         extra_kwargs = {
             'password': {'write_only': True, 'min_length': 8},
             'is_photographer': {'default': False}
         }
     
+    def validate(self, attrs):
+        if attrs['password'] != attrs.pop('confirm_password'):
+            raise serializers.ValidationError({"password": "Password fields didn't match."})
+        return attrs
+    
     def create(self, validated_data):
         """Create and return a user with encrypted password."""
+        # Remove confirm_password from the data before creating the user
+        validated_data.pop('confirm_password', None)
         return User.objects.create_user(**validated_data)
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):

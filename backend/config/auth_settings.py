@@ -1,5 +1,6 @@
 from datetime import timedelta
 import os
+from django.conf import settings
 
 # Authentication backends
 AUTHENTICATION_BACKENDS = [
@@ -29,7 +30,7 @@ JWT_AUTH_REFRESH_COOKIE = 'refresh'
 JWT_AUTH_HTTPONLY = True
 JWT_AUTH_RETURN_EXPIRATION = True
 JWT_AUTH_COOKIE_USE_CSRF = True
-JWT_AUTH_SECURE = not DEBUG  # Only send over HTTPS in production
+JWT_AUTH_SECURE = not settings.DEBUG
 JWT_AUTH_SAMESITE = 'Lax'  # Can be 'Lax', 'Strict', or 'None'
 
 # AllAuth Settings
@@ -44,7 +45,7 @@ ACCOUNT_SESSION_REMEMBER = True
 ACCOUNT_EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = '/'
 ACCOUNT_EMAIL_CONFIRMATION_ANONYMOUS_REDIRECT_URL = '/'
 ACCOUNT_EMAIL_SUBJECT_PREFIX = ''
-ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'https' if not DEBUG else 'http'
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'https' if not settings.DEBUG else 'http'
 
 # Social Auth Settings
 SOCIALACCOUNT_PROVIDERS = {
@@ -90,8 +91,8 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',  # React default port
     'http://127.0.0.1:3000',
-    'http://localhost:8000',
-    'http://127.0.0.1:8000',
+    'http://localhost:9007',
+    'http://127.0.0.1:9007',
 ]
 
 # Rest Auth Settings
