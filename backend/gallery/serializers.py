@@ -13,10 +13,20 @@ class PublicEventSerializer(serializers.ModelSerializer):
             'id', 'name', 'slug', 'description', 'date', 'location',
             'privacy', 'is_private', 'created_by', 'created_at', 'updated_at'
         ]
-        read_only_fields = fields
+        read_only_fields = ['id', 'slug', 'created_at', 'updated_at']
     
     def get_is_private(self, obj):
         return obj.privacy == 'private'
+
+class EventListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for listing events."""
+    created_by = serializers.PrimaryKeyRelatedField(read_only=True)
+    
+    class Meta:
+        model = Event
+        fields = ['id', 'name', 'date', 'created_by']
+        read_only_fields = ['id', 'name', 'date', 'created_by']
+
 
 class EventSerializer(serializers.ModelSerializer):
     """Serializer for the Event model with full access."""
@@ -30,7 +40,7 @@ class EventSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'slug', 'created_by', 'created_at', 'updated_at']
         extra_kwargs = {
-            'pin': {'write_only': True}  # Don't expose PIN in list views
+            'pin': {'write_only': True, 'required': False}  # Make pin optional and write-only
         }
     
     def to_representation(self, instance):
@@ -40,8 +50,6 @@ class EventSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if request and (request.user == instance.created_by or request.user.is_superuser):
             data['pin'] = instance.pin
-        else:
-            data.pop('pin', None)
         return data
 
 
@@ -49,17 +57,18 @@ class PhotoSerializer(serializers.ModelSerializer):
     """Serializer for the Photo model."""
     image_url = serializers.SerializerMethodField()
     thumbnail_url = serializers.SerializerMethodField()
+    uploaded_by = UserSerializer(read_only=True)
     
     class Meta:
         model = Photo
         fields = [
             'id', 'title', 'description', 'image', 'image_url', 'thumbnail_url',
             'width', 'height', 'file_size', 'mime_type', 'is_featured',
-            'is_public', 'order', 'created_at', 'updated_at'
+            'is_public', 'order', 'created_at', 'updated_at', 'uploaded_by'
         ]
         read_only_fields = [
             'id', 'width', 'height', 'file_size', 'mime_type',
-            'created_at', 'updated_at', 'image_url', 'thumbnail_url'
+            'created_at', 'updated_at', 'image_url', 'thumbnail_url', 'uploaded_by'
         ]
     
     def get_image_url(self, obj):
@@ -101,15 +110,65 @@ class GalleryDetailSerializer(GalleryListSerializer):
     class Meta(GalleryListSerializer.Meta):
         fields = GalleryListSerializer.Meta.fields + ['photos']
 
+class GalleryCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating galleries with photos."""
+    photos = serializers.ListField(
+        child=serializers.ImageField(
+            max_length=100000, 
+            allow_empty_file=False, 
+            use_url=False
+        ),
+        write_only=True,
+        required=True
+    )
+    event = serializers.PrimaryKeyRelatedField(queryset=Event.objects.all())
+    
+    class Meta:
+        model = Gallery
+        fields = ['title', 'description', 'is_public', 'price', 'event', 'photos']
+        read_only_fields = ['photographer']
+    
+    def create(self, validated_data):
+        from .utils import process_image
+        
+        # Extract photos from validated data
+        photos_data = validated_data.pop('photos', [])
+        
+        # Create gallery with the current user as the photographer
+        gallery = Gallery.objects.create(
+            photographer=self.context['request'].user,
+            **validated_data
+        )
+        
+        # Create and process each photo
+        for photo_data in photos_data:
+            photo = Photo.objects.create(
+                gallery=gallery,
+                image=photo_data,
+                uploaded_by=self.context['request'].user
+            )
+            
+            # Process the image (add watermark, optimize, etc.)
+            try:
+                process_image(photo)
+                photo.save()
+            except Exception as e:
+                # If image processing fails, log the error but don't fail the entire request
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error processing image {photo_data.name}: {str(e)}")
+        
+        return gallery
+
+
 class GalleryCreateUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for creating and updating galleries."""
+    """Serializer for updating galleries."""
     class Meta:
         model = Gallery
         fields = ['title', 'description', 'is_public', 'price']
     
-    def create(self, validated_data):
-        # Set the photographer to the current user
-        validated_data['photographer'] = self.context['request'].user
+    def update(self, instance, validated_data):
+        return super().update(instance, validated_data)
         return super().create(validated_data)
 
 class DownloadSerializer(serializers.ModelSerializer):

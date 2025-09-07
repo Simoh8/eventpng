@@ -8,6 +8,7 @@ from django.utils.text import slugify
 from django.core.validators import FileExtensionValidator
 from django.db.models.signals import pre_save
 from django.dispatch import receiver
+from django.core.files.storage import default_storage
 
 def generate_pin():
     """Generate a random 6-digit PIN."""
@@ -115,6 +116,7 @@ class EventCoverImage(models.Model):
     )
     image = models.ImageField(
         upload_to=get_upload_path,
+        storage=default_storage,
         validators=[
             FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png', 'webp'])
         ]
@@ -218,16 +220,36 @@ class Photo(models.Model):
     """
     Represents a single photo in a gallery.
     """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     gallery = models.ForeignKey(
         Gallery,
         on_delete=models.CASCADE,
         related_name='photos'
     )
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='uploaded_photos',
+        help_text="User who uploaded this photo"
+    )
     image = models.ImageField(
         upload_to=get_upload_path,
+        storage=default_storage,
         validators=[
             FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png', 'webp'])
         ]
+    )
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Price in USD for downloading this photo. 0 means free."
+    )
+    is_purchasable = models.BooleanField(
+        default=True,
+        help_text="If True, this photo can be purchased separately"
     )
     title = models.CharField(max_length=200, blank=True)
     description = models.TextField(blank=True)
@@ -251,29 +273,164 @@ class Photo(models.Model):
         return self.title or f"Photo {self.id}"
 
     def save(self, *args, **kwargs):
-        # Set title to filename without extension if not provided
-        if not self.title and self.image:
-            self.title = os.path.splitext(os.path.basename(self.image.name))[0]
-        
-        # Update file info
-        if self.image:
-            self.file_size = self.image.size
-            self.mime_type = getattr(self.image.file, 'content_type', '')
+        """Save the photo and extract metadata."""
+        if not self.pk:  # Only on creation
+            # Generate a unique filename if needed
+            if not self.image.name:
+                ext = os.path.splitext(self.image.name)[1]
+                self.image.name = f"{uuid.uuid4()}{ext}"
             
-            # Get image dimensions
+            # Extract and save image metadata
             try:
-                from PIL import Image
                 with Image.open(self.image) as img:
                     self.width, self.height = img.size
-            except:
+                    self.mime_type = Image.MIME.get(img.format, '')
+                    
+                    # Get file size
+                    if hasattr(self.image, 'size'):
+                        self.file_size = self.image.size
+                    elif hasattr(self.image, 'file') and hasattr(self.image.file, 'size'):
+                        self.file_size = self.image.file.size
+            except Exception as e:
+                # If there's an error processing the image, still save the model
                 pass
         
         super().save(*args, **kwargs)
+        
+    def serve_protected_image(self, request):
+        """Serve the image with security headers to prevent hotlinking and downloads."""
+        from django.http import FileResponse, Http404
+        from django.utils.encoding import escape_uri_path
+        from wsgiref.util import FileWrapper
+        import os
+        
+        if not self.image or not os.path.exists(self.image.path):
+            raise Http404("Image not found")
+            
+        # Get the image file
+        image = open(self.image.path, 'rb')
+        
+        # Create a file-like buffer to receive the watermarked image
+        from io import BytesIO
+        from PIL import Image, ImageDraw, ImageFont
+        
+        try:
+            # Open the image and add watermark
+            img = Image.open(image).convert('RGBA')
+            
+            # Create watermark
+            watermark = Image.new('RGBA', img.size, (0, 0, 0, 0))
+            draw = ImageDraw.Draw(watermark)
+            
+            # Use a default font (you might want to use a custom font)
+            try:
+                font_size = int(min(img.size) / 20)
+                font = ImageFont.truetype("arial.ttf", font_size)
+            except IOError:
+                font = ImageFont.load_default()
+                
+            # Add watermark text
+            text = f" {self.gallery.photographer.username if self.gallery.photographer else 'EventPix'}"
+            text_width, text_height = draw.textsize(text, font=font)
+            
+            # Position the watermark in the center
+            x = (img.width - text_width) // 2
+            y = (img.height - text_height) // 2
+            
+            # Draw semi-transparent background for better visibility
+            draw.rectangle([x-10, y-10, x + text_width + 10, y + text_height + 10], 
+                          fill=(0, 0, 0, 128))
+            
+            # Draw the text
+            draw.text((x, y), text, font=font, fill=(255, 255, 255, 200))
+            
+            # Combine the original image with the watermark
+            watermarked = Image.alpha_composite(img, watermark)
+            
+            # Convert back to RGB (removes alpha channel for JPEG compatibility)
+            if img.format == 'JPEG' or img.format == 'JPG':
+                watermarked = watermarked.convert('RGB')
+                
+            # Save to a buffer
+            buffer = BytesIO()
+            watermarked.save(buffer, format=img.format or 'PNG')
+            buffer.seek(0)
+            
+            # Create a response with security headers
+            response = FileResponse(buffer, content_type=f"image/{img.format.lower() or 'png'}")
+            
+            # Set security headers to prevent downloads and hotlinking
+            response['Content-Disposition'] = f'inline; filename="{os.path.basename(self.image.name)}"'
+            response['X-Content-Type-Options'] = 'nosniff'
+            response['X-Frame-Options'] = 'SAMEORIGIN'
+            response['X-XSS-Protection'] = '1; mode=block'
+            response['Referrer-Policy'] = 'same-origin'
+            response['Content-Security-Policy'] = "default-src 'self'"
+            
+            return response
+            
+        except Exception as e:
+            # If there's an error, log it and return the original image
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error serving protected image {self.id}: {str(e)}")
+            
+            # Fall back to serving the original image
+            return FileResponse(open(self.image.path, 'rb'), 
+                              content_type=self.mime_type or 'image/jpeg')
         
         # If this is the first photo in the gallery, set it as the cover
         if self.gallery and not self.gallery.cover_photo:
             self.gallery.cover_photo = self
             self.gallery.save(update_fields=['cover_photo'])
+
+class PaymentStatus(models.TextChoices):
+    PENDING = 'pending', 'Pending'
+    COMPLETED = 'completed', 'Completed'
+    FAILED = 'failed', 'Failed'
+    REFUNDED = 'refunded', 'Refunded'
+
+
+class Payment(models.Model):
+    """
+    Tracks payments made by users for photos.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='payments'
+    )
+    amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Amount paid in USD"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=PaymentStatus.choices,
+        default=PaymentStatus.PENDING
+    )
+    payment_intent_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Payment processor's transaction ID"
+    )
+    payment_method = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Payment method used (e.g., 'card', 'paypal')"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Payment {self.id} - {self.get_status_display()} - ${self.amount}"
 
 
 class Download(models.Model):
@@ -291,13 +448,36 @@ class Download(models.Model):
         on_delete=models.CASCADE,
         related_name='downloads'
     )
+    payment = models.ForeignKey(
+        Payment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='downloads',
+        help_text="Payment associated with this download, if any"
+    )
     downloaded_at = models.DateTimeField(auto_now_add=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(blank=True)
+    download_token = models.UUIDField(
+        default=uuid.uuid4,
+        editable=False,
+        unique=True,
+        help_text="Unique token for secure download links"
+    )
 
     class Meta:
         ordering = ['-downloaded_at']
         unique_together = ['user', 'photo']
+        indexes = [
+            models.Index(fields=['download_token']),
+            models.Index(fields=['user', 'photo']),
+        ]
 
     def __str__(self):
         return f"{self.user} downloaded {self.photo}"
+
+    @property
+    def is_paid(self):
+        """Check if the download is associated with a completed payment."""
+        return self.payment and self.payment.status == PaymentStatus.COMPLETED
