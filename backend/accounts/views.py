@@ -7,6 +7,39 @@ from . import serializers
 
 User = get_user_model()
 
+class RegisterView(generics.CreateAPIView):
+    """
+    Register a new user and return JWT tokens.
+    """
+    serializer_class = serializers.UserCreateSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            print("Validation errors:", serializer.errors)  # Log validation errors
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            user = serializer.save()
+            
+            # Generate tokens
+            refresh = serializers.CustomTokenObtainPairSerializer.get_token(user)
+            data = {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+                'user': serializers.UserSerializer(user).data
+            }
+            
+            return Response(data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            print("Error during user creation:", str(e))  # Log any other errors
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
 class UserCreateView(generics.CreateAPIView):
     """View for creating a new user."""
     serializer_class = serializers.UserCreateSerializer
