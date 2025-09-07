@@ -16,7 +16,12 @@ class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
         write_only=True,
         required=True,
-        style={'input_type': 'password', 'placeholder': 'Password'}
+        style={'input_type': 'password', 'placeholder': 'Password'},
+        min_length=8,
+        help_text=(
+            'Password must be at least 8 characters long, contain at least one digit, '
+            'one uppercase letter, and one special character.'
+        )
     )
     confirm_password = serializers.CharField(
         write_only=True,
@@ -38,6 +43,27 @@ class UserCreateSerializer(serializers.ModelSerializer):
             'full_name': {'required': True}
         }
     
+    def validate_password(self, value):
+        """Validate password strength."""
+        min_length = 8
+        if len(value) < min_length:
+            raise serializers.ValidationError(f'Password must be at least {min_length} characters long.')
+        
+        # Check for at least one digit
+        if not any(char.isdigit() for char in value):
+            raise serializers.ValidationError('Password must contain at least one digit.')
+            
+        # Check for at least one uppercase letter
+        if not any(char.isupper() for char in value):
+            raise serializers.ValidationError('Password must contain at least one uppercase letter.')
+            
+        # Check for at least one special character
+        special_characters = "[~!@#$%^&*()_+{}:;\"'<>,.?/\]\[`~]"
+        if not any(char in special_characters for char in value):
+            raise serializers.ValidationError('Password must contain at least one special character.')
+            
+        return value
+        
     def validate(self, attrs):
         if attrs['password'] != attrs.pop('confirm_password'):
             raise serializers.ValidationError({"password": "Password fields didn't match."})
