@@ -18,6 +18,13 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.http import JsonResponse
+
+# Import the custom admin site
+from gallery.admin import admin_site as gallery_admin_site
+
+# Unregister the default admin site
+admin.site = gallery_admin_site
 
 urlpatterns = [
     # Admin

@@ -18,4 +18,10 @@ urlpatterns = [
     path('public/galleries/', views.PublicGalleryListView.as_view(), name='public-gallery-list'),
     path('public/galleries/<int:pk>/', views.PublicGalleryDetailView.as_view(), name='public-gallery-detail'),
     path('public/photos/<int:pk>/', views.PublicPhotoDetailView.as_view(), name='public-photo-detail'),
+    
+    # Event endpoints
+    path('events/', views.EventListView.as_view(), name='event-list'),
+    path('events/<int:pk>/', views.EventDetailView.as_view(), name='event-detail'),
+    path('public/events/', views.PublicEventListView.as_view(), name='public-event-list'),
+    path('events/<slug:slug>/verify-pin/', views.VerifyEventPinView.as_view(), name='verify-event-pin'),
 ]

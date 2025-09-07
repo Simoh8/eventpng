@@ -1,9 +1,17 @@
 import os
 import uuid
+import random
+import string
 from django.db import models
 from django.conf import settings
 from django.utils.text import slugify
 from django.core.validators import FileExtensionValidator
+from django.db.models.signals import pre_save
+from django.dispatch import receiver
+
+def generate_pin():
+    """Generate a random 6-digit PIN."""
+    return ''.join(random.choices(string.digits, k=6))
 
 
 def get_upload_path(instance, filename):
@@ -16,10 +24,140 @@ def get_upload_path(instance, filename):
     return os.path.join('gallery', instance.gallery.slug, filename)
 
 
+class Event(models.Model):
+    """
+    Represents an event that can contain multiple galleries.
+    """
+    PRIVACY_CHOICES = [
+        ('public', 'Public - Anyone can view'),
+        ('private', 'Private - Requires PIN to view')
+    ]
+    
+    name = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=200, unique=True, blank=True)
+    description = models.TextField(blank=True)
+    date = models.DateField()
+    location = models.CharField(max_length=255, blank=True)
+    privacy = models.CharField(
+        max_length=10,
+        choices=PRIVACY_CHOICES,
+        default='public',
+        help_text="Control who can view this event's galleries"
+    )
+    pin = models.CharField(
+        max_length=6,
+        blank=True,
+        null=True,
+        help_text="PIN code for private events (auto-generated for private events)",
+        editable=False
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='created_events',
+        limit_choices_to={'is_staff': True}  # Only staff can create events
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-date', 'name']
+
+    def __str__(self):
+        return self.name
+        
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)
+            
+            # Ensure slug is unique
+            original_slug = self.slug
+            counter = 1
+            while Event.objects.filter(slug=self.slug).exclude(pk=self.pk).exists():
+                self.slug = f"{original_slug}-{counter}"
+                counter += 1
+                
+        # Generate PIN for private events if not set
+        if self.privacy == 'private' and not self.pin:
+            self.pin = generate_pin()
+        elif self.privacy == 'public':
+            self.pin = None
+                
+        super().save(*args, **kwargs)
+        
+    @property
+    def cover_images(self):
+        """Return all cover images for this event, ordered by display order."""
+        return self.covers.all().order_by('order')
+        
+    @property
+    def primary_cover(self):
+        """Return the primary cover image or first available."""
+        return self.covers.filter(is_primary=True).first() or self.covers.first()
+
+
+class EventCoverImage(models.Model):
+    """
+    Represents a cover image for an event.
+    An event can have multiple cover images that can be displayed in a slideshow.
+    """
+    def get_upload_path(instance, filename):
+        """Generate a path for event cover images."""
+        ext = filename.split('.')[-1]
+        filename = f"{uuid.uuid4()}.{ext}"
+        return os.path.join('events', 'covers', str(instance.event.id), filename)
+    
+    event = models.ForeignKey(
+        Event,
+        on_delete=models.CASCADE,
+        related_name='covers',
+        help_text="Event this cover image belongs to"
+    )
+    image = models.ImageField(
+        upload_to=get_upload_path,
+        validators=[
+            FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png', 'webp'])
+        ]
+    )
+    caption = models.CharField(max_length=200, blank=True)
+    is_primary = models.BooleanField(
+        default=False,
+        help_text="If True, this will be the default cover image for the event"
+    )
+    order = models.PositiveIntegerField(
+        default=0,
+        help_text="Order in which the cover images should be displayed"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['order', 'created_at']
+        verbose_name = 'Event Cover Image'
+        verbose_name_plural = 'Event Cover Images'
+    
+    def __str__(self):
+        return f"Cover for {self.event.name}"
+    
+    def save(self, *args, **kwargs):
+        # Ensure only one primary cover per event
+        if self.is_primary:
+            EventCoverImage.objects.filter(event=self.event, is_primary=True).exclude(pk=self.pk).update(is_primary=False)
+        super().save(*args, **kwargs)
+
+
 class Gallery(models.Model):
     """
-    Represents a collection of photos.
+    Represents a collection of photos for an event.
     """
+    event = models.ForeignKey(
+        Event,
+        on_delete=models.CASCADE,
+        related_name='galleries',
+        null=True,
+        blank=True,
+        help_text="Event this gallery belongs to"
+    )
     title = models.CharField(max_length=200)
     slug = models.SlugField(max_length=200, unique=True, blank=True)
     description = models.TextField(blank=True)

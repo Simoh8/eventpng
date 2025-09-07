@@ -1,0 +1,132 @@
+/* Custom Admin Styles */
+
+/* Header */
+#header {
+    background: #4f46e5;
+    color: white;
+}
+
+#branding h1 {
+    color: white;
+    font-weight: 600;
+}
+
+/* Buttons */
+.button, input[type=submit], input[type=button], .submit-row input, a.button {
+    background: #4f46e5;
+    border-radius: 4px;
+    padding: 8px 15px;
+    border: none;
+    font-weight: 500;
+    transition: background 0.2s;
+}
+
+.button:hover, input[type=submit]:hover, input[type=button]:hover {
+    background: #4338ca;
+}
+
+/* Forms */
+input[type=text], input[type=password], input[type=email], input[type=url],
+input[type=number], textarea, select, .vTextField {
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 8px 10px;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+/* Tables */
+#result_list th, #result_list td {
+    padding: 12px 15px;
+}
+
+#result_list thead th {
+    background: #f9fafb;
+    font-weight: 600;
+    color: #374151;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+#result_list tbody tr:hover {
+    background-color: #f9fafb;
+}
+
+/* Cards */
+.dashboard .module {
+    border-radius: 8px;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    border: 1px solid #e5e7eb;
+    overflow: hidden;
+}
+
+.dashboard .module h2, .module caption, .inline-group h2 {
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 12px 15px;
+    margin: 0;
+}
+
+/* Badges */
+.badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.badge-success {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.badge-warning {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.badge-info {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+/* Responsive */
+@media (max-width: 767px) {
+    .dashboard #content {
+        padding: 10px;
+    }
+    
+    .dashboard .module {
+        margin-bottom: 15px;
+    }
+}
+
+/* Custom admin overrides */
+.object-tools a:link, .object-tools a:visited {
+    background: #4f46e5;
+    border-radius: 4px;
+}
+
+.object-tools a:focus, .object-tools a:hover {
+    background: #4338ca;
+}
+
+/* Custom status badges */
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    display: inline-block;
+}
+
+.status-active {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-inactive {
+    background: #fee2e2;
+    color: #991b1b;
+}

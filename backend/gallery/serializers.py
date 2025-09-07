@@ -1,6 +1,33 @@
 from rest_framework import serializers
-from .models import Gallery, Photo, Download
+from .models import Event, Gallery, Photo, Download
 from accounts.serializers import UserSerializer
+
+class EventSerializer(serializers.ModelSerializer):
+    """Serializer for the Event model."""
+    created_by = UserSerializer(read_only=True)
+    
+    class Meta:
+        model = Event
+        fields = [
+            'id', 'name', 'slug', 'description', 'date', 'location',
+            'privacy', 'pin', 'created_by', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'slug', 'pin', 'created_by', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'pin': {'write_only': True}  # Don't expose PIN in list views
+        }
+    
+    def to_representation(self, instance):
+        """Customize the response data."""
+        data = super().to_representation(instance)
+        # Only include PIN if the user is the creator or a superuser
+        request = self.context.get('request')
+        if request and (request.user == instance.created_by or request.user.is_superuser):
+            data['pin'] = instance.pin
+        else:
+            data.pop('pin', None)
+        return data
+
 
 class PhotoSerializer(serializers.ModelSerializer):
     """Serializer for the Photo model."""

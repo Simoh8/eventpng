@@ -4,9 +4,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.db.models import Count, Q
-from .models import Gallery, Photo, Download
+from .models import Event, Gallery, Photo, Download
 from . import serializers
-from accounts.permissions import IsOwnerOrReadOnly, IsPhotographer
+from accounts.permissions import IsOwnerOrReadOnly, IsPhotographer, IsStaffOrSuperuser
 
 class GalleryListView(generics.ListCreateAPIView):
     """View for listing and creating galleries."""
@@ -155,3 +155,65 @@ class PublicPhotoDetailView(generics.RetrieveAPIView):
     
     def get_queryset(self):
         return Photo.objects.filter(is_public=True, gallery__is_public=True)
+
+
+class EventListView(generics.ListCreateAPIView):
+    """View for listing and creating events."""
+    serializer_class = serializers.EventSerializer
+    permission_classes = [permissions.IsAuthenticated, IsStaffOrSuperuser]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'description', 'location']
+    ordering_fields = ['date', 'created_at']
+    
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser:
+            return Event.objects.all()
+        return Event.objects.filter(created_by=user)
+    
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
+class EventDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """View for retrieving, updating, and deleting an event."""
+    serializer_class = serializers.EventSerializer
+    permission_classes = [permissions.IsAuthenticated, IsStaffOrSuperuser]
+    
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser:
+            return Event.objects.all()
+        return Event.objects.filter(created_by=user)
+
+
+class PublicEventListView(generics.ListAPIView):
+    """View for listing public events (no authentication required)."""
+    serializer_class = serializers.EventSerializer
+    permission_classes = [permissions.AllowAny]
+    
+    def get_queryset(self):
+        return Event.objects.filter(privacy='public')
+
+
+class VerifyEventPinView(APIView):
+    """View for verifying a private event's PIN."""
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request, slug):
+        pin = request.data.get('pin')
+        if not pin:
+            return Response(
+                {'detail': 'PIN is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        event = get_object_or_404(Event, slug=slug, privacy='private')
+        if event.pin == pin:
+            # In a production app, you might want to set a session or JWT here
+            return Response({'valid': True, 'event': serializers.EventSerializer(event).data})
+        
+        return Response(
+            {'detail': 'Invalid PIN'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
