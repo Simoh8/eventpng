@@ -28,7 +28,9 @@ class RegisterView(generics.CreateAPIView):
             data = {
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
-                'user': serializers.UserSerializer(user).data
+                'user': serializers.UserSerializer(user).data,
+                'message': 'Registration successful! Welcome to EventPhoto!',
+                'detail': 'Your account has been created successfully. You can now log in.'
             }
             
             return Response(data, status=status.HTTP_201_CREATED)
