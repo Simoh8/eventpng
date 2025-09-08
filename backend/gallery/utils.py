@@ -38,10 +38,16 @@ def add_watermark(image_field, text, position=(10, 10), opacity=0.5):
         # Fallback to default font
         font = ImageFont.load_default()
     
-    # Calculate text size and position
-    text_width, text_height = draw.textsize(text, font=font)
+    # Get text bounding box and calculate dimensions
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
     x = position[0]
     y = position[1]
+    
+    # Draw semi-transparent background for better visibility
+    background_rect = [x-5, y-5, x + text_width + 5, y + text_height + 5]
+    draw.rectangle(background_rect, fill=(0, 0, 0, int(128 * opacity)))
     
     # Draw the text with the specified opacity
     draw.text((x, y), text, font=font, fill=(255, 255, 255, int(255 * opacity)))

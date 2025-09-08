@@ -1,0 +1,15 @@
+{% if unread_count > 0 %}
+<span class="badge" style="
+    background-color: #e74c3c;
+    color: white;
+    border-radius: 10px;
+    padding: 0 6px;
+    font-size: 11px;
+    font-weight: bold;
+    position: relative;
+    top: -2px;
+    left: 3px;
+">
+    {{ unread_count }}
+</span>
+{% endif %}

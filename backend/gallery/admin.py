@@ -1014,11 +1014,11 @@ class GalleryAdmin(admin.ModelAdmin):
     
     def gallery_actions(self, obj):
         return format_html(
-            '<div class="submit-row">'
+            '<div class="action-buttons">'
             '<a href="{}" class="button" target="_blank">View on site</a> '
             '<a href="{}" class="button" style="background: #4CAF50;" target="_blank">Add Photos</a>'
             '</div>',
-            reverse('gallery-detail', args=[obj.slug]),
+            reverse('gallery:gallery-detail', args=[obj.id]),
             '{}?gallery={}'.format(reverse('admin:gallery_photo_add'), obj.id)
         )
     gallery_actions.short_description = 'Actions'
@@ -1136,7 +1136,7 @@ class PhotoAdmin(admin.ModelAdmin):
             '<a href="{}" class="button" target="_blank" style="margin-right: 5px;">View on site</a>'
             '<a href="{}" class="button" style="background: #4CAF50; margin-right: 5px;">Edit in Gallery</a>'
             '</div>',
-            reverse('photo-detail', args=[obj.id]),
+            reverse('gallery:public-photo-detail', args=[obj.id]),
             '{}?gallery={}'.format(reverse('admin:gallery_gallery_change', args=[obj.gallery.id]), obj.gallery.id)
         )
     photo_actions.short_description = 'Actions'
