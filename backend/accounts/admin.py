@@ -19,7 +19,7 @@ class CustomUserAdmin(BaseUserAdmin):
             'fields': ('email', 'password')
         }),
         (_('Personal Info'), {
-            'fields': ('full_name', 'avatar', 'bio')
+            'fields': ('full_name',)
         }),
         (_('Permissions'), {
             'fields': (
@@ -66,4 +66,5 @@ class CustomUserAdmin(BaseUserAdmin):
         )
     user_actions.short_description = 'Actions'
 
-admin.site.register(CustomUser, CustomUserAdmin)
+# This will be imported by the main admin.py to avoid circular imports
+# The actual registration happens in gallery/admin.py

@@ -4,12 +4,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.db.models import Count, Q
-from .models import Gallery, Photo, Download
+from .models import Event, Gallery, Photo, Download
 from . import serializers
-from accounts.permissions import IsOwnerOrReadOnly, IsPhotographer
+from accounts.permissions import IsOwnerOrReadOnly, IsPhotographer, IsStaffOrSuperuser
 
-class GalleryListView(generics.ListCreateAPIView):
-    """View for listing and creating galleries."""
+class GalleryListView(generics.ListAPIView):
+    """View for listing galleries."""
     serializer_class = serializers.GalleryListSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
@@ -27,9 +27,29 @@ class GalleryListView(generics.ListCreateAPIView):
         return Gallery.objects.filter(is_public=True).annotate(
             photo_count=Count('photos')
         )
-    
+
+
+class GalleryCreateView(generics.CreateAPIView):
+    """View for creating galleries with photos."""
+    queryset = Gallery.objects.all()
+    serializer_class = serializers.GalleryCreateSerializer
+    permission_classes = [permissions.IsAuthenticated, IsPhotographer]
+    parser_classes = (MultiPartParser, FormParser)
+
     def perform_create(self, serializer):
-        serializer.save(photographer=self.request.user)
+        # The photographer is now set in the serializer's create method
+        gallery = serializer.save()
+        
+        # Process and save photos (moved to serializer)
+        # The photos are now handled in the serializer's create method
+        
+        # Return the created gallery
+        return gallery
+
+    def process_image(self, photo):
+        """Process the image to add watermark and optimize."""
+        from .utils import process_image
+        process_image(photo)
 
 class GalleryDetailView(generics.RetrieveUpdateDestroyAPIView):
     """View for retrieving, updating, and deleting a gallery."""
@@ -155,3 +175,97 @@ class PublicPhotoDetailView(generics.RetrieveAPIView):
     
     def get_queryset(self):
         return Photo.objects.filter(is_public=True, gallery__is_public=True)
+
+
+class EventListView(generics.ListCreateAPIView):
+    """
+    View for listing and creating events.
+    Photographers can see all events but can only create their own.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'description', 'location']
+    ordering_fields = ['date', 'created_at']
+    
+    def get_serializer_class(self):
+        # Use lightweight serializer for GET requests, full serializer for POST
+        if self.request.method == 'GET':
+            return serializers.EventListSerializer
+        return serializers.EventSerializer
+    
+    def get_queryset(self):
+        # Return all events for photographers, ordered by date (newest first)
+        if self.request.user.is_photographer or self.request.user.is_superuser:
+            return Event.objects.all().order_by('-date')
+        # For regular users, only show their own events
+        return Event.objects.filter(created_by=self.request.user).order_by('-date')
+    
+    def perform_create(self, serializer):
+        # Automatically set the creator to the current user
+        serializer.save(created_by=self.request.user)
+
+
+class EventDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    View for retrieving, updating, and deleting an event.
+    Photographers can access any event, but can only modify their own.
+    """
+    serializer_class = serializers.EventSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        # Return all events for photographers, but only their own for regular users
+        if self.request.user.is_photographer or self.request.user.is_superuser:
+            return Event.objects.all()
+        return Event.objects.filter(created_by=self.request.user)
+        
+    def perform_update(self, serializer):
+        # Only allow updating events created by the current user
+        if serializer.instance.created_by != self.request.user and not self.request.user.is_superuser:
+            raise exceptions.PermissionDenied("You can only update your own events.")
+        serializer.save()
+        
+    def perform_destroy(self, instance):
+        # Only allow deleting events created by the current user
+        if instance.created_by != self.request.user and not self.request.user.is_superuser:
+            raise exceptions.PermissionDenied("You can only delete your own events.")
+        instance.delete()
+
+
+import logging
+logger = logging.getLogger(__name__)
+
+class PublicEventListView(generics.ListAPIView):
+    """View for listing all events (no authentication required)."""
+    serializer_class = serializers.PublicEventSerializer
+    permission_classes = [permissions.AllowAny]
+    pagination_class = None  # Disable pagination for this view
+    
+    def get_queryset(self):
+        # Return all events, but mark private ones as such in the serializer
+        events = Event.objects.all().order_by('-date')
+        logger.info(f'Returning {events.count()} events from PublicEventListView')
+        return events
+
+
+class VerifyEventPinView(APIView):
+    """View for verifying a private event's PIN."""
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request, slug):
+        pin = request.data.get('pin')
+        if not pin:
+            return Response(
+                {'detail': 'PIN is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        event = get_object_or_404(Event, slug=slug, privacy='private')
+        if event.pin == pin:
+            # In a production app, you might want to set a session or JWT here
+            return Response({'valid': True, 'event': serializers.EventSerializer(event).data})
+        
+        return Response(
+            {'detail': 'Invalid PIN'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
