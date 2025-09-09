@@ -246,6 +246,12 @@ class PublicEventListView(generics.ListAPIView):
         events = Event.objects.all().order_by('-date')
         logger.info(f'Returning {events.count()} events from PublicEventListView')
         return events
+        
+    def get_serializer_context(self):
+        # Include the request in the serializer context for building absolute URLs
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
 
 
 class VerifyEventPinView(APIView):

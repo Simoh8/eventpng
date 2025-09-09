@@ -34,6 +34,7 @@ urlpatterns = [
     path('api/auth/', include('accounts.urls')),
     path('api/gallery/', include('gallery.urls')),
     path('api/payments/', include('payments.urls')),
+    path('api/contact/', include('contact.urls')),  # Contact form endpoints
     
     # API Documentation
     path('api-auth/', include('rest_framework.urls')),  # For the browsable API

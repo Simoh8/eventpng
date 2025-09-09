@@ -6,17 +6,29 @@ class PublicEventSerializer(serializers.ModelSerializer):
     """Serializer for public event listing (shows all events but marks private ones)."""
     created_by = UserSerializer(read_only=True)
     is_private = serializers.SerializerMethodField()
+    cover_image = serializers.SerializerMethodField()
     
     class Meta:
         model = Event
         fields = [
             'id', 'name', 'slug', 'description', 'date', 'location',
-            'privacy', 'is_private', 'created_by', 'created_at', 'updated_at'
+            'privacy', 'is_private', 'created_by', 'created_at', 'updated_at',
+            'cover_image'
         ]
-        read_only_fields = ['id', 'slug', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'slug', 'created_at', 'updated_at', 'cover_image']
     
     def get_is_private(self, obj):
         return obj.privacy == 'private'
+        
+    def get_cover_image(self, obj):
+        # Get the first cover image for the event
+        cover = obj.covers.first()
+        if cover and cover.image:
+            request = self.context.get('request')
+            if request is not None:
+                return request.build_absolute_uri(cover.image.url)
+            return cover.image.url
+        return None
 
 class EventListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for listing events."""

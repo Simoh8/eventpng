@@ -331,7 +331,11 @@ class Photo(models.Model):
                 
             # Add watermark text
             text = f" {self.gallery.photographer.username if self.gallery.photographer else 'EventPix'}"
-            text_width, text_height = draw.textsize(text, font=font)
+            
+            # Get text bounding box and calculate dimensions
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
             
             # Position the watermark in the center
             x = (img.width - text_width) // 2

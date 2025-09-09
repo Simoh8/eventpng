@@ -1,0 +1,41 @@
+{% extends "admin/index.html" %}
+{% load i18n static contact_tags %}
+
+{% block content %}
+    {{ block.super }}
+{% endblock %}
+
+{% block sidebar %}
+    {{ block.super }}
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Find the Contact Submissions link in the sidebar
+        const links = document.querySelectorAll('div.app-contacts.module a');
+        links.forEach(link => {
+            if (link.textContent.includes('Contact submissions')) {
+                const badge = document.createElement('span');
+                badge.className = 'unread-badge';
+                badge.style.cssText = `
+                    background-color: #e74c3c;
+                    color: white;
+                    border-radius: 10px;
+                    padding: 1px 6px;
+                    font-size: 11px;
+                    font-weight: bold;
+                    margin-left: 5px;
+                `;
+                
+                // Fetch the count via AJAX
+                fetch('/admin/contact/contactsubmission/count/')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.count > 0) {
+                            badge.textContent = data.count;
+                            link.appendChild(badge);
+                        }
+                    });
+            }
+        });
+    });
+    </script>
+{% endblock %}
