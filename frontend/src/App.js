@@ -1,10 +1,9 @@
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toaster } from 'react-hot-toast';
 import { GoogleOAuthProvider } from '@react-oauth/google';
-import { useAuth } from './context/AuthContext';
+import { useAuth, AuthProvider } from './context/AuthContext';
 import MainLayout from './layouts/MainLayout';
 import HomePage from './pages/HomePage';
 import Events from './pages/Events';
@@ -26,15 +25,6 @@ import AccountSettingsPage from './pages/AccountSettingsPage';
 import HelpAndSupportPage from './pages/HelpAndSupportPage';
 import NotFoundPage from './pages/NotFoundPage';
 
-// Create a client
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-});
 
 // Dashboard Redirect Component
 const DashboardRedirect = () => {
@@ -66,9 +56,9 @@ const DashboardRedirect = () => {
 };
 
 // Protected Route Component
-const ProtectedRoute = ({ children, requiredRole }) => {
+const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
   const { isAuthenticated, user, isLoading } = useAuth();
-  
+  const location = useLocation();
   
   // Show loading state while checking auth
   if (isLoading) {
@@ -81,24 +71,33 @@ const ProtectedRoute = ({ children, requiredRole }) => {
   
   // Redirect to login if not authenticated
   if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: window.location.pathname }} replace />;
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
   
-  // Check user role if required
+  const userData = user?.data || user || {};
+  const isPhotographer = userData?.is_photographer === true;
+  const isStaff = userData?.is_staff || userData?.is_superuser;
+  
+  // Check if user has the required role
   if (requiredRole) {
-
-    
-    // Handle nested user data structure (user.data)
-    const userData = user?.data || user || {};
-    
     const hasRequiredRole = 
-      (requiredRole === 'staff' && (userData?.is_staff || userData?.is_superuser)) ||
-      (requiredRole === 'photographer' && userData?.is_photographer);
-    
-    // console.log('Has required role?', hasRequiredRole, { userData });
+      (requiredRole === 'staff' && isStaff) ||
+      (requiredRole === 'photographer' && isPhotographer);
     
     if (!hasRequiredRole) {
       return <Navigate to="/" replace />;
+    }
+  }
+  
+  // Check if route is allowed for the user's role
+  if (allowedRoles.length > 0) {
+    const userRole = isStaff ? 'staff' : isPhotographer ? 'photographer' : 'customer';
+    const isAllowed = allowedRoles.includes(userRole);
+    
+    if (!isAllowed) {
+      // Redirect to appropriate dashboard based on role
+      const redirectPath = isPhotographer ? '/photographer-dashboard' : isStaff ? '/admin/events' : '/my-gallery';
+      return <Navigate to={redirectPath} replace />;
     }
   }
   
@@ -119,11 +118,11 @@ function AppContent() {
         <Route path="login" element={<LoginPage />} />
         <Route path="register" element={<RegisterPage />} />
         
-        {/* Protected Routes */}
+        {/* Photographer Routes */}
         <Route 
           path="photographer-dashboard" 
           element={
-            <ProtectedRoute requiredRole="photographer">
+            <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
               <PhotographerDashboard />
             </ProtectedRoute>
           } 
@@ -131,15 +130,25 @@ function AppContent() {
         <Route 
           path="dashboard" 
           element={
-            <ProtectedRoute requiredRole="photographer">
+            <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
               <PhotographerDashboard />
             </ProtectedRoute>
           } 
         />
         <Route 
+          path="galleries/new" 
+          element={
+            <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
+              <CreateGallery />
+            </ProtectedRoute>
+          } 
+        />
+
+        {/* Customer Routes */}
+        <Route 
           path="my-gallery" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={['customer']}>
               <CustomerDashboard />
             </ProtectedRoute>
           } 
@@ -147,7 +156,7 @@ function AppContent() {
         <Route 
           path="my-photos" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={['customer']}>
               <MyPhotosPage />
             </ProtectedRoute>
           } 
@@ -155,7 +164,7 @@ function AppContent() {
         <Route 
           path="orders" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={['customer']}>
               <MyOrdersPage />
             </ProtectedRoute>
           } 
@@ -163,15 +172,17 @@ function AppContent() {
         <Route 
           path="saved" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={['customer']}>
               <SavedPhotosPage />
             </ProtectedRoute>
           } 
         />
+
+        {/* Shared Routes */}
         <Route 
           path="settings" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={['customer', 'photographer', 'staff']}>
               <AccountSettingsPage />
             </ProtectedRoute>
           } 
@@ -179,23 +190,17 @@ function AppContent() {
         <Route 
           path="support" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={['customer', 'photographer', 'staff']}>
               <HelpAndSupportPage />
             </ProtectedRoute>
           } 
         />
-        <Route 
-          path="galleries/new" 
-          element={
-            <ProtectedRoute requiredRole="photographer">
-              <CreateGallery />
-            </ProtectedRoute>
-          } 
-        />
+
+        {/* Admin Routes */}
         <Route 
           path="admin/events" 
           element={
-            <ProtectedRoute requiredRole="staff">
+            <ProtectedRoute requiredRole="staff" allowedRoles={['staff']}>
               <AdminEvents />
             </ProtectedRoute>
           } 
@@ -203,7 +208,15 @@ function AppContent() {
         <Route 
           path="admin/events/new" 
           element={
-            <ProtectedRoute requiredRole="staff">
+            <ProtectedRoute requiredRole="staff" allowedRoles={['staff']}>
+              <EventForm />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="admin/events/:id/edit" 
+          element={
+            <ProtectedRoute requiredRole="staff" allowedRoles={['staff']}>
               <EventForm />
             </ProtectedRoute>
           } 
@@ -241,12 +254,8 @@ function App() {
   }
   
   return (
-    <QueryClientProvider client={queryClient}>
-      <GoogleOAuthProvider 
-        clientId={googleClientId}
-        // onScriptLoadError={() => console.error('Google OAuth script failed to load')}
-        // onScriptLoadSuccess={() => console.log('Google OAuth script loaded successfully')}
-      >
+    <GoogleOAuthProvider clientId={googleClientId}>
+      <AuthProvider>
         <AppContent />
         <Toaster 
           position="top-center"
@@ -295,8 +304,8 @@ function App() {
           }}
         />
         <ReactQueryDevtools initialIsOpen={false} />
-      </GoogleOAuthProvider>
-    </QueryClientProvider>
+      </AuthProvider>
+    </GoogleOAuthProvider>
   );
 }
 

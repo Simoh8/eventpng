@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   MagnifyingGlassIcon as SearchIcon,
@@ -9,6 +9,7 @@ import {
   ArrowRightIcon,
 } from '@heroicons/react/24/outline';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useEvents } from '../hooks/useEvents';
 import axios from 'axios';
 import { API_ENDPOINTS } from '../config';
 
@@ -24,12 +25,10 @@ const formatDate = (dateString) => {
 
 const Events = () => {
   const navigate = useNavigate();
-  const [events, setEvents] = useState([]);
+  const { data: events = [], isLoading, error } = useEvents();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [showFilters, setShowFilters] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [showPinModal, setShowPinModal] = useState(false);
   const [currentEvent, setCurrentEvent] = useState(null);
   const [pin, setPin] = useState('');
@@ -68,117 +67,92 @@ const Events = () => {
     }
   };
 
-  // Fetch all events (both public and private) from the public endpoint
-  useEffect(() => {
-    const fetchEvents = async () => {
-      setIsLoading(true);
-      setError(null);
-      
-      try {
-        const url = API_ENDPOINTS.PUBLIC_EVENTS;
-        console.log('Fetching events from:', url);
-        
-        // Make a clean request without any auth headers
-        const response = await axios.get(url, {
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'Authorization': undefined, // Ensure no auth header is sent
-          },
-          withCredentials: false, // Don't send cookies
-          timeout: 10000, // 10 second timeout
-        });
-        
-        console.log('Events API Response Status:', response.status);
-        
-        // Handle different response formats
-        let eventsData = [];
-        if (Array.isArray(response.data)) {
-          eventsData = response.data;
-        } else if (response.data?.results && Array.isArray(response.data.results)) {
-          // Handle paginated response
-          eventsData = response.data.results;
-        } else if (response.data && typeof response.data === 'object') {
-          // Handle single object response by converting to array
-          eventsData = [response.data];
-        } else {
-          console.warn('Unexpected response format:', response.data);
-          throw new Error('Unexpected response format from server');
-        }
-        
-        console.log('Successfully processed', eventsData.length, 'events');
-        setEvents(eventsData);
-        
-      } catch (err) {
-        console.error('Error fetching events:', {
-          message: err.message,
-          status: err.response?.status,
-          statusText: err.response?.statusText,
-          data: err.response?.data,
-          url: err.config?.url,
-          method: err.config?.method,
-        });
-        
-        let errorMessage = 'Failed to load events. ';
-        
-        if (err.code === 'ECONNABORTED') {
-          errorMessage += 'Request timed out. Please try again.';
-        } else if (err.response) {
-          // The request was made and the server responded with a status code
-          // that falls out of the range of 2xx
-          if (err.response.status === 401) {
-            errorMessage = 'Please log in to view events.';
-          } else if (err.response.status === 403) {
-            errorMessage = 'You do not have permission to view these events.';
-          } else if (err.response.status === 404) {
-            errorMessage = 'Events endpoint not found. Please contact support.';
-          } else if (err.response.status >= 500) {
-            errorMessage = 'Server error. Please try again later.';
-          }
-        } else if (err.request) {
-          // The request was made but no response was received
-          errorMessage += 'No response from server. Please check your internet connection.';
-        }
-        
-        setError(errorMessage);
-        setEvents([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchEvents();
-  }, []);
-
   // Memoize the events data processing
   const { categories, filteredEvents, sortedEvents } = useMemo(() => {
     // Get unique categories from events
     const categoriesList = ['All', ...new Set(
       Array.isArray(events) 
-        ? events.flatMap(event => Array.isArray(event.categories) ? event.categories : []) 
+        ? events.flatMap(event => {
+            // Handle both string and array categories
+            if (Array.isArray(event.categories)) {
+              return event.categories;
+            } else if (event.category) {
+              return [event.category];
+            }
+            return [];
+          }).filter(Boolean) // Remove any undefined/null values
         : []
     )];
 
     // Filter events based on search query and category
     const filtered = Array.isArray(events) 
       ? events.filter(event => {
-          const matchesSearch = event.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                              (event.description && event.description.toLowerCase().includes(searchQuery.toLowerCase()));
+          if (!event) return false;
+          
+          const searchLower = searchQuery.toLowerCase();
+          const matchesSearch = 
+            (event.name && event.name.toLowerCase().includes(searchLower)) ||
+            (event.description && event.description.toLowerCase().includes(searchLower));
           
           const matchesCategory = selectedCategory === 'All' || 
-                                (event.category && event.category === selectedCategory);
+            (event.category && event.category === selectedCategory) ||
+            (Array.isArray(event.categories) && event.categories.includes(selectedCategory));
           
           return matchesSearch && matchesCategory;
         })
       : [];
     
     // Sort events by date (newest first)
-    const sorted = [...filtered].sort((a, b) => 
-      new Date(b.date) - new Date(a.date)
-    );
+    const sorted = [...filtered].sort((a, b) => {
+      const dateA = a.date ? new Date(a.date) : new Date(0);
+      const dateB = b.date ? new Date(b.date) : new Date(0);
+      return dateB - dateA;
+    });
 
-    return { categories: categoriesList, filteredEvents: filtered, sortedEvents: sorted };
+    return { 
+      categories: categoriesList, 
+      filteredEvents: filtered, 
+      sortedEvents: sorted 
+    };
   }, [events, searchQuery, selectedCategory]);
+
+  // Handle API errors
+  if (error) {
+    console.error('Error fetching events:', error);
+    let errorMessage = 'Failed to load events. ';
+    
+    if (error.code === 'ECONNABORTED') {
+      errorMessage += 'Request timed out. Please try again.';
+    } else if (error.response) {
+      if (error.response.status === 401) {
+        errorMessage = 'Please log in to view events.';
+      } else if (error.response.status === 403) {
+        errorMessage = 'You do not have permission to view these events.';
+      } else {
+        errorMessage += `Server responded with status ${error.response.status}`;
+      }
+    } else if (error.request) {
+      errorMessage += 'No response from server. Please check your connection.';
+    } else {
+      errorMessage += error.message || 'An unknown error occurred.';
+    }
+
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center p-6 max-w-md mx-auto bg-white rounded-lg shadow-lg">
+          <div className="text-red-500 text-4xl mb-4">⚠️</div>
+          <h2 className="text-xl font-semibold text-gray-800 mb-2">Error Loading Events</h2>
+          <p className="text-gray-600 mb-6">{errorMessage}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Loading skeleton
   if (isLoading) {

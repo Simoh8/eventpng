@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { useNavigate } from 'react-router-dom';
 import { API_ENDPOINTS } from '../config';
 import api from '../services/api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const AuthContext = createContext(null);
 
@@ -28,6 +29,8 @@ const defaultContextValue = {
 };
 
 export const AuthProvider = ({ children }) => {
+  const queryClient = useQueryClient();
+  
   const [state, setState] = useState({
     user: null,
     isLoading: true,
@@ -36,6 +39,43 @@ export const AuthProvider = ({ children }) => {
   });
   
   const { user, isLoading, isAuthenticated, error } = state;
+  
+  // Use the useQuery hook to fetch user data
+  const { data: userData, isLoading: isUserLoading } = useQuery({
+    enabled: !!queryClient,
+    queryKey: ['currentUser'],
+    queryFn: async () => {
+      try {
+        const response = await api.get('/api/accounts/me/');
+        return response.data;
+      } catch (error) {
+        if (error.response?.status !== 401) {
+          console.error('Error fetching user data:', error);
+        }
+        return null;
+      }
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: 1,
+    refetchOnWindowFocus: false,
+    enabled: !!queryClient.getQueryData, // Only enable the query if we have a valid queryClient
+    onSuccess: (data) => {
+      setState(prev => ({
+        ...prev,
+        user: data,
+        isAuthenticated: !!data,
+        isLoading: false
+      }));
+    },
+    onError: () => {
+      setState(prev => ({
+        ...prev,
+        user: null,
+        isAuthenticated: false,
+        isLoading: false
+      }));
+    }
+  });
   
   const authCheckRef = useRef({
     hasChecked: false,
@@ -52,13 +92,18 @@ export const AuthProvider = ({ children }) => {
     authPromise = null;
     lastAuthCheck = 0;
     authCheckRef.current = { hasChecked: false, isChecking: false };
+    
+    // Invalidate all queries and reset state
+    if (queryClient.clear) {
+      queryClient.clear();
+    }
     setState({
       user: null,
       isAuthenticated: false,
       isLoading: false,
       error: null
     });
-  }, []);
+  }, [queryClient]);
 
   const handleGoogleAuthSuccess = useCallback((data) => {
     console.log('Google auth success data:', data);
@@ -98,6 +143,20 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const token = localStorage.getItem('access');
     if (token) {
+      // Set auth header for all future requests
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      
+      // If we already have user data in the query cache, use it
+      const cachedUser = queryClient.getQueryData(['currentUser']);
+      if (cachedUser) {
+        setState(prev => ({
+          ...prev,
+          user: cachedUser,
+          isAuthenticated: true,
+          isLoading: false
+        }));
+        return;
+      }
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
   }, []);
