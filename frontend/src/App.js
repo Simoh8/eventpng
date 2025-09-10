@@ -24,6 +24,7 @@ import MyOrdersPage from './pages/MyOrdersPage';
 import SavedPhotosPage from './pages/SavedPhotosPage';
 import AccountSettingsPage from './pages/AccountSettingsPage';
 import HelpAndSupportPage from './pages/HelpAndSupportPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -224,8 +225,8 @@ function AppContent() {
           } 
         />
         
-        {/* Catch-all redirect to home */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* 404 - Catch all unmatched routes */}
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
   );
