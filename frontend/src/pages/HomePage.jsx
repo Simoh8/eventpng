@@ -9,6 +9,10 @@ import {
   MapPinIcon,
   LockClosedIcon,
   ArrowRightIcon,
+  PhotoIcon,
+  RectangleGroupIcon,
+  UserGroupIcon,
+  ClockIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthContext';
 import { API_ENDPOINTS } from '../config';
@@ -38,6 +42,12 @@ const HomePage = () => {
   const [currentEvent, setCurrentEvent] = useState(null);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');
+  const [stats, setStats] = useState({
+    totalGalleries: 0,
+    totalPhotos: 0,
+    totalEvents: 0,
+    recentGalleries: []
+  });
   
   // Handle event click - check if PIN is needed
   const handleEventClick = (event) => {
@@ -80,22 +90,93 @@ const HomePage = () => {
     }
   };
 
+  // Fetch statistics and recent galleries
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const [statsRes, recentRes] = await Promise.all([
+          axios.get(API_ENDPOINTS.STATS),
+          axios.get(API_ENDPOINTS.RECENT_GALLERIES)
+        ]);
+        
+        setStats({
+          totalGalleries: statsRes.data.total_galleries || 0,
+          totalPhotos: statsRes.data.total_photos || 0,
+          totalEvents: statsRes.data.total_events || 0,
+          recentGalleries: recentRes.data || []
+        });
+      } catch (error) {
+        console.error('Error fetching statistics:', error);
+      }
+    };
+    
+    fetchStats();
+  }, []);
+
   useEffect(() => {
     const fetchEvents = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(API_ENDPOINTS.PUBLIC_EVENTS, {
+        // First, fetch the basic event list
+        const eventsResponse = await axios.get(API_ENDPOINTS.PUBLIC_EVENTS, {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
           },
           withCredentials: true
         });
+
+        // Then fetch detailed statistics for each event
+        const eventsWithStats = await Promise.all(eventsResponse.data.map(async (event) => {
+          try {
+            // Fetch event statistics
+            const statsResponse = await axios.get(`${API_ENDPOINTS.PUBLIC_EVENTS}${event.id}/stats/`, {
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              withCredentials: true
+            });
+
+            // Fetch recent photographers for the event
+            const photographersResponse = await axios.get(
+              `${API_ENDPOINTS.PUBLIC_EVENTS}${event.id}/photographers/`,
+              {
+                params: { limit: 3 },
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                },
+                withCredentials: true
+              }
+            );
+
+            return {
+              ...event,
+              photo_count: statsResponse.data.photo_count || 0,
+              gallery_count: statsResponse.data.gallery_count || 0,
+              photographer_count: statsResponse.data.photographer_count || 0,
+              recent_photographers: photographersResponse.data.results || [],
+              cover_image: event.cover_image || DEFAULT_COVER_IMAGE
+            };
+          } catch (error) {
+            console.error(`Error fetching details for event ${event.id}:`, error);
+            // Return event with default values if there's an error
+            return {
+              ...event,
+              photo_count: 0,
+              gallery_count: 0,
+              photographer_count: 0,
+              recent_photographers: [],
+              cover_image: event.cover_image || DEFAULT_COVER_IMAGE
+            };
+          }
+        }));
         
-        setEvents(response.data);
+        setEvents(eventsWithStats);
       } catch (err) {
         console.error('Error fetching events:', err);
-        setError('Failed to load events. Please try again later.');
+        setError('Failed to load events. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -137,8 +218,119 @@ const HomePage = () => {
     );
   }
 
+  // Stats card component
+  const StatCard = ({ icon: Icon, title, value, color = 'blue' }) => (
+    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+      <div className="flex items-center">
+        <div className={`p-3 rounded-lg bg-${color}-50 text-${color}-600`}>
+          <Icon className="h-6 w-6" />
+        </div>
+        <div className="ml-4">
+          <p className="text-sm font-medium text-gray-500">{title}</p>
+          <p className="text-2xl font-semibold text-gray-900">{value}</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Recent gallery item component
+  const RecentGalleryCard = ({ gallery }) => (
+    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+      <div className="flex items-center space-x-4">
+        <div className="flex-shrink-0">
+          {gallery.cover_image ? (
+            <img 
+              src={gallery.cover_image} 
+              alt={gallery.title}
+              className="h-16 w-16 rounded-md object-cover"
+            />
+          ) : (
+            <div className="h-16 w-16 rounded-md bg-gray-100 flex items-center justify-center text-gray-400">
+              <PhotoIcon className="h-8 w-8" />
+            </div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-gray-900 truncate">{gallery.title}</p>
+          <p className="text-sm text-gray-500 truncate">
+            {gallery.event?.title || 'No associated event'}
+          </p>
+          <div className="flex items-center mt-1 text-xs text-gray-500">
+            <ClockIcon className="h-3.5 w-3.5 mr-1" />
+            <span>{formatDate(gallery.created_at)}</span>
+            <span className="mx-2">•</span>
+            <span>{gallery.photo_count || 0} photos</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Stats Section */}
+      <section className="py-12 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">
+              Capture & Relive Your Moments
+            </h2>
+            <p className="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
+              Discover and download your event photos with ease
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 gap-5 mt-12 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard 
+              icon={PhotoIcon} 
+              title="Total Photos" 
+              value={stats.totalPhotos.toLocaleString()} 
+              color="blue"
+            />
+            <StatCard 
+              icon={RectangleGroupIcon} 
+              title="Galleries" 
+              value={stats.totalGalleries.toLocaleString()}
+              color="green"
+            />
+            <StatCard 
+              icon={UserGroupIcon} 
+              title="Events Covered" 
+              value={stats.totalEvents.toLocaleString()}
+              color="purple"
+            />
+            <StatCard 
+              icon={CalendarIcon} 
+              title="Active Events" 
+              value={events.filter(e => new Date(e.end_date) > new Date()).length}
+              color="yellow"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Recent Galleries Section */}
+      {stats.recentGalleries.length > 0 && (
+        <section className="py-12 bg-gray-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-2xl font-bold text-gray-900">Recently Added Galleries</h2>
+              <Link 
+                to="/events" 
+                className="text-sm font-medium text-primary-600 hover:text-primary-500"
+              >
+                View all galleries <span aria-hidden="true">&rarr;</span>
+              </Link>
+            </div>
+            
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {stats.recentGalleries.map((gallery) => (
+                <RecentGalleryCard key={gallery.id} gallery={gallery} />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
       {/* Hero Section */}
       <div className="relative bg-gray-900 w-full h-screen max-h-[800px]">
         {/* Animated Background */}
@@ -264,25 +456,72 @@ const HomePage = () => {
                       </div>
                     )}
                   </div>
-                  <div className="p-6">
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2 line-clamp-1">
-                      {event.name || 'Untitled Event'}
-                    </h3>
+                  <div className="p-5">
+                    <div className="flex justify-between items-start mb-3">
+                      <h3 className="text-xl font-bold text-gray-900 line-clamp-1 flex-1">
+                        {event.name || 'Untitled Event'}
+                      </h3>
+                      {event.is_featured && (
+                        <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                          Featured
+                        </span>
+                      )}
+                    </div>
+                    
                     <div className="flex items-center text-sm text-gray-600 mb-2">
-                      <MapPinIcon className="h-4 w-4 mr-1 text-gray-500" />
+                      <MapPinIcon className="h-4 w-4 mr-1.5 text-gray-500 flex-shrink-0" />
                       <span className="line-clamp-1">{event.location || 'Location not specified'}</span>
                     </div>
+                    
                     <div className="flex items-center text-sm text-gray-600 mb-4">
-                      <CalendarIcon className="h-4 w-4 mr-1 text-gray-500" />
+                      <CalendarIcon className="h-4 w-4 mr-1.5 text-gray-500 flex-shrink-0" />
                       <span>{formatDate(event.date)}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-500">
-                        {event.photo_count || 0} photos
-                      </span>
-                      <button className="text-primary-600 hover:text-primary-800 font-medium text-sm flex items-center">
+                    
+                    {/* Stats Grid */}
+                    <div className="grid grid-cols-3 gap-2 mb-4 bg-gray-50 p-2 rounded-md">
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-gray-900">{event.photo_count || 0}</div>
+                        <div className="text-xs text-gray-500">Photos</div>
+                      </div>
+                      <div className="text-center border-l border-r border-gray-200">
+                        <div className="text-lg font-bold text-gray-900">{event.gallery_count || 0}</div>
+                        <div className="text-xs text-gray-500">Galleries</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-gray-900">
+                          {event.photographer_count || 0}
+                        </div>
+                        <div className="text-xs text-gray-500">Photographers</div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                      <div className="flex -space-x-2">
+                        {event.recent_photographers?.slice(0, 3).map((photographer, idx) => (
+                          <img
+                            key={idx}
+                            className="h-8 w-8 rounded-full border-2 border-white"
+                            src={photographer.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(photographer.name || 'U')}
+                            alt={photographer.name || 'Photographer'}
+                            title={photographer.name}
+                          />
+                        ))}
+                        {event.photographer_count > 3 && (
+                          <div className="h-8 w-8 rounded-full bg-gray-100 border-2 border-white flex items-center justify-center text-xs font-medium text-gray-500">
+                            +{event.photographer_count - 3}
+                          </div>
+                        )}
+                      </div>
+                      <button 
+                        className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEventClick(event);
+                        }}
+                      >
                         View Event
-                        <ArrowRightIcon className="h-4 w-4 ml-1" />
+                        <ArrowRightIcon className="h-3 w-3 ml-1" />
                       </button>
                     </div>
                   </div>
