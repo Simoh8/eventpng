@@ -31,7 +31,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     
     # API
-    path('api/auth/', include('accounts.urls')),
+    path('api/accounts/', include('accounts.urls')),  # User accounts and authentication
     path('api/gallery/', include('gallery.urls')),
     path('api/payments/', include('payments.urls')),
     path('api/contact/', include('contact.urls')),  # Contact form endpoints

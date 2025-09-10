@@ -6,9 +6,10 @@ from django.utils.html import strip_tags
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from .permissions import AllowAny
 from .models import ContactSubmission
 from .serializers import ContactSubmissionSerializer
+from .authentication import ContactFormAuthentication
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -17,11 +18,19 @@ class ContactFormView(APIView):
     """
     API endpoint that handles contact form submissions.
     """
+    authentication_classes = [ContactFormAuthentication]
     permission_classes = [AllowAny]
     
     def post(self, request, format=None):
-        # Log the incoming request data for debugging
+        # Log the incoming request data and headers for debugging
         logger.info(f"Received contact form data: {request.data}")
+        logger.info(f"Request headers: {dict(request.headers)}")
+        logger.info(f"User: {request.user}")
+        logger.info(f"User authenticated: {request.user.is_authenticated}")
+        
+        # Check authentication status
+        if not request.user.is_authenticated:
+            logger.info("User is not authenticated, but that's okay for this endpoint")
         
         serializer = ContactSubmissionSerializer(data=request.data)
         if not serializer.is_valid():

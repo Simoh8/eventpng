@@ -1,46 +1,155 @@
+import logging
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
-from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import get_user_model, authenticate
+from django.conf import settings
+from django.contrib.sites.models import Site
+from allauth.socialaccount.models import SocialAccount, SocialApp
+from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
+from allauth.socialaccount.providers.oauth2.client import OAuth2Client
+import os
+import json
+import requests
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.utils.decorators import method_decorator
+from django.middleware.csrf import get_token
+from django.http import JsonResponse, HttpResponse
+from rest_framework import permissions
+
 from . import serializers
 
+logger = logging.getLogger(__name__)
+
 User = get_user_model()
+
+class CSRFTokenView(APIView):
+    """
+    View to get CSRF token for the frontend.
+    This is needed for session-based authentication.
+    """
+    authentication_classes = []  # Disable authentication
+    permission_classes = []  # No permissions required
+    
+    @method_decorator(ensure_csrf_cookie)
+    def get(self, request):
+        # Set CORS headers
+        response = JsonResponse({'detail': 'CSRF cookie set'})
+        response['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+        response['Access-Control-Allow-Credentials'] = 'true'
+        return response
 
 class RegisterView(generics.CreateAPIView):
     """
     Register a new user and return JWT tokens.
     """
     serializer_class = serializers.UserCreateSerializer
+    authentication_classes = []  # Disable authentication
     permission_classes = [permissions.AllowAny]
+    throttle_scope = 'register'
+    
+    @method_decorator(ensure_csrf_cookie)
+    def post(self, request, *args, **kwargs):
+        # Set CORS headers for preflight
+        if request.method == 'OPTIONS':
+            response = JsonResponse({})
+            response['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+            response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+            response['Access-Control-Allow-Headers'] = 'Content-Type, X-CSRFToken'
+            response['Access-Control-Allow-Credentials'] = 'true'
+            return response
+            
+        return self.create(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        # Log the registration attempt
+        logger.info(f"Registration attempt with email: {request.data.get('email', 'No email provided')}")
+        
+        # Ensure we have a mutable copy of the request data
+        data = request.data.copy()
+        
+        # If full_name is not provided, try to get it from name
+        if 'name' in data and 'full_name' not in data:
+            data['full_name'] = data.get('name')
+            
+        serializer = self.get_serializer(data=data)
+        
+        # Validate the serializer data
         if not serializer.is_valid():
-            print("Validation errors:", serializer.errors)  # Log validation errors
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            logger.warning(f"Registration validation errors: {serializer.errors}")
+            response = Response(
+                {
+                    'status': 'error',
+                    'errors': serializer.errors,
+                    'message': 'Validation failed. Please check your input.'
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            response['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+            response['Access-Control-Allow-Credentials'] = 'true'
+            return response
             
         try:
+            # Save the user
             user = serializer.save()
             
             # Generate tokens
-            refresh = serializers.CustomTokenObtainPairSerializer.get_token(user)
-            data = {
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-                'user': serializers.UserSerializer(user).data,
-                'message': 'Registration successful! Welcome to EventPhoto!',
-                'detail': 'Your account has been created successfully. You can now log in.'
-            }
+            refresh = RefreshToken.for_user(user)
+            access = str(refresh.access_token)
+            refresh = str(refresh)
             
-            return Response(data, status=status.HTTP_201_CREATED)
+            # Get user data
+            user_data = serializers.UserSerializer(user).data
+            
+            logger.info(f"User {user.email} registered successfully")
+            
+            response = Response({
+                'status': 'success',
+                'user': user_data,
+                'access': access,
+                'refresh': refresh,
+                'message': 'User registered successfully'
+            }, status=status.HTTP_201_CREATED)
+            
+            # Set CORS headers
+            response['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+            response['Access-Control-Allow-Credentials'] = 'true'
+            
+            # Set cookies for web clients
+            response.set_cookie(
+                key=settings.SIMPLE_JWT['AUTH_COOKIE'],
+                value=access,
+                expires=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
+                secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
+                httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
+                samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE']
+            )
+            
+            response.set_cookie(
+                key=settings.SIMPLE_JWT['REFRESH_TOKEN_COOKIE'],
+                value=refresh,
+                expires=settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'],
+                secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
+                httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
+                samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE']
+            )
+            
+            return response
             
         except Exception as e:
-            print("Error during user creation:", str(e))  # Log any other errors
-            return Response(
-                {'detail': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
+            logger.error(f"Registration failed: {str(e)}", exc_info=True)
+            response = Response(
+                {
+                    'status': 'error',
+                    'message': 'An unexpected error occurred during registration. Please try again later.'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+            response['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+            response['Access-Control-Allow-Credentials'] = 'true'
+            return response
 
 class UserCreateView(generics.CreateAPIView):
     """View for creating a new user."""
@@ -48,12 +157,49 @@ class UserCreateView(generics.CreateAPIView):
     permission_classes = [permissions.AllowAny]
 
 class UserDetailView(generics.RetrieveUpdateAPIView):
-    """View for retrieving and updating user details."""
+    """
+    View for retrieving and updating user details.
+    Supports GET (retrieve), PUT (full update), and PATCH (partial update) methods.
+    """
     serializer_class = serializers.UserSerializer
     permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ['get', 'put', 'patch', 'head', 'options']
     
     def get_object(self):
+        """Return the current authenticated user."""
         return self.request.user
+    
+    def update(self, request, *args, **kwargs):
+        """Handle user update with proper response formatting."""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+            
+            if getattr(instance, '_prefetched_objects_cache', None):
+                # If 'prefetch_related' has been applied to a queryset, we need to
+                # forcibly invalidate the prefetch cache on the instance.
+                instance._prefetched_objects_cache = {}
+                
+            return Response({
+                'status': 'success',
+                'message': 'Profile updated successfully',
+                'user': serializer.data
+            })
+            
+        except serializers.ValidationError as e:
+            return Response(
+                {'status': 'error', 'errors': e.detail},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            return Response(
+                {'status': 'error', 'message': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class ChangePasswordView(generics.UpdateAPIView):
     """View for changing user password."""
@@ -88,9 +234,295 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = serializers.CustomTokenObtainPairSerializer
 
 class CurrentUserView(APIView):
-    """View to get the current authenticated user."""
+    """
+    View to get the current authenticated user.
+    
+    This endpoint returns the details of the currently authenticated user.
+    It's used by the frontend to check authentication status and get user data.
+    """
     permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'user'
     
     def get(self, request):
-        serializer = serializers.UserSerializer(request.user)
-        return Response(serializer.data)
+        try:
+            # Get the user data using the UserSerializer
+            serializer = serializers.UserSerializer(request.user)
+            
+            # Log successful user data retrieval
+            logger.info(f"User data retrieved for: {request.user.email}")
+            
+            # Return the user data with a success status
+            return Response({
+                'status': 'success',
+                'data': serializer.data,
+                'message': 'User data retrieved successfully'
+            })
+            
+        except Exception as e:
+            # Log the error with traceback
+            logger.error(f"Error retrieving user data: {str(e)}", exc_info=True)
+            
+            # Return a generic error message
+            return Response(
+                {
+                    'status': 'error',
+                    'message': 'An error occurred while retrieving user data. Please try again.'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class GoogleAuthConfigView(APIView):
+    """
+    View to provide Google OAuth configuration to the frontend.
+    """
+    permission_classes = [permissions.AllowAny]
+    
+    def get(self, request):
+        try:
+            # Get the current site
+            site = Site.objects.get_current()
+            logger.info(f"Current site: {site.domain}")
+            
+            # Get all social apps for the current site
+            apps = SocialApp.objects.filter(provider='google', sites=site)
+            logger.info(f"Found {apps.count()} Google apps for site {site.domain}")
+            
+            if not apps.exists():
+                # Try to find any Google app (in case sites weren't properly linked)
+                apps = SocialApp.objects.filter(provider='google')
+                logger.info(f"Found {apps.count()} Google apps in total")
+                
+                if not apps.exists():
+                    logger.error("No Google OAuth app configured in the database")
+                    return Response(
+                        {'error': 'No Google OAuth app configured'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+                
+                # Link the first found app to the current site
+                app = apps.first()
+                app.sites.add(site)
+                app.save()
+                logger.info(f"Linked app {app.name} to site {site.domain}")
+            else:
+                app = apps.first()
+            
+            if not app.client_id or not app.secret:
+                logger.error("Google OAuth app is missing client_id or secret")
+                return Response(
+                    {'error': 'Google OAuth app is not properly configured (missing client_id or secret)'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            # Get frontend URL from settings or use default
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+            
+            logger.info(f"Returning Google OAuth config for client_id: {app.client_id}")
+            return Response({
+                'client_id': app.client_id,
+                'redirect_uri': f"{frontend_url.rstrip('/')}/login"
+            })
+            
+        except Site.DoesNotExist:
+            logger.error("No sites configured in the database")
+            return Response(
+                {'error': 'No sites configured. Please run `python manage.py migrate` and set up a site in the admin.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            logger.exception("Error in GoogleAuthConfigView")
+            return Response(
+                {'error': 'Failed to get Google OAuth configuration'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class GoogleLogin(APIView):
+    """
+    View for Google OAuth2 login.
+    Handles the Google ID token verification and JWT token generation.
+    """
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'google_auth'
+    
+    def post(self, request, *args, **kwargs):
+        id_token = request.data.get('id_token')
+        access_token = request.data.get('access_token')
+        
+        # Log the login attempt
+        logger.info("Google OAuth login attempt")
+        
+        if not id_token and not access_token:
+            logger.warning("Google OAuth: Missing both ID token and access token")
+            return Response(
+                {
+                    'status': 'error',
+                    'code': 'missing_token',
+                    'message': 'ID token or access token is required'
+                }, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            user_info = None
+            
+            # Try to verify the ID token first
+            if id_token:
+                logger.debug("Attempting to verify Google ID token")
+                user_info = self.verify_google_token(id_token)
+            
+            # Fall back to access token if ID token verification fails or not provided
+            if not user_info and access_token:
+                logger.debug("Falling back to access token verification")
+                user_info = self.get_google_user_info(access_token)
+                
+            if not user_info:
+                logger.warning("Google OAuth: Invalid or expired token provided")
+                return Response(
+                    {
+                        'status': 'error',
+                        'code': 'invalid_token',
+                        'message': 'Invalid or expired Google token'
+                    }, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # Log successful token verification
+            logger.info(f"Google OAuth token verified for email: {user_info.get('email')}")
+                
+            # Get or create the user
+            user, created = self.get_or_create_user(user_info)
+            
+            # Generate tokens
+            refresh = RefreshToken.for_user(user)
+            
+            # Prepare response data
+            user_data = UserSerializer(user).data
+            
+            # Log successful authentication
+            logger.info(f"Google OAuth login successful for user: {user.email}")
+            
+            return Response({
+                'status': 'success',
+                'data': {
+                    'tokens': {
+                        'refresh': str(refresh),
+                        'access': str(refresh.access_token)
+                    },
+                    'user': user_data,
+                    'is_new_user': created
+                },
+                'message': 'Google authentication successful'
+            })
+            
+        except Exception as e:
+            # Log the full error with traceback
+            logger.error(f"Google OAuth error: {str(e)}", exc_info=True)
+            
+            # Return a user-friendly error message
+            return Response(
+                {
+                    'status': 'error',
+                    'code': 'authentication_failed',
+                    'message': 'Google authentication failed. Please try again.'
+                }, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    def verify_google_token(self, id_token):
+        from google.oauth2 import id_token
+        from google.auth.transport import requests as google_requests
+        
+        try:
+            # Get Google client ID
+            site = Site.objects.get_current()
+            app = SocialApp.objects.get(provider='google', sites=site)
+            
+            # Verify the ID token
+            user_info = id_token.verify_oauth2_token(
+                id_token,
+                google_requests.Request(),
+                app.client_id
+            )
+            
+            # Check if the token is valid
+            if user_info.get('iss') not in ['accounts.google.com', 'https://accounts.google.com']:
+                raise ValueError('Invalid token issuer.')
+                
+            # Verify the token audience
+            if user_info.get('aud') != app.client_id:
+                raise ValueError('Invalid token audience.')
+                
+            # Verify the token is not expired
+            from datetime import datetime, timezone
+            current_time = datetime.now(timezone.utc).timestamp()
+            if user_info.get('exp', 0) < current_time:
+                raise ValueError('Token has expired.')
+                
+            # Return the verified user info
+            return user_info
+            
+        except ValueError as e:
+            logger.error(f"Google token verification failed: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"Error verifying Google token: {str(e)}", exc_info=True)
+            return None
+            
+    def _get_unique_username(self, base_username):
+        """Generate a unique username by appending a number if needed."""
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
+        username = base_username
+        counter = 1
+        
+        while User.objects.filter(username=username).exists():
+            username = f"{base_username}_{counter}"
+            counter += 1
+            
+        return username
+    
+    def get_google_user_info(self, token):
+        """Get user info from Google using the access token."""
+        response = requests.get(
+            'https://www.googleapis.com/oauth2/v3/userinfo',
+            params={'access_token': token}
+        )
+        
+        if not response.ok:
+            raise Exception('Failed to fetch user info from Google')
+            
+        return response.json()
+    
+    def get_or_create_user(self, user_info):
+        """Get or create a user based on Google user info."""
+        email = user_info.get('email')
+        first_name = user_info.get('given_name', '')
+        last_name = user_info.get('family_name', '')
+        
+        try:
+            # Try to get existing user
+            user = User.objects.get(email=email)
+            created = False
+        except User.DoesNotExist:
+            # Create new user
+            user = User.objects.create_user(
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                full_name=f"{first_name} {last_name}".strip(),
+                is_active=True
+            )
+            created = True
+            
+            # Create social account
+            SocialAccount.objects.create(
+                user=user,
+                provider='google',
+                uid=user_info.get('sub', ''),
+                extra_data=user_info
+            )
+        
+        return user, created
