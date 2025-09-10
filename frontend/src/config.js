@@ -18,6 +18,7 @@ export const API_ENDPOINTS = {
   
   // Google OAuth
   GOOGLE_AUTH: `${API_BASE_URL}/api/accounts/google/`,
+  GOOGLE_LOGIN: `${API_BASE_URL}/api/accounts/google/`,
   GOOGLE_CONFIG: `${API_BASE_URL}/api/accounts/config/google/`,
 };
 

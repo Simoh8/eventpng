@@ -1,48 +1,140 @@
-import React from 'react';
-import { useGoogleLogin } from '@react-oauth/google';
-import { jwtDecode } from 'jwt-decode';
+import React, { useState, useCallback } from 'react';
+import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
+import { toast } from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { ArrowPathIcon } from '@heroicons/react/24/outline';
 
-const GoogleLoginButton = ({ onSuccess, onError }) => {
-  const login = useGoogleLogin({
-    onSuccess: tokenResponse => {
-      console.log('Google login success:', tokenResponse);
-      onSuccess(tokenResponse);
-    },
-    onError: error => {
-      console.error('Google login error:', error);
-      onError(error);
-    },
-    flow: 'auth-code',
-  });
+const GoogleLoginButton = ({ text = 'Continue with Google', isSignUp = false }) => {
+  const { loginWithGoogle } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSuccess = async (credentialResponse) => {
+    console.log('Google OAuth success, credential response:', credentialResponse);
+    
+    if (!credentialResponse.credential) {
+      console.error('No credential received from Google');
+      toast.error('Authentication failed: No credential received');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // Make the API call directly instead of using loginWithGoogle
+      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/accounts/google/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRFToken': document.cookie
+            .split('; ')
+            .find(row => row.startsWith('csrftoken='))
+            ?.split('=')[1] || '',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          id_token: credentialResponse.credential,
+        }),
+      });
+      
+      const data = await response.json();
+      console.log('Google login response:', data);
+      
+      if (response.ok && data.access) {
+        console.log('Google login successful, response data:', data);
+        
+        // Store tokens
+        localStorage.setItem('access', data.access);
+        if (data.refresh) {
+          localStorage.setItem('refresh', data.refresh);
+        }
+        
+        // Set auth header for future requests
+        const api = (await import('../services/api')).default;
+        api.defaults.headers.common['Authorization'] = `Bearer ${data.access}`;
+        
+        // Show success message
+        toast.success(
+          isSignUp 
+            ? 'Account created successfully! Welcome!'
+            : 'Logged in successfully!'
+        );
+        
+        // Store user data if available
+        if (data.user) {
+          console.log('User data from login:', data.user);
+          localStorage.setItem('user', JSON.stringify(data.user));
+          
+          // Use the loginWithGoogle function from AuthContext to update the auth state
+          if (loginWithGoogle) {
+            console.log('Calling loginWithGoogle with data:', data);
+            await loginWithGoogle({
+              access: data.access,
+              refresh: data.refresh,
+              user: data.user,
+              is_new_user: data.is_new_user || false
+            });
+          }
+          
+          // Use window.location.href for a full page reload to ensure auth state is properly set
+          if (data.user.is_photographer) {
+            console.log('Redirecting to photographer dashboard');
+            window.location.href = '/photographer-dashboard';
+          } else {
+            console.log('Redirecting to user gallery');
+            window.location.href = '/my-gallery';
+          }
+        } else {
+          console.warn('No user data in login response, defaulting to /my-gallery');
+          window.location.href = '/my-gallery';
+        }
+      } else {
+        throw new Error(data.detail || 'Authentication failed');
+      }
+    } catch (error) {
+      console.error('Google auth error:', error);
+      toast.error(error.message || 'Authentication failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleError = () => {
+    console.error('Google OAuth error');
+    toast.error('Failed to sign in with Google. Please try again.');
+    setIsLoading(false);
+  };
+
+  const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+  
+  if (!clientId) {
+    console.error('Google Client ID is not set in environment variables');
+    return (
+      <div className="w-full p-3 text-center text-red-600 bg-red-100 rounded">
+        Google sign-in is not properly configured. Please contact support.
+      </div>
+    );
+  }
 
   return (
-    <button
-      onClick={() => login()}
-      type="button"
-      className="w-full flex justify-center items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-    >
-      <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-        <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">
-          <path
-            fill="#4285F4"
-            d="M -3.264 51.509 C -3.264 50.719 -3.334 49.969 -3.454 49.239 L -14.754 49.239 L -14.754 53.749 L -8.28426 53.749 C -8.52426 55.229 -9.21677 56.479 -10.0802 57.329 L -10.082 57.329 L -6.61664 60.199 L -6.55664 60.255 C -4.767 61.869 -2.294 62.909 0.545 62.909 C 4.846 62.909 8.428 61.069 10.354 58.369 L 10.354 58.369 L 13.333 61.179 C 11.245 63.554 8.164 65.02 4.644 65.02 C -0.616 65.02 -5.064 61.849 -6.55664 57.329 L -6.55664 57.329 Z"
-          />
-          <path
-            fill="#34A853"
-            d="M -14.754 63.239 C -9.444 63.239 -4.974 61.239 -2.194 57.949 L 1.806 60.619 C -0.384 63.039 -3.874 64.749 -8.004 64.749 C -13.924 64.749 -19.164 61.249 -21.004 55.779 L -21.004 55.829 L -24.726 58.809 L -24.696 58.879 C -22.516 65.169 -17.154 69.749 -10.754 69.749 C -4.814 69.749 0.545 66.619 3.004 62.109 L 3.004 62.109 L -0.036 59.139 C -1.266 61.219 -3.514 62.909 -6.554 62.909 Z"
-          />
-          <path
-            fill="#FBBC05"
-            d="M -21.004 55.779 C -21.624 53.969 -21.974 52.039 -21.974 50.009 C -21.974 47.979 -21.624 46.049 -20.964 44.239 L -20.964 44.289 L -17.084 41.209 L -16.954 41.209 C -18.894 37.269 -22.514 34.499 -26.744 34.499 C -19.394 34.499 -13.404 39.529 -11.154 46.899 L -11.154 46.849 L -6.554 44.109 C -7.504 41.269 -9.404 38.729 -11.984 37.109 C -14.564 35.489 -17.814 34.499 -21.004 34.499 C -27.414 34.499 -32.824 39.109 -34.984 45.279 C -36.694 50.089 -36.144 55.809 -33.974 60.279 L -21.004 55.779 Z"
-          />
-          <path
-            fill="#EA4335"
-            d="M -10.754 30.239 C -6.614 30.239 -2.994 31.919 -0.254 34.699 L 0.166 35.149 L 3.936 31.809 L 3.556 31.369 C 0.496 28.089 -3.916 26.239 -8.264 26.239 C -14.674 26.239 -20.064 30.839 -22.244 37.009 L -6.554 44.109 C -5.604 41.269 -3.704 38.729 -1.124 37.109 C -3.704 35.489 -6.954 34.499 -10.144 34.499 C -15.884 34.499 -21.084 37.579 -23.424 42.459 C -26.324 48.739 -25.264 56.689 -20.974 61.189 L -33.974 55.689 C -36.144 51.219 -36.694 45.499 -34.984 40.689 C -32.824 34.519 -27.414 29.909 -21.004 29.909 L -10.754 30.239 Z"
-          />
-        </g>
-      </svg>
-      Continue with Google
-    </button>
+    <GoogleOAuthProvider clientId={clientId}>
+      <div className="w-full">
+        <GoogleLogin
+          onSuccess={handleSuccess}
+          onError={handleError}
+          useOneTap
+          auto_select
+          text="continue_with"
+          shape="rectangular"
+          width="100%"
+          size="large"
+          type="standard"
+          theme="outline"
+          logo_alignment="left"
+        />
+      </div>
+    </GoogleOAuthProvider>
   );
 };
 

@@ -23,13 +23,16 @@ export default function MainLayout() {
     navigate('/');
   };
     
+  // Get user data from nested structure if needed
+  const userData = user?.data || user || {};
+  
   // Navigation items - Focused on event photo browsing and purchases
   const navigation = [
     { name: 'Home', href: '/' },
     { name: 'Events', href: '/events' },
     ...(isAuthenticated ? [
-      user?.is_photographer 
-        ? { name: 'Dashboard', href: '/dashboard' }
+      userData?.is_photographer 
+        ? { name: 'Dashboard', href: '/photographer-dashboard' }
         : { name: 'My Gallery', href: '/my-gallery' }
     ] : [
       { name: 'Pricing', href: '/pricing' },
@@ -43,7 +46,7 @@ export default function MainLayout() {
     ...navigation,
     ...(isAuthenticated 
       ? [
-          ...(user?.is_photographer ? [{ name: 'Create Gallery', href: '/galleries/new' }] : []),
+          ...(userData?.is_photographer ? [{ name: 'Create Gallery', href: '/galleries/new' }] : []),
           { name: 'My Orders', href: '/orders' },
           { name: 'Account Settings', href: '/settings' },
           { name: 'Help & Support', href: '/support' },
@@ -112,7 +115,7 @@ export default function MainLayout() {
             <div className="hidden lg:flex lg:items-center lg:space-x-4">
               {isAuthenticated ? (
                 <>
-                  {user?.is_photographer && (
+                  {userData?.is_photographer && (
                     <Link
                       to="/galleries/new"
                       className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
@@ -121,7 +124,7 @@ export default function MainLayout() {
                       Create Gallery
                     </Link>
                   )}
-                  <UserMenu user={user} onLogout={handleLogout} />
+                  <UserMenu user={userData} onLogout={handleLogout} />
                 </>
               ) : (
                 <>

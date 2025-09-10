@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { API_ENDPOINTS } from '../config';
+import api from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -20,15 +21,21 @@ const defaultContextValue = {
   logout: () => {},
   register: async () => ({}),
   updateUser: () => {},
-  googleLogin: () => {}
+  loginWithGoogle: async () => { 
+    console.error('loginWithGoogle called before initialization');
+    return { success: false, error: 'Auth context not initialized' };
+  }
 };
 
 export const AuthProvider = ({ children }) => {
   const [state, setState] = useState({
     user: null,
     isLoading: true,
-    isAuthenticated: false
+    isAuthenticated: false,
+    error: null
   });
+  
+  const { user, isLoading, isAuthenticated, error } = state;
   
   const authCheckRef = useRef({
     hasChecked: false,
@@ -39,503 +46,474 @@ export const AuthProvider = ({ children }) => {
 
   const clearAuth = useCallback(() => {
     console.log('Clearing authentication state');
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
-    
-    // Clear any session storage that might contain auth data
-    sessionStorage.removeItem('auth');
-    
-    // Clear the auth promise
+    localStorage.removeItem('access');
+    localStorage.removeItem('refresh');
+    delete api.defaults.headers.common['Authorization'];
     authPromise = null;
-    
-    // Reset the last auth check time
     lastAuthCheck = 0;
-    
-    // Reset the auth check ref
     authCheckRef.current = { hasChecked: false, isChecking: false };
-    
-    // Reset the state
     setState({
       user: null,
       isAuthenticated: false,
       isLoading: false,
       error: null
     });
-    
-    console.log('Authentication state and tokens cleared');
   }, []);
 
-  const fetchUserData = useCallback(async (token) => {
-    if (!token) {
-      console.log('No token provided to fetchUserData');
-      clearAuth();
-      throw new Error('No authentication token available');
-    }
-
-    const now = Date.now();
-    
-    // Return existing promise if it's still valid
-    if (authPromise && now - lastAuthCheck < AUTH_CACHE_TIME) {
-      console.log('Returning cached auth promise');
-      return authPromise;
-    }
-    
-    console.log('Creating new auth promise');
-    
-    // Create a new promise
-    authPromise = (async () => {
-      try {
-        console.log('Fetching user data from server');
-        const response = await fetch(API_ENDPOINTS.CURRENT_USER, {
-          method: 'GET',
-          headers: { 
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-store, no-cache, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0'
-          },
-          credentials: 'include'
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          let errorData;
-          try {
-            errorData = JSON.parse(errorText);
-          } catch (e) {
-            errorData = { detail: errorText };
-          }
-          console.error('Failed to fetch user data:', response.status, errorData);
-          throw new Error(errorData.detail || 'Authentication failed');
-        }
-
-        const userData = await response.json();
-        console.log('Successfully fetched user data:', userData);
-        lastAuthCheck = Date.now();
-        return userData;
-      } catch (error) {
-        console.error('Error in fetchUserData:', error);
-        clearAuth();
-        throw error;
+  const handleGoogleAuthSuccess = useCallback((data) => {
+    console.log('Google auth success data:', data);
+    if (data.access && data.user) {
+      localStorage.setItem('access', data.access);
+      if (data.refresh) {
+        localStorage.setItem('refresh', data.refresh);
       }
-    })();
-    
-    return authPromise;
-  }, [clearAuth]);
-
-  // Memoized checkAuth function with deduplication and caching
-  const checkAuth = useCallback(async (force = false) => {
-    const now = Date.now();
-    
-    // Skip if already checked recently and not forced
-    if (!force && authCheckRef.current.hasChecked && (now - lastAuthCheck < AUTH_CACHE_TIME)) {
-      console.log('Skipping auth check - recently checked');
+      
+      // Ensure user object has is_photographer property
+      const userWithRole = {
+        ...data.user,
+        is_photographer: data.user.is_photographer || false
+      };
+      
+      console.log('Setting user state with:', userWithRole);
+      
+      const userState = {
+        user: userWithRole,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null
+      };
+      
+      setState(userState);
       return { 
-        fromCache: true, 
         success: true, 
-        user: state.user 
+        token: data.access,
+        refreshToken: data.refresh,
+        isNewUser: data.is_new_user || false
       };
     }
+    throw new Error('Incomplete authentication data received from server');
+  }, []);
 
-    // If we're already checking, return the existing promise
-    if (isCheckingAuth && !force) {
-      console.log('Auth check already in progress, returning existing promise');
-      return authPromise || Promise.resolve({ 
-        success: false, 
-        error: 'Auth check in progress' 
-      });
+  // Set up API defaults on mount
+  useEffect(() => {
+    const token = localStorage.getItem('access');
+    if (token) {
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
+  }, []);
 
-    // Mark as checking to prevent concurrent requests
-    isCheckingAuth = true;
-    const currentCheckId = Date.now();
-    
-    // Store the promise immediately so other calls can await it
-    authPromise = (async () => {
-      try {
-        authCheckRef.current = { 
-          hasChecked: false, 
-          isChecking: true, 
-          checkId: currentCheckId,
-          timestamp: now
-        };
-        
-        const token = localStorage.getItem('token');
-        
-        // If no token, clear auth state and return
-        if (!token) {
-          console.log('No token found in localStorage');
-          clearAuth();
-          return { 
-            success: false, 
-            error: 'No token found',
-            fromCache: false
-          };
-        }
-
-        try {
-          console.log('Fetching user data with token:', token.substring(0, 10) + '...');
-          const userData = await fetchUserData(token);
-          
-          // Only update state if this is still the most recent check
-          if (!authCheckRef.current || authCheckRef.current.checkId !== currentCheckId) {
-            console.log('Skipping outdated auth check');
-            return { 
-              success: false, 
-              error: 'Check outdated',
-              fromCache: false
-            };
-          }
-          
-          // If we got here, the token is valid
-          console.log('Updating auth state with user data');
-          const user = {
-            id: userData.id,
-            name: userData.full_name || userData.email,
-            email: userData.email,
-            is_photographer: userData.is_photographer || false,
-            is_staff: userData.is_staff || false,
-            is_superuser: userData.is_superuser || false,
-            avatar: userData.avatar,
-            token: token // Store the token in the user object for easy access
-          };
-          
-          const newState = {
-            user,
-            isAuthenticated: true,
-            isLoading: false,
-            error: null
-          };
-          
-          setState(newState);
-          lastAuthCheck = Date.now();
-          console.log('Auth check successful, lastAuthCheck updated to:', new Date(lastAuthCheck).toISOString());
-          
-          return { 
-            success: true, 
-            user,
-            fromCache: false
-          };
-        } catch (error) {
-          console.error('Failed to fetch user data:', error);
-          // If we have a token but failed to fetch user data, the token might be invalid
-          if (authCheckRef.current?.checkId === currentCheckId) {
-            console.log('Clearing auth due to fetch error');
-            clearAuth();
-            const errorState = {
-              isAuthenticated: false,
-              user: null,
-              isLoading: false,
-              error: 'Session expired. Please log in again.'
-            };
-            setState(errorState);
-            return { 
-              success: false, 
-              error: error.message, 
-              state: errorState,
-              fromCache: false
-            };
-          }
-          throw error;
-        }
-      } catch (error) {
-        console.error('Auth check failed:', error);
-        // Don't clear auth here as it's already handled in the inner catch
-        throw error;
-      } finally {
-        if (authCheckRef.current?.checkId === currentCheckId) {
-          authCheckRef.current = { 
-            hasChecked: true, 
-            isChecking: false, 
-            lastCheck: Date.now() 
-          };
-        }
-        isCheckingAuth = false;
-      }
-    })();
-
-    return authPromise;
-  }, [clearAuth]);
-
-  // Check auth status on mount and clean up on unmount
+  // Load user on mount and handle redirection
   useEffect(() => {
     let isMounted = true;
     let timeoutId = null;
-    
-    const checkInitialAuth = async () => {
+
+    const loadUser = async () => {
       if (!isMounted) return;
       
-      const token = localStorage.getItem('token');
-      
-      // If no token, no need to check auth
-      if (!token) {
-        console.log('No token found, skipping initial auth check');
-        if (isMounted) {
-          setState(prev => ({
-            ...prev,
-            isLoading: false,
-            isAuthenticated: false,
-            user: null
-          }));
-        }
-        return;
-      }
-      
-      // If we're already checking, don't start another check
-      if (authCheckRef.current.isChecking) {
-        console.log('Auth check already in progress, skipping duplicate check');
-        return;
-      }
-      
-      // Add a small delay to prevent rapid-fire requests on mount
-      // This helps with React's double mount in development mode
-      timeoutId = setTimeout(async () => {
-        if (!isMounted) return;
-        
-        try {
-          console.log('Performing initial auth check');
-          const result = await checkAuth();
-          
+      try {
+        const token = localStorage.getItem('access');
+        if (token) {
+          const response = await api.get('/api/accounts/me/');
           if (!isMounted) return;
           
-          if (result?.fromCache) {
-            console.log('Used cached auth check result');
-            return;
-          }
+          const userData = response.data;
+          setState(prev => ({
+            ...prev,
+            user: userData,
+            isAuthenticated: true,
+            isLoading: false
+          }));
           
-          if (result?.success) {
-            console.log('Initial auth check completed successfully');
-            // Ensure the state is properly updated with the user data
-            if (isMounted) {
-              setState(prev => ({
-                ...prev,
-                isLoading: false,
-                isAuthenticated: true,
-                user: result.user,
-                error: null
-              }));
-            }
-          } else if (result?.error) {
-            console.error('Initial auth check failed:', result.error);
-            if (isMounted) {
-              setState(prev => ({
-                ...prev,
-                isLoading: false,
-                isAuthenticated: false,
-                user: null,
-                error: result.error === 'No token found' 
-                  ? 'Please log in to continue' 
-                  : 'Session expired. Please log in again.'
-              }));
-              // Clear invalid token
-              localStorage.removeItem('token');
+          // Only handle redirection if we're on the login page
+          if (window.location.pathname === '/login') {
+            if (userData.is_photographer) {
+              navigate('/dashboard');
+            } else if (userData.is_staff || userData.is_superuser) {
+              navigate('/admin');
+            } else {
+              navigate('/my-gallery');
             }
           }
-        } catch (error) {
-          console.error('Unexpected error during initial auth check:', error);
-          if (isMounted) {
-            setState(prev => ({
-              ...prev,
-              isLoading: false,
-              isAuthenticated: false,
-              user: null,
-              error: 'Authentication error. Please log in again.'
-            }));
-            // Clear potentially invalid token
-            localStorage.removeItem('token');
-          }
+        } else if (isMounted) {
+          setState(prev => ({ ...prev, user: null, isAuthenticated: false, isLoading: false }));
         }
-      }, 150); // Small delay to allow React to settle
+      } catch (err) {
+        console.error('Failed to load user', err);
+        if (err.response?.status === 401) {
+          clearAuth();
+        }
+        if (isMounted) {
+          setState(prev => ({ ...prev, isLoading: false, error: 'Failed to load user' }));
+        }
+      }
     };
     
-    // Always run the initial check if we have a token
-    if (token) {
-      checkInitialAuth();
-    } else {
-      // No token, set loading to false immediately
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        isAuthenticated: false,
-        user: null
-      }));
-    }
+    // Debounce the loadUser function to prevent rapid successive calls
+    const debouncedLoadUser = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(loadUser, 100);
+    };
+    
+    // Initial load
+    debouncedLoadUser();
+    
+    // Set up a listener for storage events to handle login/logout from other tabs
+    const handleStorageChange = (e) => {
+      if (e.key === 'access') {
+        if (e.newValue) {
+          api.defaults.headers.common['Authorization'] = `Bearer ${e.newValue}`;
+          debouncedLoadUser();
+        } else {
+          delete api.defaults.headers.common['Authorization'];
+          setState(prev => ({ ...prev, user: null, isAuthenticated: false }));
+        }
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
     
     // Cleanup function
     return () => {
       isMounted = false;
       if (timeoutId) clearTimeout(timeoutId);
+      window.removeEventListener('storage', handleStorageChange);
     };
-  }, [checkAuth]);
+  }, [clearAuth, navigate]);
 
-  const login = useCallback(async (email, password, isPhotographer = false) => {
+  // Login with email/password
+  const login = useCallback(async (email, password) => {
     try {
-      const response = await fetch(`${API_ENDPOINTS.AUTH.LOGIN}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, is_photographer: isPhotographer }),
-        credentials: 'include'
+      setState(prev => ({ ...prev, isLoading: true, error: null }));
+      
+      // Get authentication tokens
+      const tokenResponse = await api.post('/api/accounts/token/', {
+        email,
+        password,
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail || 'Login failed');
-      }
-
+      
+      const { access, refresh } = tokenResponse.data;
+      
       // Store tokens
-      localStorage.setItem('access_token', data.access);
-      if (data.refresh) {
-        localStorage.setItem('refresh_token', data.refresh);
-      }
-
-      // Get user data
-      const userResponse = await fetch(API_ENDPOINTS.USER.ME, {
-        headers: {
-          'Authorization': `Bearer ${data.access}`,
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include'
-      });
-
-      if (!userResponse.ok) {
-        throw new Error('Failed to fetch user data');
-      }
-
-      const userData = await userResponse.json();
-
+      localStorage.setItem('access', access);
+      localStorage.setItem('refresh', refresh);
+      
+      // Set auth header
+      api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
+      
+      // Fetch user data
+      const userResponse = await api.get('api/accounts/me/');
+      const userData = userResponse.data;
+      
+      // Update user state
       setState({
         user: userData,
         isAuthenticated: true,
-        isLoading: false
+        isLoading: false,
+        error: null
       });
-
+      
+      // Redirect to gallery page after successful login
+      navigate('/my-gallery');
+      
       return { success: true, user: userData };
-    } catch (error) {
-      console.error('Login error:', error);
-      setState(prev => ({ ...prev, isLoading: false }));
-      return { success: false, error: error.message };
+    } catch (err) {
+      console.error('Login failed', err);
+      const errorMessage = err.response?.data?.detail || 'Login failed';
+      setState(prev => ({ ...prev, isLoading: false, error: errorMessage }));
+      return { success: false, error: errorMessage };
     }
   }, []);
 
-  const googleLogin = useCallback(async (userData) => {
-    try {
-      setState({
-        user: userData,
-        isAuthenticated: true,
-        isLoading: false
-      });
-      return { success: true, user: userData };
-    } catch (error) {
-      console.error('Google login error:', error);
-      setState(prev => ({ ...prev, isLoading: false }));
-      return { success: false, error: error.message };
-    }
-  }, []);
-
+  // Register
   const register = useCallback(async (userData) => {
     try {
-      setState(prev => ({ ...prev, isLoading: true }));
+      setState(prev => ({ ...prev, isLoading: true, error: null }));
       
+      // Get CSRF token
+      await api.get('/accounts/csrf/');
+      
+      // Prepare registration data
       const requestData = {
         email: userData.email,
-        full_name: userData.name,
+        full_name: userData.name,  
         password: userData.password,
-        confirm_password: userData.password,
+        confirm_password: userData.password,  
         is_photographer: userData.isPhotographer || false
       };
-
-      const response = await fetch(API_ENDPOINTS.REGISTER, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData)
-      });
-  
-      const data = await response.json();
       
-      if (response.ok) {
-        localStorage.setItem('access_token', data.access);
+      // Make the registration request
+      const response = await api.post('/accounts/register/', requestData);
+      
+      // If registration was successful, log the user in
+      if (response.data && response.data.access) {
+        const { access, refresh } = response.data;
+        
+        // Store tokens
+        localStorage.setItem('access', access);
+        localStorage.setItem('refresh', refresh);
+        
+        // Set auth header
+        api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
+        
+        // Get user data
+        const userResponse = await api.get('/api/accounts/me/');
+        const userData = userResponse.data;
+        
+        // Update user state
         setState({
-          user: {
-            id: data.user.id,
-            name: data.user.full_name || data.user.email,
-            email: data.user.email,
-            isPhotographer: data.user.is_photographer || false,
-            avatar: data.user.avatar
-          },
+          user: userData,
           isAuthenticated: true,
-          isLoading: false
+          isLoading: false,
+          error: null
         });
-        // Return success and the full response data
-        return { 
-          success: true, 
-          data: data,
-          message: data.message || 'Registration successful!',
-          user: data.user
-        };
-      } else {
-        setState(prev => ({ ...prev, isLoading: false }));
-        return { 
-          success: false, 
-          error: data.detail || data.message || 'Registration failed',
-          data: data
-        };
+        
+        return { success: true, user: userData };
       }
-    } catch (error) {
-      console.error('Registration error:', error);
-      setState(prev => ({ ...prev, isLoading: false }));
-      return { 
-        success: false, 
-        error: 'An error occurred during registration. Please try again.' 
-      };
+      
+      throw new Error('Registration successful but no access token received');
+    } catch (err) {
+      console.error('Registration failed', err);
+      const errorMessage = err.response?.data?.detail || 'Registration failed';
+      setState(prev => ({ ...prev, isLoading: false, error: errorMessage }));
+      return { success: false, error: errorMessage };
     }
   }, []);
 
+  // Get CSRF token from cookies
+  const getCSRFToken = () => {
+    const cookieValue = document.cookie
+      .split('; ')
+      .find(row => row.startsWith('csrftoken='))
+      ?.split('=')[1];
+    return cookieValue || '';
+  };
+
+  // Handle Google OAuth login/signup
+  const loginWithGoogle = useCallback(async (tokenResponse) => {
+    try {
+      console.log('Initiating Google login with token response:', tokenResponse);
+      setState(prev => ({ ...prev, isLoading: true, error: null }));
+      
+      // Get CSRF token
+      const csrfToken = getCSRFToken();
+      if (!csrfToken) {
+        console.warn('CSRF token not found. Authentication might fail.');
+      }
+      
+      // If we have an ID token (from the Google Sign-In button)
+      if (tokenResponse.credential) {
+        console.log('Using ID token from credential');
+        const response = await fetch(API_ENDPOINTS.GOOGLE_LOGIN, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRFToken': csrfToken
+          },
+          body: JSON.stringify({
+            id_token: tokenResponse.credential
+          }),
+          credentials: 'include'
+        });
+
+        if (response.status === 403) {
+          // If CSRF validation failed, try to get a new CSRF token and retry
+          const newCsrfToken = await fetch('/api/csrf/', {
+            credentials: 'include'
+          }).then(res => {
+            const token = getCSRFToken();
+            if (!token) throw new Error('Failed to get CSRF token');
+            return token;
+          });
+          
+          // Retry with new CSRF token
+          const retryResponse = await fetch(API_ENDPOINTS.GOOGLE_LOGIN, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'X-CSRFToken': newCsrfToken
+            },
+            body: JSON.stringify({
+              id_token: tokenResponse.credential
+            }),
+            credentials: 'include'
+          });
+          
+          if (!retryResponse.ok) {
+            const errorData = await retryResponse.json().catch(() => ({}));
+            console.error('Google login API error with ID token (after CSRF retry):', errorData);
+            throw new Error(errorData.detail || 'Google authentication failed after CSRF retry');
+          }
+          
+          const data = await retryResponse.json();
+          console.log('Google login successful with ID token (after CSRF retry)');
+          return handleGoogleAuthSuccess(data);
+        }
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error('Google login API error with ID token:', errorData);
+          throw new Error(errorData.detail || 'Google authentication failed');
+        }
+
+        const data = await response.json();
+        console.log('Google login successful with ID token');
+        return handleGoogleAuthSuccess(data);
+      }
+      
+      // If we have an authorization code (from the @react-oauth/google flow)
+      if (tokenResponse.code) {
+        console.log('Sending authorization code to backend for token exchange');
+        
+        // Get CSRF token
+        const csrfToken = getCSRFToken();
+        if (!csrfToken) {
+          console.warn('CSRF token not found. Authentication might fail.');
+        }
+        
+        // Send the authorization code to our backend to handle the token exchange
+        const response = await fetch(API_ENDPOINTS.GOOGLE_LOGIN, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRFToken': csrfToken
+          },
+          body: JSON.stringify({
+            code: tokenResponse.code,
+            redirect_uri: window.location.origin + '/login'
+          }),
+          credentials: 'include'
+        });
+
+        if (response.status === 403) {
+          // If CSRF validation failed, try to get a new CSRF token and retry
+          const newCsrfToken = await fetch('/api/csrf/', {
+            credentials: 'include'
+          }).then(res => {
+            const token = getCSRFToken();
+            if (!token) throw new Error('Failed to get CSRF token');
+            return token;
+          });
+          
+          // Retry with new CSRF token
+          const retryResponse = await fetch(API_ENDPOINTS.GOOGLE_LOGIN, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'X-CSRFToken': newCsrfToken
+            },
+            body: JSON.stringify({
+              code: tokenResponse.code,
+              redirect_uri: window.location.origin + '/login'
+            }),
+            credentials: 'include'
+          });
+          
+          if (!retryResponse.ok) {
+            const errorData = await retryResponse.json().catch(() => ({}));
+            console.error('Google login API error (after CSRF retry):', errorData);
+            throw new Error(errorData.detail || 'Google authentication failed after CSRF retry');
+          }
+          
+          const data = await retryResponse.json();
+          console.log('Google login successful with access token (after CSRF retry)');
+          return handleGoogleAuthSuccess(data);
+        }
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error('Google login API error:', errorData);
+          throw new Error(errorData.detail || 'Google authentication failed');
+        }
+
+        const data = await response.json();
+        console.log('Google login successful with access token');
+        return handleGoogleAuthSuccess(data);
+      }
+      
+      throw new Error('No valid authentication data received from Google');
+    } catch (error) {
+      console.error('Google login error:', error);
+      const errorMessage = error.response?.data?.detail || error.message || 'Google authentication failed. Please try again.';
+      const errorState = {
+        isAuthenticated: false,
+        user: null,
+        isLoading: false,
+        error: errorMessage
+      };
+      setState(errorState);
+      return { 
+        success: false, 
+        error: errorMessage,
+        state: errorState
+      };
+    }
+  }, [handleGoogleAuthSuccess]);
+
+  // Logout
   const logout = useCallback(() => {
     clearAuth();
     navigate('/');
   }, [clearAuth, navigate]);
 
+  // Update user data
   const updateUser = useCallback((userData) => {
-    setState(prev => {
-      const currentToken = prev.user?.token || localStorage.getItem('access_token');
-      if (!currentToken) {
-        console.warn('No token found when updating user data');
-        return prev;
-      }
-      
-      return {
-        ...prev,
-        user: {
-          ...prev.user,
-          ...userData,
-          // Always include the current token
-          token: currentToken
-        }
-      };
-    });
+    setState(prev => ({
+      ...prev,
+      user: { ...prev.user, ...userData }
+    }));
   }, []);
 
-  useEffect(() => {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-      checkAuth();
-    } else {
-      setState(prev => ({ ...prev, isLoading: false }));
+  // Social login (for Google OAuth)
+  const socialLogin = useCallback(async (provider, accessToken) => {
+    try {
+      setState(prev => ({ ...prev, isLoading: true, error: null }));
+      
+      const response = await api.post(`/accounts/${provider}/`, {
+        access_token: accessToken,
+      });
+      
+      const { access, refresh, user: userData } = response.data;
+      
+      // Store tokens and set auth header
+      localStorage.setItem('access', access);
+      localStorage.setItem('refresh', refresh);
+      api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
+      
+      // Update user state
+      setState({
+        user: userData,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null
+      });
+      
+      return { success: true };
+    } catch (err) {
+      console.error('Social login failed', err);
+      const errorMessage = err.response?.data?.detail || 'Social login failed';
+      setState(prev => ({ ...prev, isLoading: false, error: errorMessage }));
+      return { success: false, error: errorMessage };
     }
-  }, [checkAuth]);
+  }, []);
 
+  // Provide the context value
   const contextValue = useMemo(() => ({
     ...state,
+    user: state.user,
+    isAuthenticated: state.isAuthenticated,
+    isLoading: state.isLoading,
+    error: state.error,
     login,
     logout,
     register,
     updateUser,
-    googleLogin
-  }), [state, login, logout, register, updateUser, googleLogin]);
+    loginWithGoogle,
+    socialLogin
+  }), [state, login, logout, register, updateUser, loginWithGoogle, socialLogin]);
 
   return (
     <AuthContext.Provider value={contextValue}>
@@ -552,4 +530,4 @@ export const useAuth = () => {
   return context;
 };
 
-export default AuthContext; 
+export default AuthContext;

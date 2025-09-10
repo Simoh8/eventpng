@@ -340,16 +340,9 @@ export default function RegisterPage() {
             </div>
 
             <div className="mt-6">
-              <GoogleLoginButton
-                onSuccess={(response) => {
-                  console.log('Google login success:', response);
-                  // Handle Google signup success
-                }}
-                onError={(error) => {
-                  console.error('Google login error:', error);
-                  toast.error('Google sign up failed. Please try again.');
-                }}
+              <GoogleLoginButton 
                 text="Sign up with Google"
+                isSignUp={true}
               />
             </div>
 

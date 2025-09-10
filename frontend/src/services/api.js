@@ -3,14 +3,15 @@ import axios from 'axios';
 // Ensure the API base URL ends with /api
 const API_BASE_URL = process.env.REACT_APP_API_URL 
   ? process.env.REACT_APP_API_URL.endsWith('/') 
-    ? `${process.env.REACT_APP_API_URL}api`
-    : `${process.env.REACT_APP_API_URL}/api`
-  : 'http://localhost:8000/api';
+    ? process.env.REACT_APP_API_URL.slice(0, -1) // Remove trailing slash
+    : process.env.REACT_APP_API_URL
+  : 'http://localhost:8000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
   },
   withCredentials: true,
 });
@@ -18,16 +19,74 @@ const api = axios.create({
 // Request interceptor to add auth token to requests
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token');
+    const token = localStorage.getItem('access');
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
     }
+    
+    // Add CSRF token for non-GET requests
+    const csrfToken = getCSRFToken();
+    if (csrfToken && config.method !== 'get') {
+      config.headers['X-CSRFToken'] = csrfToken;
+    }
+    
     return config;
   },
   (error) => {
     return Promise.reject(error);
   }
 );
+
+// Helper function to get CSRF token from cookies
+function getCSRFToken() {
+  const cookieValue = document.cookie
+    .split('; ')
+    .find(row => row.startsWith('csrftoken='))
+    ?.split('=')[1];
+  return cookieValue || '';
+}
+
+// Response interceptor to handle 401 errors
+try {
+  api.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      const originalRequest = error.config;
+      
+      // If error is 401 and we haven't tried to refresh yet
+      if (error.response?.status === 401 && !originalRequest._retry) {
+        originalRequest._retry = true;
+        
+        try {
+          const refreshToken = localStorage.getItem('refresh');
+          if (refreshToken) {
+            const response = await axios.post(
+              `${API_BASE_URL}/api/accounts/token/refresh/`,
+              { refresh: refreshToken }
+            );
+            
+            const { access } = response.data;
+            localStorage.setItem('access', access);
+            api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
+            originalRequest.headers['Authorization'] = `Bearer ${access}`;
+            
+            return api(originalRequest);
+          }
+        } catch (error) {
+          console.error('Failed to refresh token:', error);
+          // Clear auth data and redirect to login
+          localStorage.removeItem('access');
+          localStorage.removeItem('refresh');
+          window.location.href = '/login';
+        }
+      }
+      
+      return Promise.reject(error);
+    }
+  );
+} catch (e) {
+  console.error('Error setting up response interceptor:', e);
+}
 
 // Response interceptor to handle errors and token refresh
 api.interceptors.response.use(
@@ -69,13 +128,13 @@ api.interceptors.response.use(
 
 export const authAPI = {
   login: (email, password) => 
-    api.post('/accounts/token/', { email, password }),
+    api.post('/api/accounts/token/', { email, password }),
   
   refreshToken: (refresh) => 
-    api.post('/accounts/token/refresh/', { refresh }),
+    api.post('/api/accounts/token/refresh/', { refresh }),
   
   getCurrentUser: () => 
-    api.get('/accounts/me/'),
+    api.get('/api/accounts/me/'),
 };
 
 export default api;

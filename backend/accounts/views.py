@@ -1,7 +1,8 @@
 import logging
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, status, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
+import os
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model, authenticate
@@ -10,13 +11,15 @@ from django.contrib.sites.models import Site
 from allauth.socialaccount.models import SocialAccount, SocialApp
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from allauth.socialaccount.providers.oauth2.client import OAuth2Client
-import os
 import json
 import requests
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from django.middleware.csrf import get_token
 from django.http import JsonResponse, HttpResponse
+
+# Import serializers
+from . import serializers as account_serializers
 from rest_framework import permissions
 
 from . import serializers
@@ -338,6 +341,30 @@ class GoogleAuthConfigView(APIView):
             )
 
 
+class EnvTestView(APIView):
+    permission_classes = [permissions.AllowAny]
+    
+    def get(self, request):
+        from django.conf import settings
+        return Response({
+            'environment': {
+                'GOOGLE_OAUTH2_CLIENT_ID': os.getenv('GOOGLE_OAUTH2_CLIENT_ID', 'Not set'),
+                'GOOGLE_OAUTH2_SECRET': '*****' if os.getenv('GOOGLE_OAUTH2_SECRET') else 'Not set',
+            },
+            'settings': {
+                'GOOGLE_OAUTH2_CLIENT_ID': getattr(settings, 'GOOGLE_OAUTH2_CLIENT_ID', 'Not set'),
+                'DEBUG': settings.DEBUG,
+                'ALLOWED_HOSTS': settings.ALLOWED_HOSTS,
+            },
+            'socialaccount_providers': {
+                'google': {
+                    'client_id': getattr(settings, 'SOCIALACCOUNT_PROVIDERS', {}).get('google', {}).get('APP', {}).get('client_id', 'Not set'),
+                    'scopes': getattr(settings, 'SOCIALACCOUNT_PROVIDERS', {}).get('google', {}).get('SCOPE', []),
+                }
+            }
+        })
+
+
 class GoogleLogin(APIView):
     """
     View for Google OAuth2 login.
@@ -394,26 +421,20 @@ class GoogleLogin(APIView):
             # Get or create the user
             user, created = self.get_or_create_user(user_info)
             
-            # Generate tokens
+            # Return user data and tokens
+            from rest_framework_simplejwt.tokens import RefreshToken
             refresh = RefreshToken.for_user(user)
-            
-            # Prepare response data
-            user_data = UserSerializer(user).data
+            user_data = account_serializers.UserSerializer(user).data
             
             # Log successful authentication
             logger.info(f"Google OAuth login successful for user: {user.email}")
             
+            # Return response in the format expected by the frontend
             return Response({
-                'status': 'success',
-                'data': {
-                    'tokens': {
-                        'refresh': str(refresh),
-                        'access': str(refresh.access_token)
-                    },
-                    'user': user_data,
-                    'is_new_user': created
-                },
-                'message': 'Google authentication successful'
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user': user_data,
+                'is_new_user': created
             })
             
         except Exception as e:
@@ -430,44 +451,53 @@ class GoogleLogin(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-    def verify_google_token(self, id_token):
-        from google.oauth2 import id_token
-        from google.auth.transport import requests as google_requests
+    def verify_google_token(self, token):
+        """
+        Verify a Google ID token using the google-auth library.
         
-        try:
-            # Get Google client ID
-            site = Site.objects.get_current()
-            app = SocialApp.objects.get(provider='google', sites=site)
+        Args:
+            token (str): The ID token to verify
             
-            # Verify the ID token
-            user_info = id_token.verify_oauth2_token(
-                id_token,
-                google_requests.Request(),
-                app.client_id
+        Returns:
+            dict: The decoded token if verification is successful, None otherwise
+        """
+        try:
+            from google.oauth2 import id_token
+            from google.auth.transport import requests
+            
+            client_id = os.getenv('GOOGLE_OAUTH2_CLIENT_ID')
+            if not client_id:
+                logger.error("GOOGLE_OAUTH2_CLIENT_ID environment variable not set")
+                return None
+                
+            logger.debug(f"Verifying Google token with client ID: {client_id}")
+            
+            # Verify the token
+            idinfo = id_token.verify_oauth2_token(
+                token,
+                requests.Request(),
+                client_id
             )
             
-            # Check if the token is valid
-            if user_info.get('iss') not in ['accounts.google.com', 'https://accounts.google.com']:
-                raise ValueError('Invalid token issuer.')
+            # Verify the token's audience matches our client ID
+            if idinfo.get('aud') != client_id:
+                logger.warning(f"Token's audience doesn't match client ID. Expected: {client_id}, Got: {idinfo.get('aud')}")
+                return None
                 
-            # Verify the token audience
-            if user_info.get('aud') != app.client_id:
-                raise ValueError('Invalid token audience.')
+            # Check token expiration
+            from time import time
+            if idinfo.get('exp') and idinfo['exp'] < time():
+                logger.warning("Token has expired")
+                return None
                 
-            # Verify the token is not expired
-            from datetime import datetime, timezone
-            current_time = datetime.now(timezone.utc).timestamp()
-            if user_info.get('exp', 0) < current_time:
-                raise ValueError('Token has expired.')
-                
-            # Return the verified user info
-            return user_info
+            logger.info(f"Successfully verified Google token for user: {idinfo.get('email')}")
+            return idinfo
             
         except ValueError as e:
-            logger.error(f"Google token verification failed: {str(e)}")
+            logger.error(f"Invalid token: {str(e)}")
             return None
         except Exception as e:
-            logger.error(f"Error verifying Google token: {str(e)}", exc_info=True)
+            logger.exception("Error verifying Google token")
             return None
             
     def _get_unique_username(self, base_username):
@@ -484,18 +514,51 @@ class GoogleLogin(APIView):
             
         return username
     
-    def get_google_user_info(self, token):
-        """Get user info from Google using the access token."""
-        response = requests.get(
-            'https://www.googleapis.com/oauth2/v3/userinfo',
-            params={'access_token': token}
-        )
-        
-        if not response.ok:
-            raise Exception('Failed to fetch user info from Google')
+    def get_google_user_info(self, access_token):
+        try:
+            # First, try to get user info using the access token
+            headers = {'Authorization': f'Bearer {access_token}'}
+            response = requests.get(
+                'https://www.googleapis.com/oauth2/v3/userinfo',
+                headers=headers
+            )
+            response.raise_for_status()
             
-        return response.json()
-    
+            user_info = response.json()
+            
+            # Verify the token's audience matches our client ID
+            client_id = os.getenv('GOOGLE_OAUTH2_CLIENT_ID')
+            if not client_id:
+                logger.error("GOOGLE_OAUTH2_CLIENT_ID environment variable not set")
+                return None
+                
+            # Verify the token using Google's tokeninfo endpoint
+            token_info_url = f'https://oauth2.googleapis.com/tokeninfo?access_token={access_token}'
+            token_response = requests.get(token_info_url)
+            
+            if token_response.status_code == 200:
+                token_info = token_response.json()
+                if token_info.get('aud') != client_id:
+                    logger.warning(f"Google OAuth: Token's audience doesn't match client ID. Expected: {client_id}, Got: {token_info.get('aud')}")
+                    return None
+                
+                # If we have an email in the token info, make sure it matches the user info
+                if 'email' in token_info and 'email' in user_info and token_info['email'] != user_info['email']:
+                    logger.warning("Email mismatch between token info and user info")
+                    return None
+                    
+                return user_info
+            
+            logger.error(f"Failed to verify access token: {token_response.text}")
+            return None
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to fetch user info from Google: {str(e)}")
+            return None
+        except Exception as e:
+            logger.exception("Unexpected error in get_google_user_info")
+            return None
+            
     def get_or_create_user(self, user_info):
         """Get or create a user based on Google user info."""
         email = user_info.get('email')

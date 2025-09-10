@@ -1,15 +1,11 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toaster } from 'react-hot-toast';
 import { GoogleOAuthProvider } from '@react-oauth/google';
-import { AuthProvider, useAuth } from './context/AuthContext';
-
-// Import Layouts
+import { useAuth } from './context/AuthContext';
 import MainLayout from './layouts/MainLayout';
-
-// Import Pages
 import HomePage from './pages/HomePage';
 import Events from './pages/Events';
 import EventDetail from './pages/EventDetail';
@@ -41,17 +37,37 @@ const queryClient = new QueryClient({
 
 // Dashboard Redirect Component
 const DashboardRedirect = () => {
-  const { user } = useAuth();
-  return user?.is_photographer ? (
-    <Navigate to="/dashboard" replace />
-  ) : (
-    <Navigate to="/my-gallery" replace />
-  );
+  const { user, isAuthenticated, isLoading } = useAuth();
+  
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+      </div>
+    );
+  }
+  
+  // If not authenticated, redirect to login
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  // Handle nested user data structure (user.data)
+  const userData = user?.data || user || {};
+  
+  // Check if user is a photographer
+  const isPhotographer = userData?.is_photographer === true;
+  
+  const redirectPath = isPhotographer ? '/photographer-dashboard' : '/my-gallery';
+  
+  return <Navigate to={redirectPath} replace />;
 };
 
 // Protected Route Component
 const ProtectedRoute = ({ children, requiredRole }) => {
   const { isAuthenticated, user, isLoading } = useAuth();
+  
   
   // Show loading state while checking auth
   if (isLoading) {
@@ -69,10 +85,17 @@ const ProtectedRoute = ({ children, requiredRole }) => {
   
   // Check user role if required
   if (requiredRole) {
+
+    
+    // Handle nested user data structure (user.data)
+    const userData = user?.data || user || {};
+    
     const hasRequiredRole = 
-      (requiredRole === 'staff' && (user?.is_staff || user?.is_superuser)) ||
-      (requiredRole === 'photographer' && user?.is_photographer);
-      
+      (requiredRole === 'staff' && (userData?.is_staff || userData?.is_superuser)) ||
+      (requiredRole === 'photographer' && userData?.is_photographer);
+    
+    // console.log('Has required role?', hasRequiredRole, { userData });
+    
     if (!hasRequiredRole) {
       return <Navigate to="/" replace />;
     }
@@ -97,9 +120,17 @@ function AppContent() {
         
         {/* Protected Routes */}
         <Route 
+          path="photographer-dashboard" 
+          element={
+            <ProtectedRoute requiredRole="photographer">
+              <PhotographerDashboard />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
           path="dashboard" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requiredRole="photographer">
               <PhotographerDashboard />
             </ProtectedRoute>
           } 
@@ -203,74 +234,67 @@ function AppContent() {
 function App() {
   const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID || '796270989266-7vtm7rl1bedsm1e664oe6b9fn45ht0s5.apps.googleusercontent.com';
   
-  // Debug: Log the client ID being used
-  console.log('Using Google Client ID:', googleClientId);
   
   // Check if client ID is valid
   if (!googleClientId || googleClientId === 'YOUR_GOOGLE_CLIENT_ID') {
-    console.error('Invalid Google Client ID! Please check your .env file');
   }
   
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <GoogleOAuthProvider 
-          clientId={googleClientId}
-          onScriptLoadError={() => console.error('Google OAuth script failed to load')}
-          onScriptLoadSuccess={() => console.log('Google OAuth script loaded successfully')}
-        >
-          <Router>
-            <AppContent />
-          </Router>
-        </GoogleOAuthProvider>
+      <GoogleOAuthProvider 
+        clientId={googleClientId}
+        // onScriptLoadError={() => console.error('Google OAuth script failed to load')}
+        // onScriptLoadSuccess={() => console.log('Google OAuth script loaded successfully')}
+      >
+        <AppContent />
         <Toaster 
-            position="top-center"
-            toastOptions={{
+          position="top-center"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: '#363636',
+              color: '#fff',
+              padding: '16px',
+              borderRadius: '8px',
+              fontSize: '14px',
+              maxWidth: '500px',
+            },
+            success: {
               duration: 4000,
               style: {
-                background: '#363636',
+                background: '#10B981',
                 color: '#fff',
-                padding: '16px',
-                borderRadius: '8px',
-                fontSize: '14px',
-                maxWidth: '500px',
               },
-              success: {
-                duration: 4000,
-                style: {
-                  background: '#10B981',
-                  color: '#fff',
-                },
-                iconTheme: {
-                  primary: '#fff',
-                  secondary: '#10B981',
-                },
+              iconTheme: {
+                primary: '#fff',
+                secondary: '#10B981',
               },
-              error: {
-                duration: 5000,
-                style: {
-                  background: '#EF4444',
-                  color: '#fff',
-                },
-                iconTheme: {
-                  primary: '#fff',
-                  secondary: '#EF4444',
-                },
+            },
+            error: {
+              duration: 5000,
+              style: {
+                background: '#EF4444',
+                color: '#fff',
               },
-              loading: {
-                style: {
-                  background: '#3B82F6',
-                  color: '#fff',
-                },
-                iconTheme: {
-                  primary: '#fff',
-                  secondary: '#3B82F6',
-                },
+              iconTheme: {
+                primary: '#fff',
+                secondary: '#EF4444',
               },
-            }}
-          />
-          <ReactQueryDevtools initialIsOpen={false} />
-      </AuthProvider>
+            },
+            loading: {
+              style: {
+                background: '#3B82F6',
+                color: '#fff',
+              },
+              iconTheme: {
+                primary: '#fff',
+                secondary: '#3B82F6',
+              },
+            },
+          }}
+        />
+        <ReactQueryDevtools initialIsOpen={false} />
+      </GoogleOAuthProvider>
     </QueryClientProvider>
   );
 }

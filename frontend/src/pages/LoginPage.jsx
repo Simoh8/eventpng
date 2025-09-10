@@ -24,29 +24,8 @@ export default function LoginPage() {
   
   const from = location.state?.from?.pathname || '/dashboard';
   
-  const handleGoogleSuccess = async (credentialResponse) => {
-    try {
-      const decoded = jwtDecode(credentialResponse.credential);
-      const response = await api.post('/accounts/google/', {
-        token: credentialResponse.credential,
-      });
-      
-      if (response.data?.key) {
-        localStorage.setItem('access_token', response.data.key);
-        const userResponse = await api.get('/accounts/me/');
-        googleLogin(userResponse.data);
-        toast.success('Google login successful!');
-        navigate(from, { replace: true });
-      }
-    } catch (error) {
-      console.error('Google login error:', error);
-      toast.error('Failed to login with Google. Please try again.');
-    }
-  };
-  
-  const handleGoogleError = () => {
-    toast.error('Google login failed. Please try again.');
-  };
+  // Google OAuth is now handled by the GoogleLoginButton component
+  // which uses the loginWithGoogle function from AuthContext
 
   const handleSubmit = async (values, { setSubmitting, setStatus }) => {
     try {
@@ -103,8 +82,8 @@ export default function LoginPage() {
                 </p>
                 <div className="flex justify-center">
                   <GoogleLoginButton 
-                    onSuccess={handleGoogleSuccess}
-                    onError={handleGoogleError}
+                    text="Continue with Google"
+                    isSignUp={false}
                   />
                 </div>
                 <p className="mt-3 text-xs text-blue-600 text-center">

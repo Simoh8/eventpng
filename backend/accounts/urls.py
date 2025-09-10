@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
-from .views import GoogleAuthConfigView, GoogleLogin, CSRFTokenView
+from .views import GoogleAuthConfigView, GoogleLogin, CSRFTokenView, EnvTestView
 from .api_views import AccountSettingsView
 
 app_name = 'accounts'
@@ -24,6 +24,9 @@ urlpatterns = [
     
     # Google OAuth2 endpoints
     path('google/', GoogleLogin.as_view(), name='google_login'),
+    
+    # Environment test endpoint
+    path('env-test/', EnvTestView.as_view(), name='env_test'),
     
     # Add auth/me/ endpoint for frontend compatibility
     path('auth/me/', views.CurrentUserView.as_view(), name='auth_me'),
