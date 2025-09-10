@@ -2,7 +2,6 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model, authenticate
 from django.utils.translation import gettext_lazy as _
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
@@ -64,27 +63,14 @@ class UserCreateSerializer(serializers.ModelSerializer):
     )
     email = serializers.EmailField(required=True, allow_blank=False)
     full_name = serializers.CharField(required=True, allow_blank=False)
+    is_photographer = serializers.BooleanField(required=False, default=False)
     
     class Meta:
         model = User
-        fields = ('email', 'password', 'confirm_password', 'full_name', 'phone_number')
+        fields = ('email', 'password', 'confirm_password', 'full_name', 'phone_number', 'is_photographer')
         extra_kwargs = {
             'email': {'required': True, 'allow_blank': False},
             'full_name': {'required': True, 'allow_blank': False},
-        }
-    is_photographer = serializers.BooleanField(
-        required=False,
-        default=False,
-        write_only=False
-    )
-    
-    class Meta:
-        model = User
-        fields = ('email', 'full_name', 'password', 'confirm_password', 'is_photographer')
-        extra_kwargs = {
-            'password': {'write_only': True, 'min_length': 8},
-            'email': {'required': True},
-            'full_name': {'required': True}
         }
     
     def validate_password(self, value):
@@ -130,6 +116,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
             email=validated_data['email'],
             full_name=validated_data.get('full_name', ''),
             phone_number=validated_data.get('phone_number', ''),
+            is_photographer=validated_data.get('is_photographer', False),
             password=validated_data['password']
         )
         

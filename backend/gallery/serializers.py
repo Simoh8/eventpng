@@ -4,7 +4,7 @@ from accounts.serializers import UserSerializer
 
 class PublicEventSerializer(serializers.ModelSerializer):
     """Serializer for public event listing (shows all events but marks private ones)."""
-    created_by = UserSerializer(read_only=True)
+    created_by = serializers.SerializerMethodField()
     is_private = serializers.SerializerMethodField()
     cover_image = serializers.SerializerMethodField()
     
@@ -17,6 +17,17 @@ class PublicEventSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'slug', 'created_at', 'updated_at', 'cover_image']
     
+    def get_created_by(self, obj):
+        # Return a simplified user object or None if not available
+        if not obj.created_by:
+            return None
+        return {
+            'id': obj.created_by.id,
+            'email': obj.created_by.email,
+            'first_name': obj.created_by.first_name,
+            'last_name': obj.created_by.last_name
+        }
+    
     def get_is_private(self, obj):
         return obj.privacy == 'private'
         
@@ -25,8 +36,9 @@ class PublicEventSerializer(serializers.ModelSerializer):
         cover = obj.covers.first()
         if cover and cover.image:
             request = self.context.get('request')
-            if request is not None:
+            if request is not None and hasattr(request, 'build_absolute_uri'):
                 return request.build_absolute_uri(cover.image.url)
+            # Return relative URL if request is not available
             return cover.image.url
         return None
 

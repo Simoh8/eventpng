@@ -29,6 +29,19 @@ class CustomUser(AbstractUser):
     username = None
     email = models.EmailField(_('email address'), unique=True)
     full_name = models.CharField(_('full name'), max_length=255, blank=True)
+    phone_number = models.CharField(
+        _('phone number'),
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text=_('User\'s contact phone number')
+    )
+    bio = models.TextField(
+        _('bio'),
+        blank=True,
+        null=True,
+        help_text=_('A short biography or description about the user')
+    )
     is_photographer = models.BooleanField(
         _('photographer status'),
         default=False,

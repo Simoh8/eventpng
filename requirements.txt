@@ -8,6 +8,7 @@ django-filter==23.5
 djangorestframework-simplejwt==5.3.1
 dj-rest-auth==5.0.2
 django-allauth==0.60.1
+google-auth==2.23.4
 
 # Database
 mysqlclient==2.2.1
