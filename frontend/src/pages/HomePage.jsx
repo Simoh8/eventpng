@@ -1,8 +1,15 @@
-import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { Link, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import PageContainer from '../components/PageContainer';
+import { 
+  MagnifyingGlassIcon as SearchIcon,
+  FunnelIcon as FilterIcon,
+  CalendarIcon,
+  MapPinIcon,
+  LockClosedIcon,
+  ArrowRightIcon,
+} from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthContext';
 import { API_ENDPOINTS } from '../config';
 
@@ -10,16 +17,69 @@ import { API_ENDPOINTS } from '../config';
 const DEFAULT_COVER_IMAGE = 'https://images.unsplash.com/photo-1516450360452-1f389e6b5cef?auto=format&fit=crop&w=1470&q=80';
 
 const formatDate = (dateString) => {
-  const options = { year: 'numeric', month: 'long', day: 'numeric' };
+  if (!dateString) return '';
+  const options = { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  };
   return new Date(dateString).toLocaleDateString('en-US', options);
 };
 
 const HomePage = () => {
+  const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [currentEvent, setCurrentEvent] = useState(null);
+  const [pin, setPin] = useState('');
+  const [pinError, setPinError] = useState('');
   
+  // Handle event click - check if PIN is needed
+  const handleEventClick = (event) => {
+    if (event.is_private) {
+      setCurrentEvent(event);
+      setShowPinModal(true);
+    } else {
+      navigate(`/events/${event.slug || event.id}`);
+    }
+  };
+
+  // Handle PIN submission
+  const handlePinSubmit = async (e) => {
+    e.preventDefault();
+    setPinError('');
+    
+    try {
+      const response = await axios.post(
+        `${API_ENDPOINTS.EVENTS}${currentEvent.id}/verify-pin/`,
+        { pin },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          withCredentials: true
+        }
+      );
+      
+      if (response.data.valid) {
+        navigate(`/events/${currentEvent.slug || currentEvent.id}`, {
+          state: { pin }
+        });
+      } else {
+        setPinError('Invalid PIN. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error verifying PIN:', err);
+      setPinError('An error occurred. Please try again.');
+    }
+  };
+
   useEffect(() => {
     const fetchEvents = async () => {
       try {
@@ -28,20 +88,11 @@ const HomePage = () => {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'Authorization': undefined
           },
-          withCredentials: false
+          withCredentials: true
         });
-        // Transform the API response to match our expected format
-        const formattedEvents = response.data.map(event => ({
-          id: event.id,
-          title: event.name || 'Untitled Event',
-          date: event.date || new Date().toISOString(),
-          location: event.location || 'Location not specified',
-          coverImage: event.cover_image || DEFAULT_COVER_IMAGE,
-          photoCount: event.photo_count || 0,
-        }));
-        setEvents(formattedEvents);
+        
+        setEvents(response.data);
       } catch (err) {
         console.error('Error fetching events:', err);
         setError('Failed to load events. Please try again later.');
@@ -92,12 +143,9 @@ const HomePage = () => {
       <div className="relative bg-gray-900 w-full h-screen max-h-[800px]">
         {/* Animated Background */}
         <div className="absolute inset-0 overflow-hidden">
-          {/* Multiple background layers for parallax effect */}
           <div className="absolute inset-0 bg-gradient-to-br from-blue-900 via-purple-900 to-gray-900">
-            {/* Animated gradient overlay */}
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-transparent via-black/30 to-black/80"></div>
             
-            {/* Floating elements */}
             {[...Array(15)].map((_, i) => (
               <motion.div
                 key={i}
@@ -123,7 +171,6 @@ const HomePage = () => {
               />
             ))}
             
-            {/* Main background image with parallax effect */}
             <motion.div 
               className="absolute inset-0"
               initial={{ scale: 1.2, opacity: 0.3 }}
@@ -135,7 +182,7 @@ const HomePage = () => {
                 src="https://images.unsplash.com/photo-1516450360452-1f389e6b5cef?ixlib=rb-4.0.3&auto=format&fit=crop&w=1470&q=80"
                 alt="Event photography"
               />
-            </motion.div>e
+            </motion.div>
           </div>
         </div>
         
@@ -158,7 +205,6 @@ const HomePage = () => {
               Capture and cherish every moment from Kenya's most exciting events
             </motion.p>
             
-            {/* Animated CTA Button */}
             <motion.div
               className="mt-10"
               initial={{ opacity: 0, y: 20 }}
@@ -178,153 +224,221 @@ const HomePage = () => {
           </motion.div>
         </div>
       </div>
-      
 
-      {/* Featured Events */}
-      <div className="py-12 bg-white">
-        <PageContainer>
-          <div className="lg:text-center mb-12">
-            <h2 className="text-base text-primary-600 font-semibold tracking-wide uppercase">Featured Events</h2>
-            <p className="mt-2 text-3xl leading-8 font-extrabold tracking-tight text-gray-900 sm:text-4xl">
-              Latest Photo Galleries
+      {/* Events Section */}
+      <section className="py-12 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">
+              Featured Events
+            </h2>
+            <p className="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
+              Browse through our collection of recent events
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {events.length === 0 ? (
-              <div className="col-span-full text-center py-12">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <h3 className="mt-2 text-lg font-medium text-gray-900">No events found</h3>
-                <p className="mt-1 text-gray-500">Check back later for upcoming events.</p>
-              </div>
-            ) : (
-              events.map((event) => (
-              <motion.div 
-                key={event.id}
-                whileHover={{ y: -5 }}
-                className="group bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border border-gray-100"
-              >
-                <Link to={`/events/${event.id}`} className="block">
+          {events.length > 0 ? (
+            <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+              {events.map((event) => (
+                <motion.div
+                  key={event.id}
+                  className="bg-white rounded-lg shadow-lg overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1 cursor-pointer"
+                  whileHover={{ scale: 1.02 }}
+                  onClick={() => handleEventClick(event)}
+                >
                   <div className="relative h-48 overflow-hidden">
                     <img
-                      src={event.coverImage}
-                      alt={event.title}
-                      className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500"
+                      src={event.cover_image || DEFAULT_COVER_IMAGE}
+                      alt={event.name || 'Event'}
+                      className="w-full h-full object-cover"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
-                      <div className="text-white">
-                        <h3 className="font-bold text-lg">{event.title}</h3>
-                        <p className="text-sm">{event.location}</p>
+                    {event.is_private && (
+                      <div className="absolute top-2 right-2 bg-yellow-500 text-white text-xs font-semibold px-2 py-1 rounded-md flex items-center">
+                        <LockClosedIcon className="h-3 w-3 mr-1" />
+                        Private
                       </div>
-                    </div>
+                    )}
+                    {event.category && (
+                      <div className="absolute bottom-2 left-2 bg-primary-600 text-white text-xs font-semibold px-2 py-1 rounded-md">
+                        {event.category}
+                      </div>
+                    )}
                   </div>
-                  <div className="p-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-500">{formatDate(event.date)}</span>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">
-                        {event.photoCount} photos
+                  <div className="p-6">
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2 line-clamp-1">
+                      {event.name || 'Untitled Event'}
+                    </h3>
+                    <div className="flex items-center text-sm text-gray-600 mb-2">
+                      <MapPinIcon className="h-4 w-4 mr-1 text-gray-500" />
+                      <span className="line-clamp-1">{event.location || 'Location not specified'}</span>
+                    </div>
+                    <div className="flex items-center text-sm text-gray-600 mb-4">
+                      <CalendarIcon className="h-4 w-4 mr-1 text-gray-500" />
+                      <span>{formatDate(event.date)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-500">
+                        {event.photo_count || 0} photos
                       </span>
+                      <button className="text-primary-600 hover:text-primary-800 font-medium text-sm flex items-center">
+                        View Event
+                        <ArrowRightIcon className="h-4 w-4 ml-1" />
+                      </button>
                     </div>
                   </div>
-                </Link>
-              </motion.div>
-            )))}
-          </div>
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <p className="text-gray-500">No upcoming events at the moment. Check back soon!</p>
+            </div>
+          )}
+        </div>
+      </section>
 
-          <div className="mt-12 text-center">
-            <Link
-              to="/events"
-              className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-            >
-              View All Events
-              <svg className="ml-2 -mr-1 w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </Link>
-          </div>
-        </PageContainer>
-      </div>
-
-      {/* How It Works */}
-      <div className="bg-gray-50 py-16">
-        <PageContainer>
-          <div className="lg:text-center mb-12">
-            <h2 className="text-base text-primary-600 font-semibold tracking-wide uppercase">How It Works</h2>
-            <p className="mt-2 text-3xl leading-8 font-extrabold tracking-tight text-gray-900 sm:text-4xl">
-              Find and purchase your photos in 3 simple steps
+      {/* How It Works Section */}
+      <section className="py-16 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">
+              How It Works
+            </h2>
+            <p className="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
+              Get started in just a few simple steps
             </p>
           </div>
-
-          <div className="mt-10">
-            <div className="space-y-10 md:space-y-0 md:grid md:grid-cols-3 md:gap-x-8 md:gap-y-10">
-              <div className="relative">
-                <div className="absolute flex items-center justify-center h-12 w-12 rounded-md bg-primary-500 text-white text-xl font-bold">
-                  1
-                </div>
-                <div className="ml-16">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">Find Your Event</h3>
-                  <p className="mt-2 text-base text-gray-500">Browse our collection of events and select the one you attended.</p>
-                </div>
+          
+          <div className="space-y-10 md:space-y-0 md:grid md:grid-cols-3 md:gap-x-8 md:gap-y-10">
+            <div className="relative">
+              <div className="absolute flex items-center justify-center h-12 w-12 rounded-md bg-primary-500 text-white text-xl font-bold">
+                1
               </div>
-
-              <div className="relative">
-                <div className="absolute flex items-center justify-center h-12 w-12 rounded-md bg-primary-500 text-white text-xl font-bold">
-                  2
-                </div>
-                <div className="ml-16">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">Browse Photos</h3>
-                  <p className="mt-2 text-base text-gray-500">View all photos from the event and find yourself or your favorite moments.</p>
-                </div>
+              <div className="ml-16">
+                <h3 className="text-lg leading-6 font-medium text-gray-900">Find Your Event</h3>
+                <p className="mt-2 text-base text-gray-500">Browse our collection of events and select the one you attended.</p>
               </div>
+            </div>
 
-              <div className="relative">
-                <div className="absolute flex items-center justify-center h-12 w-12 rounded-md bg-primary-500 text-white text-xl font-bold">
-                  3
-                </div>
-                <div className="ml-16">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">Download & Share</h3>
-                  <p className="mt-2 text-base text-gray-500">Purchase and download high-resolution photos to keep forever.</p>
-                </div>
+            <div className="relative">
+              <div className="absolute flex items-center justify-center h-12 w-12 rounded-md bg-primary-500 text-white text-xl font-bold">
+                2
+              </div>
+              <div className="ml-16">
+                <h3 className="text-lg leading-6 font-medium text-gray-900">Browse Photos</h3>
+                <p className="mt-2 text-base text-gray-500">View all photos from the event and find yourself or your favorite moments.</p>
+              </div>
+            </div>
+
+            <div className="relative">
+              <div className="absolute flex items-center justify-center h-12 w-12 rounded-md bg-primary-500 text-white text-xl font-bold">
+                3
+              </div>
+              <div className="ml-16">
+                <h3 className="text-lg leading-6 font-medium text-gray-900">Download & Share</h3>
+                <p className="mt-2 text-base text-gray-500">Download your favorite photos and share them with friends and family.</p>
               </div>
             </div>
           </div>
-        </PageContainer>
-      </div>
+        </div>
+      </section>
 
       {/* CTA Section */}
-      <div className="bg-primary-600">
-        <PageContainer className="py-12">
-          <div className="lg:flex lg:items-center lg:justify-between">
-            <h2 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-              <span className="block">Ready to get started?</span>
-              <span className="block text-primary-100">Start exploring events today.</span>
-            </h2>
-            <div className="mt-8 flex lg:mt-0 lg:flex-shrink-0">
-              <div className="inline-flex rounded-md shadow">
-                <Link
-                  to="/events"
-                  className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                >
-                  Browse Events
-                </Link>
-              </div>
-              <div className="ml-3 inline-flex rounded-md shadow">
-                <Link
-                  to="/register"
-                  className="inline-flex items-center justify-center px-5 py-3 border border-transparent text-base font-medium rounded-md text-primary-600 bg-white hover:bg-gray-50"
-                >
-                  Sign up free
-                </Link>
-              </div>
+      <section className="bg-primary-600">
+        <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:py-16 lg:px-8 lg:flex lg:items-center lg:justify-between">
+          <h2 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+            <span className="block">Ready to find your photos?</span>
+            <span className="block text-primary-200">Start browsing events now.</span>
+          </h2>
+          <div className="mt-8 flex lg:mt-0 lg:flex-shrink-0">
+            <div className="inline-flex rounded-md shadow">
+              <Link
+                to="/events"
+                className="inline-flex items-center justify-center px-5 py-3 border border-transparent text-base font-medium rounded-md text-primary-600 bg-white hover:bg-primary-50"
+              >
+                Browse Events
+              </Link>
+            </div>
+            <div className="ml-3 inline-flex rounded-md shadow">
+              <Link
+                to="/about"
+                className="inline-flex items-center justify-center px-5 py-3 border border-transparent text-base font-medium rounded-md text-white bg-primary-700 hover:bg-primary-800"
+              >
+                Learn More
+              </Link>
             </div>
           </div>
-        </PageContainer>
-      </div>
-      </div>
+        </div>
+      </section>
 
+      {/* PIN Modal */}
+      <AnimatePresence>
+        {showPinModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowPinModal(false)}
+          >
+            <motion.div 
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -20, opacity: 0 }}
+              className="bg-white rounded-lg p-6 w-full max-w-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-medium text-gray-900 mb-4">
+                <LockClosedIcon className="h-5 w-5 text-yellow-500 inline-block mr-2" />
+                Private Event
+              </h3>
+              <p className="text-gray-600 mb-4">
+                This is a private event. Please enter the PIN to continue.
+              </p>
+              <form onSubmit={handlePinSubmit}>
+                <div className="mb-4">
+                  <label htmlFor="pin" className="block text-sm font-medium text-gray-700 mb-1">
+                    Enter PIN
+                  </label>
+                  <input
+                    type="password"
+                    id="pin"
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                    placeholder="Enter event PIN"
+                    required
+                  />
+                  {pinError && (
+                    <p className="mt-1 text-sm text-red-600">{pinError}</p>
+                  )}
+                </div>
+                <div className="flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPinModal(false);
+                      setPin('');
+                      setPinError('');
+                    }}
+                    className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                  >
+                    Continue
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
-}
+};
 
 export default HomePage;
