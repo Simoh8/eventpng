@@ -31,6 +31,7 @@ const HelpAndSupportPage = () => {
   const [formData, setFormData] = useState({
     name: user?.full_name || '',
     email: user?.email || '',
+    phone_number: user?.phone_number || '',
     subject: '',
     message: ''
   });
@@ -51,18 +52,43 @@ const HelpAndSupportPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setSubmitSuccess(false);
     
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/contact/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          phone_number: formData.phone_number,
+          subject: formData.subject,
+          message: formData.message
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to send message. Please try again.');
+      }
+
       setSubmitSuccess(true);
       setFormData(prev => ({
         ...prev,
         subject: '',
         message: ''
       }));
+      
+      // Hide success message after 5 seconds
       setTimeout(() => setSubmitSuccess(false), 5000);
+      
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error submitting form:', error);
+      alert(error.message || 'An error occurred. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -139,6 +165,23 @@ const HelpAndSupportPage = () => {
                         value={formData.email}
                         onChange={handleChange}
                         className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-6">
+                    <label htmlFor="phone_number" className="block text-sm font-medium text-gray-700">
+                      Phone Number
+                    </label>
+                    <div className="mt-1">
+                      <input
+                        type="tel"
+                        name="phone_number"
+                        id="phone_number"
+                        value={formData.phone_number}
+                        onChange={handleChange}
+                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        placeholder="+254 700 000000"
                       />
                     </div>
                   </div>

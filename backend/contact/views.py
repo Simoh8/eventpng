@@ -67,7 +67,7 @@ class ContactFormView(APIView):
             from django.conf import settings
             
             current_site = get_current_site(None)
-            subject = f"[Bulk Download] New Contact Form: {contact.subject}"
+            subject = f" New Contact Form: {contact.subject}"
             
             # Create HTML email context
             context = {

@@ -41,7 +41,7 @@ const ContactForm = ({ onClose }) => {
     phone_number: '',
     country_code: '+254', // Default to Kenya's country code
     message: '',
-    subject: 'Bulk Download Inquiry' // Default subject
+    subject: 'User Inquiry' // Default subject
   });
   const [phone, setPhone] = useState('+254 '); // Initialize with default country code and space
   const [status, setStatus] = useState('idle');
@@ -143,7 +143,7 @@ const ContactForm = ({ onClose }) => {
             phone_number: '',
             country_code: '+254',
             message: '',
-            subject: 'Bulk Download Inquiry'
+            subject: ' User Inquiry'
           });
           setPhone('+254'); // Reset to default country code
         }, 2000);
@@ -352,7 +352,7 @@ const ContactForm = ({ onClose }) => {
                         className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                         value={formData.subject}
                         onChange={handleChange}
-                        placeholder="Bulk Download Inquiry"
+                        placeholder="User Inquiry"
                       />
                     </div>
                     
@@ -388,7 +388,7 @@ const ContactForm = ({ onClose }) => {
                         className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                         value={formData.message}
                         onChange={handleChange}
-                        placeholder="Tell us about your bulk download needs..."
+                        placeholder="Tell us about your download needs..."
                       />
                     </div>
                     <div className="mt-5 sm:mt-6">

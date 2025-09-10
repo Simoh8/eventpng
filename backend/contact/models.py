@@ -16,7 +16,7 @@ class ContactSubmission(models.Model):
     phone_number = models.CharField(max_length=20)
     country_code = models.CharField(max_length=10, default='+254')
     message = models.TextField()
-    subject = models.CharField(max_length=255, default='Bulk Download Inquiry')
+    subject = models.CharField(max_length=255, default='User Inquiry')
     submitted_at = models.DateTimeField(default=timezone.now)
     status = models.CharField(
         max_length=20,
