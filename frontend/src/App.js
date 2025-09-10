@@ -8,6 +8,7 @@ import MainLayout from './layouts/MainLayout';
 import HomePage from './pages/HomePage';
 import Events from './pages/Events';
 import EventDetail from './pages/EventDetail';
+import GalleryDetail from './pages/GalleryDetail';
 import PricingPage from './pages/PricingPage';
 import FaqPage from './pages/FaqPage';
 import TermsAndPrivacy from './pages/TermsAndPrivacy';
@@ -111,7 +112,8 @@ function AppContent() {
       <Route path="/" element={<MainLayout />}>
         <Route index element={<HomePage />} />
         <Route path="events" element={<Events />} />
-        <Route path="events/:id" element={<EventDetail />} />
+        <Route path="events/:slug" element={<EventDetail />} />
+        <Route path="gallery/:id" element={<GalleryDetail />} />
         <Route path="pricing" element={<PricingPage />} />
         <Route path="faq" element={<FaqPage />} />
         <Route path="terms" element={<TermsAndPrivacy />} />

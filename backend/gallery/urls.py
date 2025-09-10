@@ -19,7 +19,9 @@ urlpatterns = [
     
     # Public endpoints (no authentication required)
     path('public/galleries/', views.PublicGalleryListView.as_view(), name='public-gallery-list'),
+    path('public/galleries/<slug:slug>/', views.PublicGalleryDetailView.as_view(), name='public-gallery-detail-slug'),
     path('public/galleries/<int:pk>/', views.PublicGalleryDetailView.as_view(), name='public-gallery-detail'),
+    path('public/galleries/<int:gallery_id>/photos/', views.PublicPhotoListView.as_view(), name='public-gallery-photos'),
     path('public/photos/<int:pk>/', views.PublicPhotoDetailView.as_view(), name='public-photo-detail'),
     
     # Event endpoints

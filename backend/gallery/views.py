@@ -4,6 +4,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.db.models import Count, Q
+from django.utils import timezone
+from django.http import Http404, JsonResponse, HttpResponseForbidden, HttpResponseServerError
+from django.contrib.auth import get_user_model
 from .models import Event, Gallery, Photo, Download
 from . import serializers
 from accounts.permissions import IsOwnerOrReadOnly, IsPhotographer, IsStaffOrSuperuser
@@ -68,6 +71,20 @@ class GalleryDetailView(generics.RetrieveUpdateDestroyAPIView):
             return Gallery.objects.filter(photographer=user)
         # Regular users can only see public galleries
         return Gallery.objects.filter(is_public=True)
+    
+    def get_object(self):
+        try:
+            # First try to get the gallery using the parent's get_object
+            return super().get_object()
+        except Http404:
+            # If we get a 404, check if the gallery exists but user doesn't have access
+            queryset = self.filter_queryset(self.get_queryset())
+            obj = queryset.filter(id=self.kwargs.get('pk')).first()
+            if obj and not obj.is_public and obj.photographer != self.request.user:
+                # Gallery exists but is private and user is not the owner
+                raise Http404("This gallery is private and you don't have permission to view it.")
+            # Re-raise the original 404 if gallery doesn't exist at all
+            raise Http404("Gallery not found.")
 
 class PhotoListView(generics.ListCreateAPIView):
     """View for listing and creating photos in a gallery."""
@@ -156,17 +173,38 @@ class PublicGalleryListView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]
     
     def get_queryset(self):
-        return Gallery.objects.filter(is_public=True).annotate(
-            photo_count=Count('photos')
-        )
+        queryset = Gallery.objects.filter(is_public=True)
+        
+        # Filter by event if event_id is provided in query params
+        event_id = self.request.query_params.get('event')
+        if event_id:
+            try:
+                event_id = int(event_id)
+                queryset = queryset.filter(event_id=event_id)
+            except (ValueError, TypeError):
+                pass  # Ignore invalid event_id
+                
+        return queryset.prefetch_related('photos')
 
 class PublicGalleryDetailView(generics.RetrieveAPIView):
     """View for retrieving a public gallery (no authentication required)."""
     serializer_class = serializers.GalleryDetailSerializer
     permission_classes = [permissions.AllowAny]
+    lookup_field = 'pk'
     
     def get_queryset(self):
-        return Gallery.objects.filter(is_public=True)
+        return Gallery.objects.filter(is_public=True).prefetch_related('photos')
+    
+    def get_object(self):
+        # Check if we're looking up by slug
+        if 'slug' in self.kwargs:
+            slug = self.kwargs['slug']
+            try:
+                return self.get_queryset().get(slug=slug)
+            except Gallery.DoesNotExist:
+                raise Http404("No Gallery matches the given slug.")
+        # Default to ID-based lookup
+        return super().get_object()
 
 class PublicPhotoDetailView(generics.RetrieveAPIView):
     """View for retrieving a public photo (no authentication required)."""
@@ -175,6 +213,24 @@ class PublicPhotoDetailView(generics.RetrieveAPIView):
     
     def get_queryset(self):
         return Photo.objects.filter(is_public=True, gallery__is_public=True)
+
+
+class PublicPhotoListView(generics.ListAPIView):
+    """View for listing public photos in a gallery (no authentication required)."""
+    serializer_class = serializers.PhotoSerializer
+    permission_classes = [permissions.AllowAny]
+    pagination_class = None  # Or use PageNumberPagination with custom settings
+    
+    def get_queryset(self):
+        gallery_id = self.kwargs.get('gallery_id')
+        if not gallery_id:
+            return Photo.objects.none()
+            
+        return Photo.objects.filter(
+            gallery_id=gallery_id,
+            is_public=True,
+            gallery__is_public=True
+        ).order_by('order', 'created_at')
 
 
 class EventListView(generics.ListCreateAPIView):
@@ -214,16 +270,28 @@ class EventDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        # Return all events for photographers, but only their own for regular users
+        # Photographers can see all events, regular users only see their own
         if self.request.user.is_photographer or self.request.user.is_superuser:
-            return Event.objects.all()
-        return Event.objects.filter(created_by=self.request.user)
-        
+            return Event.objects.prefetch_related('galleries').all()
+        return Event.objects.filter(created_by=self.request.user).prefetch_related('galleries')
+    
+    def get_serializer_context(self):
+        """Add request to serializer context for permission checks."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+    
+    def get_permissions(self):
+        """
+        Only allow the event creator to update or delete the event.
+        """
+        if self.request.method in ['PUT', 'PATCH', 'DELETE']:
+            self.permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+        return super().get_permissions()
+    
     def perform_update(self, serializer):
-        # Only allow updating events created by the current user
-        if serializer.instance.created_by != self.request.user and not self.request.user.is_superuser:
-            raise exceptions.PermissionDenied("You can only update your own events.")
-        serializer.save()
+        # Ensure the created_by field can't be changed
+        serializer.save(created_by=self.request.user)
         
     def perform_destroy(self, instance):
         # Only allow deleting events created by the current user
