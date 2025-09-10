@@ -203,15 +203,27 @@ function AppContent() {
 function App() {
   const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID || '796270989266-7vtm7rl1bedsm1e664oe6b9fn45ht0s5.apps.googleusercontent.com';
   
+  // Debug: Log the client ID being used
+  console.log('Using Google Client ID:', googleClientId);
+  
+  // Check if client ID is valid
+  if (!googleClientId || googleClientId === 'YOUR_GOOGLE_CLIENT_ID') {
+    console.error('Invalid Google Client ID! Please check your .env file');
+  }
+  
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <GoogleOAuthProvider clientId={googleClientId}>
+        <GoogleOAuthProvider 
+          clientId={googleClientId}
+          onScriptLoadError={() => console.error('Google OAuth script failed to load')}
+          onScriptLoadSuccess={() => console.log('Google OAuth script loaded successfully')}
+        >
           <Router>
             <AppContent />
           </Router>
         </GoogleOAuthProvider>
-          <Toaster 
+        <Toaster 
             position="top-center"
             toastOptions={{
               duration: 4000,

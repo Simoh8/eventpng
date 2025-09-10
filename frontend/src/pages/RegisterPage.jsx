@@ -3,8 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Formik, Form, Field } from 'formik';
 import * as Yup from 'yup';
 import { useAuth } from '../context/AuthContext';
-import { ExclamationCircleIcon, ArrowPathIcon } from '@heroicons/react/20/solid';
-import toast from 'react-hot-toast';
+import { ExclamationCircleIcon, ArrowPathIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
+import { toast } from 'react-hot-toast';
+import GoogleLoginButton from '../components/GoogleLoginButton';
 
 // Validation schema
 const registerSchema = Yup.object().shape({
@@ -29,6 +30,9 @@ export default function RegisterPage() {
 
   const [isSuccess, setIsSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (values, { setSubmitting, setStatus, resetForm }) => {
     try {
@@ -123,16 +127,17 @@ export default function RegisterPage() {
                 />
               </svg>
             </div>
-            <h2 className="mt-6 text-2xl font-extrabold text-gray-900">
-              {successMessage}
-            </h2>
-            <p className="mt-2 text-sm text-gray-600">
-              Your account has been created successfully! Redirecting you to the dashboard...
+            <h2 className="mt-3 text-2xl font-medium text-gray-900">Registration Successful!</h2>
+            <p className="mt-2 text-sm text-gray-500">
+              Please check your email to verify your account before signing in.
             </p>
             <div className="mt-6">
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
-                <div className="bg-green-600 h-2.5 rounded-full animate-pulse"></div>
-              </div>
+              <Link
+                to="/login"
+                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Go to Login
+              </Link>
             </div>
           </div>
         </div>
@@ -141,209 +146,229 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Create your account
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Or{' '}
-            <Link to="/login" className="font-medium text-primary hover:text-primary-dark">
-              sign in to your existing account
-            </Link>
-          </p>
-        </div>
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          Create your account
+        </h2>
+        <p className="mt-2 text-center text-sm text-gray-600">
+          Or{' '}
+          <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+            sign in to your existing account
+          </Link>
+        </p>
+      </div>
 
-        <Formik
-          initialValues={{
-            name: '',
-            email: '',
-            password: '',
-            confirmPassword: '',
-            isPhotographer: false,
-          }}
-          validationSchema={registerSchema}
-          onSubmit={handleSubmit}
-        >
-          {({ errors, touched, isSubmitting, status }) => (
-            <Form className="mt-8 space-y-6">
-              {status?.error && (
-                <div className="rounded-md bg-red-50 p-4">
-                  <div className="flex">
-                    <div className="flex-shrink-0">
-                      <ExclamationCircleIcon className="h-5 w-5 text-red-400" aria-hidden="true" />
-                    </div>
-                    <div className="ml-3">
-                      <p className="text-sm font-medium text-red-800">{status.error}</p>
-                    </div>
-                  </div>
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+          {({ status }) => status?.error && (
+            <div className="mb-4 bg-red-50 border-l-4 border-red-400 p-4">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <ExclamationCircleIcon className="h-5 w-5 text-red-400" aria-hidden="true" />
                 </div>
-              )}
+                <div className="ml-3">
+                  <p className="text-sm text-red-700">{status.error}</p>
+                </div>
+              </div>
+            </div>
+          )}
 
-              <div className="rounded-md shadow-sm -space-y-px">
+          <Formik
+            initialValues={{
+              name: '',
+              email: '',
+              password: '',
+              confirmPassword: '',
+              isPhotographer: false,
+            }}
+            validationSchema={registerSchema}
+            onSubmit={handleSubmit}
+          >
+            {({ errors, touched, isSubmitting, values, setFieldValue }) => (
+              <Form className="space-y-6">
                 <div>
-                  <label htmlFor="name" className="sr-only">
+                  <label htmlFor="name" className="block text-sm font-medium text-gray-700">
                     Full name
                   </label>
-                  <Field
-                    id="name"
-                    name="name"
-                    type="text"
-                    autoComplete="name"
-                    className={`appearance-none rounded-none relative block w-full px-3 py-2 border ${
-                      errors.name && touched.name ? 'border-red-300' : 'border-gray-300'
-                    } placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm`}
-                    placeholder="Full name"
-                  />
+                  <div className="mt-1 relative">
+                    <Field
+                      id="name"
+                      name="name"
+                      type="text"
+                      autoComplete="name"
+                      className={`appearance-none block w-full px-3 py-2 border ${errors.name && touched.name ? 'border-red-300' : 'border-gray-300'} rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm`}
+                      placeholder="John Doe"
+                    />
+                    {errors.name && touched.name && (
+                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                        <ExclamationCircleIcon className="h-5 w-5 text-red-500" />
+                      </div>
+                    )}
+                  </div>
                   {errors.name && touched.name && (
-                    <p className="mt-1 text-sm text-red-600">{errors.name}</p>
+                    <p className="mt-2 text-sm text-red-600" id="email-error">
+                      {errors.name}
+                    </p>
                   )}
                 </div>
 
                 <div>
-                  <label htmlFor="email" className="sr-only">
+                  <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                     Email address
                   </label>
-                  <Field
-                    id="email"
-                    name="email"
-                    type="email"
-                    autoComplete="email"
-                    className={`appearance-none rounded-none relative block w-full px-3 py-2 border ${
-                      errors.email && touched.email ? 'border-red-300' : 'border-gray-300'
-                    } border-t-0 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm`}
-                    placeholder="Email address"
-                  />
+                  <div className="mt-1 relative">
+                    <Field
+                      id="email"
+                      name="email"
+                      type="email"
+                      autoComplete="email"
+                      className={`appearance-none block w-full px-3 py-2 border ${errors.email && touched.email ? 'border-red-300' : 'border-gray-300'} rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm`}
+                      placeholder="you@example.com"
+                    />
+                    {errors.email && touched.email && (
+                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                        <ExclamationCircleIcon className="h-5 w-5 text-red-500" />
+                      </div>
+                    )}
+                  </div>
                   {errors.email && touched.email && (
-                    <p className="mt-1 text-sm text-red-600">{errors.email}</p>
+                    <p className="mt-2 text-sm text-red-600" id="email-error">
+                      {errors.email}
+                    </p>
                   )}
                 </div>
 
                 <div>
-                  <label htmlFor="password" className="sr-only">
+                  <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                     Password
                   </label>
-                  <Field
-                    id="password"
-                    name="password"
-                    type="password"
-                    autoComplete="new-password"
-                    className={`appearance-none rounded-none relative block w-full px-3 py-2 border ${
-                      errors.password && touched.password ? 'border-red-300' : 'border-gray-300'
-                    } border-t-0 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm`}
-                    placeholder="Password"
-                  />
+                  <div className="mt-1 relative">
+                    <Field
+                      id="password"
+                      name="password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      className={`appearance-none block w-full px-3 py-2 border ${errors.password && touched.password ? 'border-red-300' : 'border-gray-300'} rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm pr-10`}
+                    />
+                    <button
+                      type="button"
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? (
+                        <EyeSlashIcon className="h-5 w-5 text-gray-400 hover:text-gray-500" />
+                      ) : (
+                        <EyeIcon className="h-5 w-5 text-gray-400 hover:text-gray-500" />
+                      )}
+                    </button>
+                  </div>
                   {errors.password && touched.password && (
-                    <p className="mt-1 text-sm text-red-600">{errors.password}</p>
+                    <p className="mt-2 text-sm text-red-600">{errors.password}</p>
                   )}
                 </div>
 
                 <div>
-                  <label htmlFor="confirmPassword" className="sr-only">
+                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
                     Confirm password
                   </label>
-                  <Field
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    type="password"
-                    autoComplete="new-password"
-                    className={`appearance-none rounded-none relative block w-full px-3 py-2 border ${
-                      errors.confirmPassword && touched.confirmPassword ? 'border-red-300' : 'border-gray-300'
-                    } border-t-0 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm`}
-                    placeholder="Confirm password"
-                  />
+                  <div className="mt-1 relative">
+                    <Field
+                      id="confirmPassword"
+                      name="confirmPassword"
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      className={`appearance-none block w-full px-3 py-2 border ${errors.confirmPassword && touched.confirmPassword ? 'border-red-300' : 'border-gray-300'} rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm pr-10`}
+                    />
+                    <button
+                      type="button"
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    >
+                      {showConfirmPassword ? (
+                        <EyeSlashIcon className="h-5 w-5 text-gray-400 hover:text-gray-500" />
+                      ) : (
+                        <EyeIcon className="h-5 w-5 text-gray-400 hover:text-gray-500" />
+                      )}
+                    </button>
+                  </div>
                   {errors.confirmPassword && touched.confirmPassword && (
-                    <p className="mt-1 text-sm text-red-600">{errors.confirmPassword}</p>
+                    <p className="mt-2 text-sm text-red-600">{errors.confirmPassword}</p>
                   )}
                 </div>
-              </div>
 
-              <div className="flex items-center">
-                <Field
-                  type="checkbox"
-                  id="isPhotographer"
-                  name="isPhotographer"
-                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                />
-                <label htmlFor="isPhotographer" className="ml-2 block text-sm text-gray-900">
-                  I am a photographer
-                </label>
-              </div>
-
-              <div className="relative mt-6">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-300"></div>
-                </div>
-                <div className="relative flex justify-center text-sm">
-                  <span className="px-2 bg-white text-gray-500">Or continue with</span>
-                </div>
-              </div>
-
-              <div className="mt-6 grid grid-cols-2 gap-3">
-                <div>
-                  <a
-                    href="#"
-                    className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-                  >
-                    <span className="sr-only">Sign up with Google</span>
-                    <svg className="w-5 h-5" aria-hidden="true" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z" />
-                    </svg>
-                  </a>
+                <div className="flex items-center">
+                  <Field
+                    id="isPhotographer"
+                    name="isPhotographer"
+                    type="checkbox"
+                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                  />
+                  <label htmlFor="isPhotographer" className="ml-2 block text-sm text-gray-900">
+                    I am a photographer
+                  </label>
                 </div>
 
                 <div>
-                  <a
-                    href="#"
-                    className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || isLoading}
+                    className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <span className="sr-only">Sign up with Facebook</span>
-                    <svg className="w-5 h-5" aria-hidden="true" fill="currentColor" viewBox="0 0 20 20">
-                      <path
-                        fillRule="evenodd"
-                        d="M20 10c0-5.523-4.477-10-10-10S0 4.477 0 10c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V10h2.54V7.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V10h2.773l-.443 2.89h-2.33v6.988C16.343 19.128 20 14.991 20 10z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </a>
+                    {isLoading || isSubmitting ? (
+                      <>
+                        <ArrowPathIcon className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" />
+                        Creating account...
+                      </>
+                    ) : (
+                      'Create account'
+                    )}
+                  </button>
                 </div>
-              </div>
+              </Form>
+            )}
+          </Formik>
 
-              <div className="text-sm text-center">
-                <p className="text-gray-600">
-                  By creating an account, you agree to our{' '}
-                  <a href="#" className="font-medium text-primary hover:text-primary-dark">
-                    Terms of Service
-                  </a>{' '}
-                  and{' '}
-                  <a href="#" className="font-medium text-primary hover:text-primary-dark">
-                    Privacy Policy
-                  </a>
-                  .
-                </p>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className={`group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white ${
-                    isSubmitting ? 'bg-primary/90' : 'bg-primary hover:bg-primary-dark'
-                  } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 mt-6 transition-colors duration-200 disabled:opacity-90 disabled:cursor-not-allowed`}
-                >
-                  {isSubmitting ? (
-                    <div className="flex items-center">
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      <span>Creating your account...</span>
-                    </div>
-                  ) : 'Create Account'}
-                </button>
+          <div className="mt-6">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300" />
               </div>
-            </Form>
-          )}
-        </Formik>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-white text-gray-500">Or continue with</span>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <GoogleLoginButton
+                onSuccess={(response) => {
+                  console.log('Google login success:', response);
+                  // Handle Google signup success
+                }}
+                onError={(error) => {
+                  console.error('Google login error:', error);
+                  toast.error('Google sign up failed. Please try again.');
+                }}
+                text="Sign up with Google"
+              />
+            </div>
+
+            <div className="mt-6 text-center text-sm">
+              <p className="text-gray-600">
+                By creating an account, you agree to our{' '}
+                <a href="#" className="font-medium text-indigo-600 hover:text-indigo-500">
+                  Terms of Service
+                </a>{' '}
+                and{' '}
+                <a href="#" className="font-medium text-indigo-600 hover:text-indigo-500">
+                  Privacy Policy
+                </a>
+                .
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-  )
+  );
 }
