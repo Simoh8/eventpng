@@ -19,7 +19,8 @@ const defaultContextValue = {
   login: async () => ({}),
   logout: () => {},
   register: async () => ({}),
-  updateUser: () => {}
+  updateUser: () => {},
+  googleLogin: () => {}
 };
 
 export const AuthProvider = ({ children }) => {
@@ -368,65 +369,68 @@ export const AuthProvider = ({ children }) => {
     };
   }, [checkAuth]);
 
-  const login = useCallback(async (email, password) => {
+  const login = useCallback(async (email, password, isPhotographer = false) => {
     try {
-      setState(prev => ({ ...prev, isLoading: true, error: null }));
-      
-      const response = await fetch(API_ENDPOINTS.LOGIN, {
+      const response = await fetch(`${API_ENDPOINTS.AUTH.LOGIN}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password, is_photographer: isPhotographer }),
+        credentials: 'include'
       });
 
-      const data = await response.json().catch(() => ({
-        detail: 'Invalid server response'
-      }));
+      const data = await response.json();
 
       if (!response.ok) {
-        console.error('Login failed:', response.status, data);
         throw new Error(data.detail || 'Login failed');
       }
 
-      const { access, refresh } = data;
-      
-      if (!access) {
-        throw new Error('No access token received from server');
+      // Store tokens
+      localStorage.setItem('access_token', data.access);
+      if (data.refresh) {
+        localStorage.setItem('refresh_token', data.refresh);
       }
-      
-      console.log('Login successful, storing tokens');
-      
-      // Store tokens securely
-      localStorage.setItem('token', access);
-      if (refresh) {
-        localStorage.setItem('refreshToken', refresh);
+
+      // Get user data
+      const userResponse = await fetch(API_ENDPOINTS.USER.ME, {
+        headers: {
+          'Authorization': `Bearer ${data.access}`,
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include'
+      });
+
+      if (!userResponse.ok) {
+        throw new Error('Failed to fetch user data');
       }
-      
-      // Update last auth check time
-      lastAuthCheck = Date.now();
-      
-      console.log('Verifying authentication...');
-      // Force a new auth check to update the state
-      await checkAuth(true);
-      
-      console.log('Authentication verified, login complete');
-      return { success: true };
+
+      const userData = await userResponse.json();
+
+      setState({
+        user: userData,
+        isAuthenticated: true,
+        isLoading: false
+      });
+
+      return { success: true, user: userData };
     } catch (error) {
       console.error('Login error:', error);
-      // Clear any partial auth state on error
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        isAuthenticated: false,
-        user: null,
-        error: error.message || 'Login failed. Please try again.'
-      }));
-      throw error;
-      return { 
-        success: false, 
-        error: 'An error occurred during login. Please try again.' 
-      };
+      setState(prev => ({ ...prev, isLoading: false }));
+      return { success: false, error: error.message };
+    }
+  }, []);
+
+  const googleLogin = useCallback(async (userData) => {
+    try {
+      setState({
+        user: userData,
+        isAuthenticated: true,
+        isLoading: false
+      });
+      return { success: true, user: userData };
+    } catch (error) {
+      console.error('Google login error:', error);
+      setState(prev => ({ ...prev, isLoading: false }));
+      return { success: false, error: error.message };
     }
   }, []);
 
@@ -525,16 +529,13 @@ export const AuthProvider = ({ children }) => {
   }, [checkAuth]);
 
   const contextValue = useMemo(() => ({
-    user: state.user,
-    isAuthenticated: state.isAuthenticated,
-    isLoading: state.isLoading,
-    error: state.error,
+    ...state,
     login,
-    loginWithGoogle,
     logout,
     register,
-    updateUser
-  }), [state.user, state.isAuthenticated, state.isLoading, state.error, login, loginWithGoogle, logout, register, updateUser]);
+    updateUser,
+    googleLogin
+  }), [state, login, logout, register, updateUser, googleLogin]);
 
   return (
     <AuthContext.Provider value={contextValue}>

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@react-oauth/google": "^0.11.1",
     "@greatsumini/react-facebook-login": "^2.0.1",
     "@headlessui/react": "^2.2.7",
     "@heroicons/react": "^2.2.0",
@@ -14,6 +15,7 @@
     "buffer": "^6.0.3",
     "formik": "^2.4.6",
     "framer-motion": "^12.23.12",
+    "jwt-decode": "^4.0.0",
     "process": "^0.11.10",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
