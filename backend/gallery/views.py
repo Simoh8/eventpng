@@ -285,10 +285,24 @@ class PublicPhotoDetailView(generics.RetrieveAPIView):
         return Photo.objects.filter(is_public=True, gallery__is_public=True)
 
 
+from django.core.cache import cache
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_cookie
+
 class PublicPhotoListView(generics.ListAPIView):
-    """View for listing public photos in a gallery (no authentication required)."""
+    """
+    View for listing public photos in a gallery (no authentication required).
+    Cached for 1 hour to reduce database load.
+    """
     serializer_class = serializers.PhotoSerializer
     permission_classes = [permissions.AllowAny]
+    
+    # Cache page for 1 hour (3600 seconds)
+    @method_decorator(cache_page(60 * 60))
+    @method_decorator(vary_on_cookie)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
     pagination_class = None  # Or use PageNumberPagination with custom settings
     
     def get_queryset(self):
