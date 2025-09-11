@@ -18,7 +18,7 @@ export const API_ENDPOINTS = {
   GALLERY_STATS: `${API_BASE_URL}/api/gallery/stats/`,
   RECENT_GALLERIES: `${API_BASE_URL}/api/gallery/recent/`,
   
-  // Stats endpoints
+  // Stats endpoints/api/stats/
   STATS: `${API_BASE_URL}/api/stats/`,
   
   // Google OAuth

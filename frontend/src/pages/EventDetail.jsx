@@ -36,7 +36,6 @@ const fetchEventImages = async (event, page = 1) => {
   }
 
   try {
-    // First, get the event with its galleries
     const eventResponse = await axios.get(`${API_URL}/api/gallery/public/events/${event.id}/`);
     
     if (!eventResponse.data) {

@@ -40,8 +40,14 @@ urlpatterns = [
     path('api-auth/', include('rest_framework.urls')),  # For the browsable API
     path('api/dj-rest-auth/', include('dj_rest_auth.urls')),  # For authentication endpoints
     
+    # Direct API endpoints (for backward compatibility)
+    path('api/stats/', include('gallery.urls')),  # For /api/stats/
+    
     # Health check
     path('health/', lambda request: JsonResponse({'status': 'ok'})),
+    
+    # Additional gallery endpoints
+    path('api/', include('gallery.urls')),  # For /api/gallery/...
 ]
 
 # Serve media files in development

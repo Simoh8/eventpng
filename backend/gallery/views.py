@@ -2,14 +2,74 @@ from rest_framework import generics, permissions, status, filters
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.generics import ListAPIView
 from django.shortcuts import get_object_or_404
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from django.utils import timezone
 from django.http import Http404, JsonResponse, HttpResponseForbidden, HttpResponseServerError
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
+from django.conf import settings
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
 from .models import Event, Gallery, Photo, Download
+from .serializers import GalleryListSerializer
 from . import serializers
 from accounts.permissions import IsOwnerOrReadOnly, IsPhotographer, IsStaffOrSuperuser
+
+class StatsView(APIView):
+    """
+    API endpoint that returns statistics about the platform.
+    Data is cached for 1 hour to improve performance.
+    """
+    permission_classes = [permissions.AllowAny]
+    
+    @method_decorator(cache_page(60 * 60))  # Cache for 1 hour
+    def get(self, request, format=None):
+        cache_key = 'platform_stats'
+        cached_data = cache.get(cache_key)
+        
+        if cached_data is not None:
+            return Response(cached_data)
+            
+        try:
+            # Get counts from database
+            stats = {
+                'total_photos': Photo.objects.filter(is_public=True).count(),
+                'total_galleries': Gallery.objects.filter(is_public=True).count(),
+                'total_events': Event.objects.filter(privacy='public').count(),
+                'total_photographers': get_user_model().objects.filter(
+                    is_photographer=True, is_active=True
+                ).count(),
+                'last_updated': timezone.now().isoformat()
+            }
+            
+            # Cache the result
+            cache.set(cache_key, stats, timeout=60 * 60)  # Cache for 1 hour
+            
+            return Response(stats)
+            
+        except Exception as e:
+            logger.error(f"Error fetching platform stats: {str(e)}")
+            return Response(
+                {'error': 'Failed to fetch statistics'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class RecentGalleriesView(ListAPIView):
+    """
+    API endpoint that returns recently added public galleries.
+    """
+    serializer_class = GalleryListSerializer
+    permission_classes = [permissions.AllowAny]
+    
+    def get_queryset(self):
+        return Gallery.objects.filter(
+            is_public=True,
+            is_active=True
+        ).select_related('event', 'photographer').order_by('-created_at')[:10]  # Get 10 most recent
 
 class GalleryListView(generics.ListAPIView):
     """View for listing galleries."""
@@ -124,9 +184,13 @@ class PhotoDetailView(generics.RetrieveUpdateDestroyAPIView):
     
     def get_object(self):
         queryset = self.get_queryset()
-        obj = get_object_or_404(queryset, id=self.kwargs.get('photo_id'))
-        self.check_object_permissions(self.request, obj.gallery)
-        return obj
+        photo_id = self.kwargs.get('photo_id')
+        try:
+            obj = queryset.get(id=photo_id)
+            self.check_object_permissions(self.request, obj.gallery)
+            return obj
+        except (Photo.DoesNotExist, ValueError):
+            raise Http404("Photo not found")
 
 class DownloadPhotoView(generics.CreateAPIView):
     """View for downloading a photo (records the download)."""
@@ -135,7 +199,13 @@ class DownloadPhotoView(generics.CreateAPIView):
     
     def create(self, request, *args, **kwargs):
         photo_id = self.kwargs.get('photo_id')
-        photo = get_object_or_404(Photo, id=photo_id)
+        try:
+            photo = Photo.objects.get(id=photo_id)
+        except (Photo.DoesNotExist, ValueError):
+            return Response(
+                {"detail": "Photo not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
         
         # Check if the photo is public or the user has purchased it
         if not photo.is_public:
@@ -327,19 +397,60 @@ class VerifyEventPinView(APIView):
     permission_classes = [permissions.AllowAny]
     
     def post(self, request, slug):
-        pin = request.data.get('pin')
-        if not pin:
-            return Response(
-                {'detail': 'PIN is required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        event = get_object_or_404(Event, slug=slug)
+        pin = request.data.get('pin', '')
         
-        event = get_object_or_404(Event, slug=slug, privacy='private')
+        if event.privacy == 'public':
+            return Response({'verified': True, 'event': serializers.EventSerializer(event).data})
+            
         if event.pin == pin:
-            # In a production app, you might want to set a session or JWT here
-            return Response({'valid': True, 'event': serializers.EventSerializer(event).data})
-        
+            return Response({
+                'verified': True,
+                'event': serializers.EventSerializer(event).data
+            })
+            
         return Response(
-            {'detail': 'Invalid PIN'}, 
+            {'error': 'Invalid PIN'}, 
             status=status.HTTP_403_FORBIDDEN
+        )
+
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def event_stats(request, event_id):
+    """
+    Get statistics for a specific event.
+    Returns photo count, gallery count, and photographer count for the event.
+    """
+    try:
+        event = Event.objects.get(pk=event_id)
+        
+        # Get photo count across all galleries in the event
+        photo_count = Photo.objects.filter(gallery__event=event).count()
+        
+        # Get gallery count for the event
+        gallery_count = event.galleries.count()
+        
+        # Get unique photographer count for the event
+        photographer_count = event.galleries.values('photographer').distinct().count()
+        
+        return Response({
+            'event_id': event.id,
+            'event_name': event.name,
+            'photo_count': photo_count,
+            'gallery_count': gallery_count,
+            'photographer_count': photographer_count,
+            'is_public': event.privacy == 'public',
+            'has_pin': bool(event.pin) and event.privacy == 'private'
+        })
+        
+    except Event.DoesNotExist:
+        return Response(
+            {'error': 'Event not found'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        return Response(
+            {'error': str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
