@@ -112,8 +112,20 @@ const GalleryDetail = () => {
   
   // Download single image with watermark
   const downloadImage = async (photo) => {
+    if (isDownloading) return;
+    
+    // Check if user is authenticated
+    const token = localStorage.getItem('token');
+    if (!token) {
+      // Redirect to login with a return URL
+      navigate('/login', { state: { from: window.location.pathname } });
+      toast.info('Please log in to download images');
+      return;
+    }
+    
+    setIsDownloading(true);
+    
     try {
-      setIsDownloading(true);
       const watermarkedImage = await addWatermark(photo.image);
       const link = document.createElement('a');
       link.href = watermarkedImage;
@@ -133,6 +145,15 @@ const GalleryDetail = () => {
   // Download all images as zip
   const downloadAllImages = async () => {
     if (!gallery?.photos?.length) return;
+    
+    // Check if user is authenticated
+    const token = localStorage.getItem('token');
+    if (!token) {
+      // Redirect to login with a return URL
+      navigate('/login', { state: { from: window.location.pathname } });
+      toast.info('Please log in to download images');
+      return;
+    }
     
     try {
       setIsDownloading(true);
