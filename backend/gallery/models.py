@@ -342,7 +342,7 @@ class Photo(models.Model):
                 font = ImageFont.load_default()
                 
             # Add watermark text
-            text = f" {self.gallery.photographer.username if self.gallery.photographer else 'EventPix'}"
+            text = f" {self.gallery.photographer.username if self.gallery.photographer else 'EventPNG'}"
             
             # Get text bounding box and calculate dimensions
             bbox = draw.textbbox((0, 0), text, font=font)

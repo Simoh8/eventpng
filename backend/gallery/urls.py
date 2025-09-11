@@ -34,6 +34,7 @@ urlpatterns = [
     path('events/<int:pk>/', views.EventDetailView.as_view(), name='event-detail'),
     path('public/events/', views.PublicEventListView.as_view(), name='public-event-list'),
     path('public/events/<int:pk>/', views.PublicEventDetailView.as_view(), name='public-event-detail'),
+    path('public/events/slug/<slug:slug>/', views.PublicEventBySlugView.as_view(), name='public-event-detail-by-slug'),
     path('events/<slug:slug>/verify-pin/', views.VerifyEventPinView.as_view(), name='verify-event-pin'),
     
     # Event stats endpoint

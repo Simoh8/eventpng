@@ -62,8 +62,7 @@ const GalleryDetail = () => {
     };
   }, []);
   
-  // Add watermark to image
-  const addWatermark = (imageUrl, text = '© EventPix') => {
+  const addWatermark = (imageUrl, text = '© EventPNG') => {
     return new Promise((resolve) => {
       const img = new Image();
       img.crossOrigin = 'Anonymous';
@@ -124,7 +123,7 @@ const GalleryDetail = () => {
       document.body.removeChild(link);
       toast.success('Image downloaded with watermark');
     } catch (error) {
-      console.error('Error downloading image:', error);
+      // console.error('Error downloading image:', error);
       toast.error('Failed to download image');
     } finally {
       setIsDownloading(false);

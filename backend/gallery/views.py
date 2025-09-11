@@ -520,6 +520,28 @@ class PublicEventListView(generics.ListAPIView):
         return context
 
 
+class PublicEventBySlugView(generics.RetrieveAPIView):
+    """View for retrieving a single public event by its slug with galleries and photos."""
+    serializer_class = serializers.PublicEventDetailSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_field = 'slug'
+    lookup_url_kwarg = 'slug'
+    
+    def get_queryset(self):
+        """Return only public events with their public galleries and photos."""
+        return Event.objects.filter(
+            Q(privacy='public') | 
+            Q(privacy='private', pin__isnull=True) |
+            Q(privacy='private', pin__in=self.request.session.get('verified_events', []))
+        ).prefetch_related(
+            Prefetch(
+                'galleries',
+                queryset=Gallery.objects.filter(is_public=True).select_related('photographer')
+            ),
+            'galleries__photos'
+        )
+
+
 class PublicEventDetailView(generics.RetrieveAPIView):
     """View for retrieving a single public event with its galleries and photos."""
     serializer_class = serializers.PublicEventDetailSerializer

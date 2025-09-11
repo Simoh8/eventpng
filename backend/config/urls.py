@@ -32,22 +32,16 @@ urlpatterns = [
     
     # API
     path('api/accounts/', include('accounts.urls')),  # User accounts and authentication
-    path('api/gallery/', include('gallery.urls')),
-    path('api/payments/', include('payments.urls')),
+    path('api/gallery/', include('gallery.urls')),  # Gallery endpoints
+    path('api/payments/', include('payments.urls')),  # Payment endpoints
     path('api/contact/', include('contact.urls')),  # Contact form endpoints
     
-    # API Documentation
+    # API Documentation and Authentication
     path('api-auth/', include('rest_framework.urls')),  # For the browsable API
     path('api/dj-rest-auth/', include('dj_rest_auth.urls')),  # For authentication endpoints
     
-    # Direct API endpoints (for backward compatibility)
-    path('api/stats/', include('gallery.urls')),  # For /api/stats/
-    
     # Health check
     path('health/', lambda request: JsonResponse({'status': 'ok'})),
-    
-    # Additional gallery endpoints
-    path('api/', include('gallery.urls')),  # For /api/gallery/...
 ]
 
 # Serve media files in development
