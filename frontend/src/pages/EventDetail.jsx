@@ -18,69 +18,51 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 // Helper function to fetch event details by slug
 const fetchEvent = async (slug) => {
-  const response = await axios.get(`${API_URL}/api/gallery/public/events/`);
-  // The API returns an array of events directly
-  const events = Array.isArray(response.data) ? response.data : response.data.results || [];
+  // First get the event ID from the slug
+  const eventsResponse = await axios.get(`${API_URL}/api/gallery/public/events/`);
+  const events = Array.isArray(eventsResponse.data) ? eventsResponse.data : eventsResponse.data.results || [];
   const event = events.find(event => event.slug === slug);
   
   if (!event) {
     throw new Error(`Event with slug '${slug}' not found`);
   }
-  return event;
-};
-
-// Helper function to fetch event images
-const fetchEventImages = async (event, page = 1) => {
-  if (!event?.id) {
-    throw new Error('No event ID provided');
+  
+  // Now fetch the full event details with galleries and photos
+  const eventDetailResponse = await axios.get(`${API_URL}/api/gallery/public/events/${event.id}/`);
+  
+  if (!eventDetailResponse.data) {
+    throw new Error('Event details not found');
   }
-
-  try {
-    const eventResponse = await axios.get(`${API_URL}/api/gallery/public/events/${event.id}/`);
-    
-    if (!eventResponse.data) {
-      throw new Error('Event not found');
-    }
-    
-    // Get all public galleries for this event
-    const galleriesResponse = await axios.get(`${API_URL}/api/gallery/public/galleries/`, {
-      params: { event: event.id, page, page_size: 12 }
-    });
-    
-    const galleries = galleriesResponse.data?.results || [];
-    
-    // For each gallery, fetch its photos
-    const galleryPhotos = await Promise.all(
-      galleries.map(async (gallery) => {
-        try {
-          const photosResponse = await axios.get(`${API_URL}/api/gallery/public/galleries/${gallery.id}/photos/`);
-          // Add gallery info to each photo
-          return (photosResponse.data || []).map(photo => ({
+  
+  // Process the response to match the expected format
+  const eventData = eventDetailResponse.data;
+  
+  // Flatten all photos from all galleries
+  const allPhotos = [];
+  if (eventData.galleries && Array.isArray(eventData.galleries)) {
+    eventData.galleries.forEach(gallery => {
+      if (gallery.photos && Array.isArray(gallery.photos)) {
+        gallery.photos.forEach(photo => {
+          allPhotos.push({
             ...photo,
             gallery_title: gallery.title,
             gallery_id: gallery.id
-          }));
-        } catch (error) {
-          console.error(`Error fetching photos for gallery ${gallery.id}:`, error);
-          return [];
-        }
-      })
-    );
-    
-    // Flatten the array of arrays into a single array of photos
-    const allPhotos = galleryPhotos.flat();
-    
-    // Return the data in the format expected by the component
-    return {
+          });
+        });
+      }
+    });
+  }
+  
+  // Return the combined data
+  return {
+    ...eventData,
+    photos: {
       results: allPhotos,
       count: allPhotos.length,
-      next: galleriesResponse.data.next,
-      previous: galleriesResponse.data.previous
-    };
-  } catch (error) {
-    console.error('Error fetching event images:', error);
-    return { results: [], count: 0, next: null, previous: null };
-  }
+      next: null,  // Pagination would need to be handled differently if needed
+      previous: null
+    }
+  };
 };
 
 const EventDetail = () => {
@@ -120,101 +102,40 @@ const EventDetail = () => {
     }
   });
 
-  // Fetch event galleries
-  const {
-    data: galleriesData,
-    isLoading: isLoadingGalleries,
-    error: galleriesError,
-  } = useQuery({
-    queryKey: ['eventGalleries', event?.id],
-    queryFn: async () => {
-      if (!event?.id) {
-        throw new Error('No event ID available');
-      }
-      try {
-        const response = await axios.get(`${API_URL}/api/gallery/public/galleries/`, {
-          params: { 
-            event: event.id,
-            page_size: 100 // Get all galleries for this event
-          }
-        });
-        // Handle both array and paginated responses
-        return Array.isArray(response.data) ? response.data : (response.data.results || []);
-      } catch (error) {
-        console.error('Error fetching galleries:', error);
-        throw error;
-      }
-    },
-    enabled: !!event?.id, // Only run the query if we have a valid event
-  });
-
-  // Update gallery groups when galleries are loaded
+  // Process event data when it's loaded
   useEffect(() => {
-    if (galleriesData && galleriesData.length > 0) {
-      // Initialize gallery groups with empty photo arrays
+    if (event?.galleries) {
+      // Initialize gallery groups with photos
       const groups = {};
-      galleriesData.forEach(gallery => {
+      const allPhotos = [];
+      
+      event.galleries.forEach(gallery => {
         if (gallery) {
+          // Process photos for this gallery
+          const galleryPhotos = (gallery.photos || []).map(photo => ({
+            ...photo,
+            gallery_title: gallery.title,
+            gallery_id: gallery.id
+          }));
+          
+          // Add to gallery groups
           groups[gallery.id] = {
             ...gallery,
-            photos: gallery.photos || []
+            photos: galleryPhotos
           };
+          
+          // Add to all photos
+          allPhotos.push(...galleryPhotos);
         }
       });
+      
       setGalleryGroups(groups);
-      
-      // Fetch photos for each gallery
-      const fetchGalleryPhotos = async () => {
-        for (const gallery of galleriesData) {
-          if (gallery) {
-            try {
-              const response = await axios.get(`${API_URL}/api/gallery/public/galleries/${gallery.id}/photos/`);
-              const photos = Array.isArray(response.data) ? response.data : (response.data.results || []);
-              
-              setGalleryGroups(prev => ({
-                ...prev,
-                [gallery.id]: {
-                  ...prev[gallery.id],
-                  photos: photos
-                }
-              }));
-            } catch (err) {
-              console.error(`Error fetching photos for gallery ${gallery.id}:`, err);
-            }
-          }
-        }
-      };
-      
-      fetchGalleryPhotos();
+      setImages(allPhotos);
     }
-  }, [galleriesData]);
+  }, [event]);
 
-  // Flatten all photos from all galleries for the lightbox
-  useEffect(() => {
-    const allPhotos = Object.values(galleryGroups).reduce((acc, gallery) => {
-      return [...acc, ...gallery.photos];
-    }, []);
-    setImages(allPhotos);
-  }, [galleryGroups]);
-
-  // Fetch event images with pagination
-  const { 
-    data: imagesData, 
-    isLoading: isLoadingImages,
-    isFetching: isFetchingImages,
-    isError: isImagesError
-  } = useQuery({
-    queryKey: ['eventImages', event?.id, page],
-    queryFn: () => fetchEventImages(event, page),
-    enabled: !!event?.id,
-    keepPreviousData: true,
-    onSuccess: (data) => {
-      setImages(prev => [...prev, ...data.results]);
-    }
-  });
-
-  const loading = isLoadingEvent || isLoadingImages;
-  const hasMore = imagesData?.next !== null;
+  const loading = isLoadingEvent;
+  const hasMore = false; // We load all data at once now
 
   // Reset images and page when event changes
   useEffect(() => {
@@ -398,7 +319,7 @@ const EventDetail = () => {
   }, [lightboxOpen, currentImageIndex, images, closeLightbox, navigateImage, toggleFullscreen, isFullscreen]);
 
   // Loading state
-  if (isLoadingEvent || isLoadingGalleries) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
@@ -419,7 +340,7 @@ const EventDetail = () => {
   }
 
   // Error state
-  if (eventError || galleriesError) {
+  if (eventError) {
     return (
       <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
@@ -493,7 +414,8 @@ const EventDetail = () => {
     return [...acc, ...(gallery.photos || [])];
   }, []);
   
-  const isLoadingPhotos = hasGalleries && allPhotos.length === 0;
+  // Loading state for the entire component
+  const isLoading = isLoadingEvent || (hasGalleries && allPhotos.length === 0);
   
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -551,18 +473,19 @@ const EventDetail = () => {
         {/* Gallery Grid */}
         <div className="mt-12">
           <h2 className="text-2xl font-bold text-gray-900 mb-6">Galleries</h2>
-          {isLoadingGalleries ? (
-            <div className="flex justify-center items-center p-8">
-              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
-            </div>
-          ) : galleriesError ? (
-            <div className="text-center p-8 text-red-500">
-              Error loading galleries: {galleriesError.message}
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <FaSpinner className="animate-spin text-blue-500 mr-2" />
+              <span>Loading galleries...</span>
             </div>
           ) : Object.values(galleryGroups).length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {Object.values(galleryGroups).map(gallery => (
-                <div key={gallery.id} className="bg-white rounded-lg shadow-md overflow-hidden">
+                <div 
+                  key={gallery.id} 
+                  className="bg-white rounded-lg shadow-md overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
+                  onClick={() => navigate(`/gallery/${gallery.slug || gallery.id}`)}
+                >
                   <div className="p-4">
                     <h3 className="text-lg font-semibold mb-2">{gallery.title || 'Untitled Gallery'}</h3>
                     {gallery.description && (
@@ -595,7 +518,7 @@ const EventDetail = () => {
                       onClick={() => handleGalleryClick(gallery)}
                       className="w-full bg-primary-500 text-white py-2 px-4 rounded hover:bg-primary-600 transition-colors"
                     >
-                      View Gallery ({gallery.total_photos || 0} photos)
+                      View Gallery ({gallery.photos?.length || 0} photos)
                     </button>
                   </div>
                 </div>
@@ -632,10 +555,10 @@ const EventDetail = () => {
                 </div>
               ))}
             </div>
-            {isLoadingImages && (
+            {loading && (
               <div className="flex justify-center mt-8">
                 <FaSpinner className="animate-spin text-2xl text-blue-500 mr-2" />
-                <span>Loading more photos...</span>
+                <span>Loading photos...</span>
               </div>
             )}
           </div>

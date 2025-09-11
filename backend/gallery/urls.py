@@ -20,8 +20,9 @@ urlpatterns = [
     
     # Public endpoints (no authentication required)
     path('public/galleries/', views.PublicGalleryListView.as_view(), name='public-gallery-list'),
-    path('public/galleries/<slug:slug>/', views.PublicGalleryDetailView.as_view(), name='public-gallery-detail-slug'),
-    path('public/galleries/<int:pk>/', views.PublicGalleryDetailView.as_view(), name='public-gallery-detail'),
+    path('public/galleries/by-id/<int:pk>/', views.PublicGalleryDetailByIdView.as_view(), name='public-gallery-detail-by-id'),
+    path('public/galleries/<slug:slug>/', views.PublicGalleryDetailView.as_view(), name='public-gallery-detail'),
+    path('public/galleries/<int:pk>/', views.redirect_id_to_slug, name='public-gallery-id-redirect'),
     path('public/galleries/<int:gallery_id>/photos/', views.PublicPhotoListView.as_view(), name='public-gallery-photos'),
     path('public/photos/<int:pk>/', views.PublicPhotoDetailView.as_view(), name='public-photo-detail'),
     
@@ -32,6 +33,7 @@ urlpatterns = [
     path('events/', views.EventListView.as_view(), name='event-list'),
     path('events/<int:pk>/', views.EventDetailView.as_view(), name='event-detail'),
     path('public/events/', views.PublicEventListView.as_view(), name='public-event-list'),
+    path('public/events/<int:pk>/', views.PublicEventDetailView.as_view(), name='public-event-detail'),
     path('events/<slug:slug>/verify-pin/', views.VerifyEventPinView.as_view(), name='verify-event-pin'),
     
     # Event stats endpoint

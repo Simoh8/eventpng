@@ -12,7 +12,13 @@ import {
   PhotoIcon,
   RectangleGroupIcon,
   UserGroupIcon,
-  ClockIcon
+  ClockIcon,
+  CameraIcon,
+  CloudArrowUpIcon,
+  ShareIcon,
+  DevicePhoneMobileIcon,
+  SparklesIcon,
+  CheckCircleIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthContext';
 import { API_ENDPOINTS } from '../config';
@@ -71,14 +77,24 @@ const StatCard = ({ icon: Icon, title, value, color = 'blue', description = null
 
 // Recent gallery item component
 const RecentGalleryCard = ({ gallery }) => {
+  const navigate = useNavigate();
   const stats = [
     { value: gallery.photo_count || 0, label: 'Photos' },
     { value: gallery.gallery_count || 0, label: 'Galleries' },
     { value: gallery.photographer_count || 0, label: 'Photographers' }
   ];
 
+  const handleClick = () => {
+    // Navigate to gallery using slug if available, fallback to ID
+    const gallerySlug = gallery.slug || gallery.id;
+    navigate(`/gallery/${gallerySlug}`);
+  };
+
   return (
-    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+    <div 
+      className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow cursor-pointer"
+      onClick={handleClick}
+    >
       <div className="flex items-start space-x-4">
         <div className="flex-shrink-0">
           {gallery.cover_image ? (
@@ -177,36 +193,110 @@ const HomePage = () => {
     }
   };
 
+  // Cache key for events data
+  const EVENTS_CACHE_KEY = 'cached_events_data';
+  const CACHE_EXPIRY = 60 * 60 * 1000; // 1 hour in milliseconds
+
+  // Get cached data if it exists and is not expired
+  const getCachedData = (key) => {
+    try {
+      const cachedData = localStorage.getItem(key);
+      if (!cachedData) return null;
+      
+      const { data, timestamp } = JSON.parse(cachedData);
+      const isExpired = Date.now() - timestamp > CACHE_EXPIRY;
+      
+      if (isExpired) {
+        localStorage.removeItem(key);
+        return null;
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('Error reading from cache:', error);
+      return null;
+    }
+  };
+
+  // Save data to cache with timestamp
+  const saveToCache = (key, data) => {
+    try {
+      const cacheData = {
+        data,
+        timestamp: Date.now()
+      };
+      localStorage.setItem(key, JSON.stringify(cacheData));
+    } catch (error) {
+      console.error('Error saving to cache:', error);
+    }
+  };
+
   // Fetch events and statistics
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
+        
+        // Try to get cached data first
+        const cachedData = getCachedData(EVENTS_CACHE_KEY);
+        
+        if (cachedData) {
+          const { events: cachedEvents, stats: cachedStats } = cachedData;
+          setEvents(cachedEvents);
+          setStats(cachedStats);
+          setLoading(false);
+          
+          // We still want to update in the background
+          fetchFreshData();
+          return;
+        }
+        
+        // If no cache, fetch fresh data
+        await fetchFreshData();
+      } catch (err) {
+        console.error('Error in fetchData:', err);
+        setError('Failed to load data. Please try again later.');
+        setLoading(false);
+      }
+    };
+
+    const fetchFreshData = async () => {
+      try {
         const [eventsRes, statsRes, recentRes] = await Promise.all([
           axios.get(API_ENDPOINTS.PUBLIC_EVENTS),
           axios.get(API_ENDPOINTS.STATS),
           axios.get(API_ENDPOINTS.RECENT_GALLERIES)
         ]);
 
-        setEvents(eventsRes.data);
-
+        const eventsData = eventsRes.data;
+        
         // Calculate totals from events if available
-        const eventsStats = eventsRes.data.reduce((acc, event) => ({
+        const eventsStats = eventsData.reduce((acc, event) => ({
           totalPhotos: acc.totalPhotos + (event.photo_count || 0),
           totalGalleries: acc.totalGalleries + (event.gallery_count || 0),
           totalPhotographers: acc.totalPhotographers + (event.photographer_count || 0)
         }), { totalPhotos: 0, totalGalleries: 0, totalPhotographers: 0 });
 
-        setStats({
+        const statsData = {
           totalGalleries: eventsStats.totalGalleries || statsRes.data.total_galleries || 0,
           totalPhotos: eventsStats.totalPhotos || statsRes.data.total_photos || 0,
-          totalEvents: eventsRes.data.length || statsRes.data.total_events || 0,
+          totalEvents: eventsData.length || statsRes.data.total_events || 0,
           totalPhotographers: eventsStats.totalPhotographers || statsRes.data.total_photographers || 0,
           recentGalleries: recentRes.data || []
+        };
+
+        // Update state
+        setEvents(eventsData);
+        setStats(statsData);
+
+        // Save to cache
+        saveToCache(EVENTS_CACHE_KEY, {
+          events: eventsData,
+          stats: statsData
         });
       } catch (err) {
-        console.error('Error fetching data:', err);
-        setError('Failed to load data. Please try again later.');
+        console.error('Error fetching fresh data:', err);
+        throw err; // Let the outer catch handle it
       } finally {
         setLoading(false);
       }
@@ -250,6 +340,40 @@ const HomePage = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Hero Section */}
+      <section className="relative bg-gradient-to-r from-blue-600 to-indigo-700 text-white py-20 overflow-hidden">
+        <div className="absolute inset-0 z-0">
+          <div className="absolute inset-0 bg-black opacity-40"></div>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
+        </div>
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-6">
+            Capture & Relive Your <span className="text-yellow-300">Precious Moments</span>
+          </h1>
+          <p className="text-xl md:text-2xl max-w-3xl mx-auto mb-10">
+            Discover, download, and share your event photos with our secure and easy-to-use platform
+          </p>
+          <div className="flex flex-col sm:flex-row justify-center gap-4">
+            <Link
+              to="/events"
+              className="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-indigo-700 bg-yellow-400 hover:bg-yellow-300 md:py-4 md:text-lg md:px-10 transition-all duration-300 transform hover:scale-105"
+            >
+              Browse Events
+              <ArrowRightIcon className="ml-2 -mr-1 h-5 w-5" />
+            </Link>
+            {!isAuthenticated && (
+              <Link
+                to="/login"
+                className="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-indigo-700 hover:bg-indigo-800 md:py-4 md:text-lg md:px-10 transition-all duration-300 transform hover:scale-105"
+              >
+                Sign In
+              </Link>
+            )}
+          </div>
+        </div>
+        <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-white to-transparent"></div>
+      </section>
+
       {/* Stats Section */}
       <section className="py-12 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -299,6 +423,118 @@ const HomePage = () => {
         </div>
       </section>
 
+      {/* How It Works Section */}
+      <section className="py-16 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">
+              How It Works
+            </h2>
+            <p className="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
+              Get started in just a few simple steps
+            </p>
+          </div>
+          
+          <div className="mt-10">
+            <div className="relative">
+              {/* Timeline line */}
+              <div className="hidden md:block absolute top-0 left-1/2 h-full w-0.5 bg-gradient-to-b from-blue-400 to-indigo-600 transform -translate-x-1/2"></div>
+              
+              {/* Timeline items */}
+              <div className="relative z-10 space-y-12 md:space-y-0 md:grid md:grid-cols-3 md:gap-8">
+                {/* Step 1 */}
+                <div className="flex flex-col items-center text-center bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-300">
+                  <div className="flex items-center justify-center h-16 w-16 rounded-full bg-blue-100 text-blue-600 mb-4">
+                    <CameraIcon className="h-8 w-8" />
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">1. Browse Events</h3>
+                  <p className="text-gray-600">
+                    Explore our upcoming events or search for a specific one using the event code provided by your photographer.
+                  </p>
+                </div>
+                
+                {/* Step 2 */}
+                <div className="flex flex-col items-center text-center bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-300">
+                  <div className="flex items-center justify-center h-16 w-16 rounded-full bg-indigo-100 text-indigo-600 mb-4">
+                    <CloudArrowUpIcon className="h-8 w-8" />
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">2. View & Download</h3>
+                  <p className="text-gray-600">
+                    Browse through the photo galleries, find your photos, and download your favorites in high resolution.
+                  </p>
+                </div>
+                
+                {/* Step 3 */}
+                <div className="flex flex-col items-center text-center bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-300">
+                  <div className="flex items-center justify-center h-16 w-16 rounded-full bg-purple-100 text-purple-600 mb-4">
+                    <ShareIcon className="h-8 w-8" />
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">3. Share & Enjoy</h3>
+                  <p className="text-gray-600">
+                    Share your favorite moments with friends and family directly from our platform.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Features Section */}
+      <section className="py-16 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">
+              Why Choose Us
+            </h2>
+            <p className="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
+              The best way to experience your event memories
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
+            {/* Feature 1 */}
+            <div className="bg-gray-50 p-6 rounded-xl hover:shadow-md transition-shadow duration-300">
+              <div className="flex items-center mb-4">
+                <div className="flex-shrink-0 bg-blue-100 p-2 rounded-lg">
+                  <DevicePhoneMobileIcon className="h-6 w-6 text-blue-600" />
+                </div>
+                <h3 className="ml-3 text-lg font-medium text-gray-900">Mobile-First Design</h3>
+              </div>
+              <p className="text-gray-600">
+                Access your photos from any device, anywhere, with our responsive design that works perfectly on mobile, tablet, and desktop.
+              </p>
+            </div>
+            
+            {/* Feature 2 */}
+            <div className="bg-gray-50 p-6 rounded-xl hover:shadow-md transition-shadow duration-300">
+              <div className="flex items-center mb-4">
+                <div className="flex-shrink-0 bg-green-100 p-2 rounded-lg">
+                  <SparklesIcon className="h-6 w-6 text-green-600" />
+                </div>
+                <h3 className="ml-3 text-lg font-medium text-gray-900">High-Quality Photos</h3>
+              </div>
+              <p className="text-gray-600">
+                All photos are stored in high resolution, ensuring your memories look stunning whether viewed on screen or printed.
+              </p>
+            </div>
+            
+            {/* Feature 3 */}
+            <div className="bg-gray-50 p-6 rounded-xl hover:shadow-md transition-shadow duration-300">
+              <div className="flex items-center mb-4">
+                <div className="flex-shrink-0 bg-purple-100 p-2 rounded-lg">
+                  <CheckCircleIcon className="h-6 w-6 text-purple-600" />
+                </div>
+                <h3 className="ml-3 text-lg font-medium text-gray-900">Easy to Use</h3>
+              </div>
+              <p className="text-gray-600">
+                Our intuitive interface makes it simple to find, view, and download your photos in just a few clicks.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Recent Galleries */}
       {stats.recentGalleries.length > 0 && (
         <section className="py-12 bg-gray-50">
@@ -321,8 +557,34 @@ const HomePage = () => {
         </section>
       )}
 
+      {/* Call to Action */}
+      <section className="bg-gradient-to-r from-indigo-700 to-blue-600 text-white py-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl font-extrabold mb-6">Ready to Find Your Photos?</h2>
+          <p className="text-xl mb-8 max-w-3xl mx-auto">
+            Join thousands of happy customers who've found their perfect event photos with us
+          </p>
+          <div className="flex flex-col sm:flex-row justify-center gap-4">
+            <Link
+              to="/events"
+              className="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-indigo-700 bg-yellow-400 hover:bg-yellow-300 md:py-4 md:text-lg md:px-10 transition-all duration-300 transform hover:scale-105"
+            >
+              Browse Events
+            </Link>
+            {!isAuthenticated && (
+              <Link
+                to="/register"
+                className="inline-flex items-center justify-center px-8 py-3 border border-white text-base font-medium rounded-md text-white bg-transparent hover:bg-white hover:bg-opacity-10 md:py-4 md:text-lg md:px-10 transition-all duration-300"
+              >
+                Create Account
+              </Link>
+            )}
+          </div>
+        </div>
+      </section>
+
       {/* Events Section */}
-      <section className="py-12 bg-white">
+      <section className="py-16 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">

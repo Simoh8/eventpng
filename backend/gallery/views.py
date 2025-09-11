@@ -238,9 +238,58 @@ class DownloadPhotoView(generics.CreateAPIView):
         return ip
 
 class PublicGalleryListView(generics.ListAPIView):
-    """View for listing public galleries (no authentication required)."""
+    """
+    View for listing public galleries with caching.
+    Implements caching with 1-hour TTL and proper cache invalidation.
+    """
     serializer_class = serializers.GalleryListSerializer
     permission_classes = [permissions.AllowAny]
+    
+    def get_cache_key(self):
+        """Generate a custom cache key based on filters."""
+        event_id = self.request.query_params.get('event', '')
+        return f'public_galleries_{event_id}'
+    
+    def get_queryset(self):
+        queryset = Gallery.objects.filter(is_public=True)
+        
+        # Filter by event if event_id is provided in query params
+        event_id = self.request.query_params.get('event')
+        if event_id:
+            try:
+                event_id = int(event_id)
+                queryset = queryset.filter(event_id=event_id)
+            except (ValueError, TypeError):
+                pass
+                
+        return queryset.select_related('event').prefetch_related('photos').order_by('-created_at')
+    
+    def list(self, request, *args, **kwargs):
+        """Override list to implement custom caching."""
+        # Check if we should bypass cache
+        bypass_cache = request.query_params.get('refresh_cache') == 'true'
+        cache_key = self.get_cache_key()
+        
+        if cache_key and not bypass_cache:
+            cached_data = cache.get(cache_key)
+            if cached_data is not None:
+                return Response(cached_data)
+        
+        # If no cache hit or bypassing cache, get fresh data
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            response_data = self.get_paginated_response(serializer.data).data
+        else:
+            serializer = self.get_serializer(queryset, many=True)
+            response_data = serializer.data
+        
+        # Cache the response if we have a valid cache key
+        if cache_key:
+            cache.set(cache_key, response_data, timeout=60 * 60)  # 1 hour cache
+            
+        return Response(response_data)
     
     def get_queryset(self):
         queryset = Gallery.objects.filter(is_public=True)
@@ -256,25 +305,70 @@ class PublicGalleryListView(generics.ListAPIView):
                 
         return queryset.prefetch_related('photos')
 
-class PublicGalleryDetailView(generics.RetrieveAPIView):
-    """View for retrieving a public gallery (no authentication required)."""
+def redirect_id_to_slug(request, pk):
+    """Redirect from ID-based URL to slug-based URL."""
+    try:
+        gallery = Gallery.objects.filter(pk=pk, is_public=True).first()
+        if gallery:
+            from django.urls import reverse
+            from django.shortcuts import redirect
+            url = reverse('gallery:public-gallery-detail', kwargs={'slug': gallery.slug})
+            # Use permanent redirect (301) for better SEO
+            return redirect(url, permanent=True)
+    except (ValueError, Gallery.DoesNotExist):
+        pass
+    from django.http import Http404
+    raise Http404("Gallery not found")
+
+
+class PublicGalleryDetailByIdView(generics.RetrieveAPIView):
+    """View for retrieving a public gallery by ID (no authentication required)."""
     serializer_class = serializers.GalleryDetailSerializer
     permission_classes = [permissions.AllowAny]
     lookup_field = 'pk'
+    lookup_url_kwarg = 'pk'
     
     def get_queryset(self):
-        return Gallery.objects.filter(is_public=True).prefetch_related('photos')
-    
-    def get_object(self):
-        # Check if we're looking up by slug
-        if 'slug' in self.kwargs:
-            slug = self.kwargs['slug']
+        """Return base queryset of public galleries with related objects."""
+        # Base query - only public galleries
+        qs = Gallery.objects.filter(is_public=True)
+        
+        # Apply event filter if provided
+        event_id = self.request.query_params.get('event_id')
+        if event_id:
             try:
-                return self.get_queryset().get(slug=slug)
-            except Gallery.DoesNotExist:
-                raise Http404("No Gallery matches the given slug.")
-        # Default to ID-based lookup
-        return super().get_object()
+                event_id = int(event_id)
+                qs = qs.filter(event_id=event_id)
+            except (ValueError, TypeError):
+                pass  # Ignore invalid event_id
+        
+        # Optimize queries
+        return qs.select_related('event', 'photographer').prefetch_related('photos')
+
+
+class PublicGalleryDetailView(generics.RetrieveAPIView):
+    """View for retrieving a public gallery by slug (no authentication required)."""
+    serializer_class = serializers.GalleryDetailSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_field = 'slug'
+    lookup_url_kwarg = 'slug'
+    
+    def get_queryset(self):
+        """Return base queryset of public galleries with related objects."""
+        # Base query - only public galleries
+        qs = Gallery.objects.filter(is_public=True)
+        
+        # Apply event filter if provided
+        event_id = self.request.query_params.get('event_id')
+        if event_id:
+            try:
+                event_id = int(event_id)
+                qs = qs.filter(event_id=event_id)
+            except (ValueError, TypeError):
+                pass  # Ignore invalid event_id
+        
+        # Optimize queries
+        return qs.select_related('event', 'photographer').prefetch_related('photos')
 
 class PublicPhotoDetailView(generics.RetrieveAPIView):
     """View for retrieving a public photo (no authentication required)."""
@@ -289,21 +383,43 @@ from django.core.cache import cache
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from django.views.decorators.vary import vary_on_cookie
+from django.core.cache import cache
+from django.db import models
+import logging
+logger = logging.getLogger(__name__)
 
 class PublicPhotoListView(generics.ListAPIView):
     """
     View for listing public photos in a gallery (no authentication required).
-    Cached for 1 hour to reduce database load.
+    Implements caching with 1-hour TTL and proper cache invalidation.
     """
     serializer_class = serializers.PhotoSerializer
     permission_classes = [permissions.AllowAny]
+    pagination_class = None
     
-    # Cache page for 1 hour (3600 seconds)
-    @method_decorator(cache_page(60 * 60))
-    @method_decorator(vary_on_cookie)
-    def dispatch(self, *args, **kwargs):
-        return super().dispatch(*args, **kwargs)
-    pagination_class = None  # Or use PageNumberPagination with custom settings
+    def get_cache_key(self):
+        """Generate a custom cache key based on gallery ID and last update time."""
+        gallery_id = self.kwargs.get('gallery_id')
+        if not gallery_id:
+            return None
+            
+        try:
+            # Get the last update time of any photo in this gallery
+            last_update = Photo.objects.filter(
+                gallery_id=gallery_id,
+                is_public=True
+            ).aggregate(
+                last_update=models.Max('updated_at')
+            )['last_update']
+            
+            if last_update:
+                # Use the last update timestamp as part of the cache key
+                return f'gallery_photos_{gallery_id}_{int(last_update.timestamp())}'
+        except Exception as e:
+            logger.warning(f"Could not get last update time for gallery {gallery_id}: {e}")
+            
+        # Fallback to a simpler key if we can't get the last update time
+        return f'gallery_photos_{gallery_id}'
     
     def get_queryset(self):
         gallery_id = self.kwargs.get('gallery_id')
@@ -394,16 +510,51 @@ class PublicEventListView(generics.ListAPIView):
     pagination_class = None  # Disable pagination for this view
     
     def get_queryset(self):
-        # Return all events, but mark private ones as such in the serializer
-        events = Event.objects.all().order_by('-date')
-        logger.info(f'Returning {events.count()} events from PublicEventListView')
-        return events
-        
+        """Return only public events."""
+        return Event.objects.filter(privacy='public')
+    
     def get_serializer_context(self):
-        # Include the request in the serializer context for building absolute URLs
+        """Add request to serializer context."""
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
+
+
+class PublicEventDetailView(generics.RetrieveAPIView):
+    """View for retrieving a single public event with its galleries and photos."""
+    serializer_class = serializers.PublicEventDetailSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_field = 'pk'
+    
+    def get_queryset(self):
+        """Return only public events with their public galleries and photos."""
+        return Event.objects.filter(privacy='public')
+    
+    def get_serializer_context(self):
+        """Add request to serializer context."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+    
+    def get_object(self):
+        """Get the event with prefetched public galleries and photos."""
+        try:
+            # Get the event
+            event = super().get_object()
+            
+            # Get public galleries with their photos
+            galleries = Gallery.objects.filter(
+                event=event,
+                is_public=True
+            ).prefetch_related('photos')
+            
+            # Create a custom attribute for the serializer
+            event.galleries_data = galleries
+            
+            return event
+            
+        except Event.DoesNotExist:
+            raise Http404("No Event matches the given query.")
 
 
 class VerifyEventPinView(APIView):

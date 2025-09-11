@@ -9,7 +9,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
 const GalleryDetail = () => {
-  const { id } = useParams();
+  const { id: slug } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [selectedPhoto, setSelectedPhoto] = useState(null);
@@ -166,22 +166,38 @@ const GalleryDetail = () => {
     }
   };
 
-  // Fetch gallery details
+  // Fetch gallery details using either ID or slug
   const { data: gallery, isLoading, error } = useQuery({
-    queryKey: ['gallery', id],
+    queryKey: ['gallery', slug],
     queryFn: async () => {
-      // First try to fetch by slug (if the ID looks like a slug)
-      let response = await fetch(`${API_BASE_URL}/api/gallery/public/galleries/${id}/`);
-      
-      // If 404, try to fetch by ID as a fallback
-      if (response.status === 404 && !isNaN(id)) {
-        response = await fetch(`${API_BASE_URL}/api/gallery/public/galleries/${id}/`);
-      }
-      
-      if (!response.ok) {
+      // First try to fetch using the ID endpoint if the slug is a number
+      let response;
+      try {
+        // Check if the slug is a number (ID)
+        if (!isNaN(slug)) {
+          // Use the direct ID-based endpoint
+          response = await fetch(`${API_BASE_URL}/api/gallery/public/galleries/by-id/${slug}/`);
+        } else {
+          // Try with the slug endpoint
+          response = await fetch(`${API_BASE_URL}/api/gallery/public/galleries/${slug}/`);
+        }
+        
+        if (!response.ok) {
+          throw new Error('Gallery not found');
+        }
+        
+        const data = await response.json();
+        
+        // If the canonical slug is different from the one in the URL, update the URL
+        if (data.slug && data.slug !== slug) {
+          window.history.replaceState({}, '', `/gallery/${data.slug}`);
+        }
+        
+        return data;
+      } catch (err) {
+        console.error('Error fetching gallery:', err);
         throw new Error('Failed to fetch gallery');
       }
-      return response.json();
     },
     onError: (error) => {
       toast.error(error.message || 'Failed to load gallery');
@@ -193,8 +209,8 @@ const GalleryDetail = () => {
     // Instead of opening in fullscreen, trigger download
     downloadImage(photo);
     // Uncomment below to re-enable fullscreen view
-    // setSelectedPhoto(photo);
-    // setIsFullscreen(true);
+    setSelectedPhoto(photo);
+    setIsFullscreen(true);
   };
 
   // Handle close fullscreen
@@ -276,10 +292,10 @@ const GalleryDetail = () => {
           
           {gallery.photographer && (
             <div className="flex items-center text-gray-600 mb-3">
-              <svg className="w-5 h-5 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* <svg className="w-5 h-5 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-              <span>Photographer: {gallery.photographer.first_name || gallery.photographer.username}</span>
+              </svg> */}
+              {/* <span>Photographer: {gallery.photographer.first_name || gallery.photographer.username}</span> */}
             </div>
           )}
           
