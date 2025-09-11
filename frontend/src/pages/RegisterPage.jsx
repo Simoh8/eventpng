@@ -16,8 +16,24 @@ const registerSchema = Yup.object().shape({
     .email('Invalid email address')
     .required('Email is required'),
   password: Yup.string()
+    .required('Password is required')
     .min(8, 'Password must be at least 8 characters')
-    .required('Password is required'),
+    .matches(
+      /^(?=.*[a-z])/,
+      'Must contain at least one lowercase letter'
+    )
+    .matches(
+      /^(?=.*[A-Z])/,
+      'Must contain at least one uppercase letter'
+    )
+    .matches(
+      /^(?=.*\d)/,
+      'Must contain at least one number'
+    )
+    .matches(
+      /^(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?])/,
+      'Must contain at least one special character'
+    ),
   confirmPassword: Yup.string()
     .oneOf([Yup.ref('password'), null], 'Passwords must match')
     .required('Please confirm your password'),
@@ -34,7 +50,8 @@ export default function RegisterPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (values, { setSubmitting, setStatus, resetForm }) => {
+  const handleSubmit = async (values, { setSubmitting, setStatus, setFieldError, resetForm }) => {
+    let toastId;
     try {
       setStatus(null); // Clear previous errors
       setSubmitting(true);
@@ -48,9 +65,15 @@ export default function RegisterPage() {
       });
       
       // Show loading toast
-      const toastId = toast.loading('Creating your account...');
+      toastId = toast.loading('Creating your account...');
       
-      const { success, error, data } = await register({
+      const { 
+        success, 
+        error, 
+        data, 
+        fieldErrors = {}, 
+        isValidationError = false 
+      } = await register({
         name: values.name,
         email: values.email,
         password: values.password,
@@ -79,15 +102,38 @@ export default function RegisterPage() {
         }, 3000);
       } else {
         console.error('Registration failed:', error);
-        const errorMsg = error?.message || error || 'Registration failed. Please check your details and try again.';
-        setStatus({ error: errorMsg });
         
-        // Update toast to error
-        toast.error(errorMsg, { 
-          id: toastId,
-          duration: 5000,
-          position: 'top-center'
-        });
+        if (isValidationError && fieldErrors) {
+          // Set field-specific errors
+          Object.entries(fieldErrors).forEach(([field, errorMsg]) => {
+            // Map backend field names to form field names if needed
+            const formField = field === 'full_name' ? 'name' : 
+                            field === 'confirm_password' ? 'confirmPassword' :
+                            field;
+            setFieldError(formField, errorMsg);
+          });
+          
+          // Show a general error toast if there are non-field errors
+          if (fieldErrors.non_field_errors) {
+            toast.error(fieldErrors.non_field_errors.join(' '), { 
+              id: toastId,
+              duration: 5000,
+              position: 'top-center'
+            });
+          } else {
+            toast.dismiss(toastId);
+          }
+        } else {
+          // Handle non-validation errors
+          const errorMsg = error?.message || error || 'Registration failed. Please check your details and try again.';
+          setStatus({ error: errorMsg });
+          
+          toast.error(errorMsg, { 
+            id: toastId,
+            duration: 5000,
+            position: 'top-center'
+          });
+        }
       }
     } catch (err) {
       console.error('Registration error:', err);
@@ -242,6 +288,7 @@ export default function RegisterPage() {
                 <div>
                   <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                     Password
+                    <span className="text-xs font-normal text-gray-500 ml-1">(min 8 chars, with uppercase, lowercase, number & special char)</span>
                   </label>
                   <div className="mt-1 relative">
                     <Field
@@ -250,6 +297,7 @@ export default function RegisterPage() {
                       type={showPassword ? 'text' : 'password'}
                       autoComplete="new-password"
                       className={`appearance-none block w-full px-3 py-2 border ${errors.password && touched.password ? 'border-red-300' : 'border-gray-300'} rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm pr-10`}
+                      aria-describedby="password-requirements"
                     />
                     <button
                       type="button"
@@ -263,9 +311,61 @@ export default function RegisterPage() {
                       )}
                     </button>
                   </div>
-                  {errors.password && touched.password && (
-                    <p className="mt-2 text-sm text-red-600">{errors.password}</p>
-                  )}
+                  <div id="password-requirements" className="mt-2">
+                    <p className="text-sm text-gray-500 mb-1">Password must contain:</p>
+                    <ul className="text-xs space-y-0.5">
+                      <li className={`flex items-center ${errors.password && !/^(?=.*[a-z])/.test(values.password) ? 'text-red-600' : 'text-gray-500'}`}>
+                        {errors.password && !/^(?=.*[a-z])/.test(values.password) ? (
+                          <ExclamationCircleIcon className="h-3.5 w-3.5 mr-1.5 flex-shrink-0" />
+                        ) : (
+                          <svg className="h-3.5 w-3.5 text-green-500 mr-1.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                        At least one lowercase letter
+                      </li>
+                      <li className={`flex items-center ${errors.password && !/^(?=.*[A-Z])/.test(values.password) ? 'text-red-600' : 'text-gray-500'}`}>
+                        {errors.password && !/^(?=.*[A-Z])/.test(values.password) ? (
+                          <ExclamationCircleIcon className="h-3.5 w-3.5 mr-1.5 flex-shrink-0" />
+                        ) : (
+                          <svg className="h-3.5 w-3.5 text-green-500 mr-1.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                        At least one uppercase letter
+                      </li>
+                      <li className={`flex items-center ${errors.password && !/^(?=.*\d)/.test(values.password) ? 'text-red-600' : 'text-gray-500'}`}>
+                        {errors.password && !/^(?=.*\d)/.test(values.password) ? (
+                          <ExclamationCircleIcon className="h-3.5 w-3.5 mr-1.5 flex-shrink-0" />
+                        ) : (
+                          <svg className="h-3.5 w-3.5 text-green-500 mr-1.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                        At least one number
+                      </li>
+                      <li className={`flex items-center ${errors.password && !/^(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?])/.test(values.password) ? 'text-red-600' : 'text-gray-500'}`}>
+                        {errors.password && !/^(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?])/.test(values.password) ? (
+                          <ExclamationCircleIcon className="h-3.5 w-3.5 mr-1.5 flex-shrink-0" />
+                        ) : (
+                          <svg className="h-3.5 w-3.5 text-green-500 mr-1.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                        At least one special character
+                      </li>
+                      <li className={`flex items-center ${errors.password && values.password.length < 8 ? 'text-red-600' : 'text-gray-500'}`}>
+                        {errors.password && values.password.length < 8 ? (
+                          <ExclamationCircleIcon className="h-3.5 w-3.5 mr-1.5 flex-shrink-0" />
+                        ) : (
+                          <svg className="h-3.5 w-3.5 text-green-500 mr-1.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                        At least 8 characters long
+                      </li>
+                    </ul>
+                  </div>
                 </div>
 
                 <div>

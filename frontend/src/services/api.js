@@ -37,13 +37,45 @@ api.interceptors.request.use(
   }
 );
 
-// Helper function to get CSRF token from cookies
+// Helper function to get CSRF token from cookies or fetch a new one
 function getCSRFToken() {
+  // First try to get from cookies
   const cookieValue = document.cookie
     .split('; ')
     .find(row => row.startsWith('csrftoken='))
     ?.split('=')[1];
-  return cookieValue || '';
+    
+  if (cookieValue) {
+    return cookieValue;
+  }
+  
+  // If not in cookies, try to fetch a new one
+  try {
+    return fetch(`${API_BASE_URL}api/accounts/csrf/`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json',
+      }
+    })
+    .then(response => {
+      if (!response.ok) {
+        console.error('Failed to fetch CSRF token');
+        return '';
+      }
+      return document.cookie
+        .split('; ')
+        .find(row => row.startsWith('csrftoken='))
+        ?.split('=')[1] || '';
+    })
+    .catch(error => {
+      console.error('Error fetching CSRF token:', error);
+      return '';
+    });
+  } catch (error) {
+    console.error('Error in getCSRFToken:', error);
+    return '';
+  }
 }
 
 // Response interceptor to handle 401 errors

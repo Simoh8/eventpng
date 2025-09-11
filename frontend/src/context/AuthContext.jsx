@@ -289,7 +289,7 @@ export const AuthProvider = ({ children }) => {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
       
       // Get CSRF token
-      await api.get('/accounts/csrf/');
+      await api.get('/api/accounts/csrf/');
       
       // Prepare registration data
       const requestData = {
@@ -300,18 +300,14 @@ export const AuthProvider = ({ children }) => {
         is_photographer: userData.isPhotographer || false
       };
       
-      // Make the registration request
-      const response = await api.post('/accounts/register/', requestData);
+      const response = await api.post('/api/accounts/register/', requestData);
       
-      // If registration was successful, log the user in
       if (response.data && response.data.access) {
         const { access, refresh } = response.data;
         
-        // Store tokens
         localStorage.setItem('access', access);
         localStorage.setItem('refresh', refresh);
         
-        // Set auth header
         api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
         
         // Get user data
@@ -326,25 +322,100 @@ export const AuthProvider = ({ children }) => {
           error: null
         });
         
-        return { success: true, user: userData };
+        return { 
+          success: true, 
+          user: userData,
+          message: 'Registration successful! Welcome to EventPhoto!'
+        };
       }
       
       throw new Error('Registration successful but no access token received');
-    } catch (err) {
-      console.error('Registration failed', err);
-      const errorMessage = err.response?.data?.detail || 'Registration failed';
-      setState(prev => ({ ...prev, isLoading: false, error: errorMessage }));
-      return { success: false, error: errorMessage };
+    } catch (error) {
+      console.error('Registration error:', error);
+      
+      // Handle validation errors
+      if (error.response?.status === 400 && error.response.data) {
+        // Format validation errors into a more user-friendly format
+        const validationErrors = [];
+        const fieldErrors = {};
+        
+        // Handle field-specific errors
+        for (const [field, errors] of Object.entries(error.response.data)) {
+          if (Array.isArray(errors)) {
+            // Convert field names to be more user-friendly
+            const fieldName = field === 'non_field_errors' ? 'form' :
+                            field === 'confirm_password' ? 'password confirmation' :
+                            field.replace(/_/g, ' ');
+            
+            // Store field errors for form display
+            fieldErrors[field] = errors.join(' ');
+            
+            // Add each error message for toast
+            errors.forEach(errorMsg => {
+              validationErrors.push(
+                `${fieldName.charAt(0).toUpperCase() + fieldName.slice(1)}: ${errorMsg}`
+              );
+            });
+          } else if (typeof errors === 'string') {
+            validationErrors.push(errors);
+          }
+        }
+        
+        return { 
+          success: false, 
+          error: validationErrors.join('\n') || 'Please check your input and try again.',
+          fieldErrors,
+          isValidationError: true
+        };
+      }
+      
+      // Handle other types of errors
+      const errorMessage = error.response?.data?.detail || 
+                         error.message || 
+                         'Registration failed. Please try again.';
+      
+      return { 
+        success: false, 
+        error: errorMessage 
+      };
     }
-  }, []);
+  },  []);
 
-  // Get CSRF token from cookies
-  const getCSRFToken = () => {
+  // Get CSRF token from cookies or fetch a new one
+  const getCSRFToken = async () => {
+    // First try to get from cookies
     const cookieValue = document.cookie
       .split('; ')
       .find(row => row.startsWith('csrftoken='))
       ?.split('=')[1];
-    return cookieValue || '';
+      
+    if (cookieValue) {
+      return cookieValue;
+    }
+    
+    // If not in cookies, try to fetch a new one
+    try {
+      const response = await fetch(`${API_ENDPOINTS.API_BASE_URL}api/accounts/csrf/`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+        }
+      });
+      
+      if (!response.ok) {
+        console.error('Failed to fetch CSRF token');
+        return '';
+      }
+      
+      return document.cookie
+        .split('; ')
+        .find(row => row.startsWith('csrftoken='))
+        ?.split('=')[1] || '';
+    } catch (error) {
+      console.error('Error fetching CSRF token:', error);
+      return '';
+    }
   };
 
   // Handle Google OAuth login/signup
@@ -352,144 +423,65 @@ export const AuthProvider = ({ children }) => {
     try {
       console.log('Initiating Google login with token response:', tokenResponse);
       setState(prev => ({ ...prev, isLoading: true, error: null }));
-      
-      // Get CSRF token
-      const csrfToken = getCSRFToken();
-      if (!csrfToken) {
-        console.warn('CSRF token not found. Authentication might fail.');
-      }
-      
-      // If we have an ID token (from the Google Sign-In button)
-      if (tokenResponse.credential) {
-        console.log('Using ID token from credential');
-        const response = await fetch(API_ENDPOINTS.GOOGLE_LOGIN, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-CSRFToken': csrfToken
-          },
-          body: JSON.stringify({
-            id_token: tokenResponse.credential
-          }),
-          credentials: 'include'
-        });
 
-        if (response.status === 403) {
-          // If CSRF validation failed, try to get a new CSRF token and retry
-          const newCsrfToken = await fetch('/api/csrf/', {
-            credentials: 'include'
-          }).then(res => {
-            const token = getCSRFToken();
-            if (!token) throw new Error('Failed to get CSRF token');
-            return token;
-          });
-          
-          // Retry with new CSRF token
-          const retryResponse = await fetch(API_ENDPOINTS.GOOGLE_LOGIN, {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'X-CSRFToken': newCsrfToken
-            },
-            body: JSON.stringify({
-              id_token: tokenResponse.credential
-            }),
-            credentials: 'include'
-          });
-          
-          if (!retryResponse.ok) {
-            const errorData = await retryResponse.json().catch(() => ({}));
-            console.error('Google login API error with ID token (after CSRF retry):', errorData);
-            throw new Error(errorData.detail || 'Google authentication failed after CSRF retry');
-          }
-          
-          const data = await retryResponse.json();
-          console.log('Google login successful with ID token (after CSRF retry)');
-          return handleGoogleAuthSuccess(data);
-        }
-        
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          console.error('Google login API error with ID token:', errorData);
-          throw new Error(errorData.detail || 'Google authentication failed');
-        }
-
-        const data = await response.json();
-        console.log('Google login successful with ID token');
-        return handleGoogleAuthSuccess(data);
-      }
-      
-      // If we have an authorization code (from the @react-oauth/google flow)
+      // If we have an authorization code (from the Google Sign-In button with useOneTap)
       if (tokenResponse.code) {
         console.log('Sending authorization code to backend for token exchange');
-        
+
         // Get CSRF token
-        const csrfToken = getCSRFToken();
+        const csrfToken = await getCSRFToken();
         if (!csrfToken) {
           console.warn('CSRF token not found. Authentication might fail.');
         }
-        
-        // Send the authorization code to our backend to handle the token exchange
-        const response = await fetch(API_ENDPOINTS.GOOGLE_LOGIN, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-CSRFToken': csrfToken
-          },
-          body: JSON.stringify({
-            code: tokenResponse.code,
-            redirect_uri: window.location.origin + '/login'
-          }),
-          credentials: 'include'
-        });
 
-        if (response.status === 403) {
-          // If CSRF validation failed, try to get a new CSRF token and retry
-          const newCsrfToken = await fetch('/api/csrf/', {
-            credentials: 'include'
-          }).then(res => {
-            const token = getCSRFToken();
-            if (!token) throw new Error('Failed to get CSRF token');
-            return token;
-          });
-          
-          // Retry with new CSRF token
-          const retryResponse = await fetch(API_ENDPOINTS.GOOGLE_LOGIN, {
+        // Function to make the Google login request with authorization code
+        const makeGoogleCodeLoginRequest = async (token) => {
+          return await fetch(API_ENDPOINTS.GOOGLE_LOGIN, {
             method: 'POST',
-            headers: { 
+            headers: {
               'Content-Type': 'application/json',
               'Accept': 'application/json',
-              'X-CSRFToken': newCsrfToken
+              'X-CSRFToken': token
             },
             body: JSON.stringify({
               code: tokenResponse.code,
-              redirect_uri: window.location.origin + '/login'
+              redirect_uri: window.location.origin
             }),
             credentials: 'include'
           });
-          
-          if (!retryResponse.ok) {
-            const errorData = await retryResponse.json().catch(() => ({}));
+        };
+
+        // First attempt with current CSRF token
+        let response = await makeGoogleCodeLoginRequest(csrfToken);
+
+        if (response.status === 403) {
+          console.log('CSRF validation failed, fetching new token...');
+          // If CSRF validation failed, get a new CSRF token and retry
+          const newCsrfToken = await getCSRFToken();
+          if (!newCsrfToken) {
+            throw new Error('Failed to get CSRF token for retry');
+          }
+
+          // Retry with new CSRF token
+          console.log('Retrying with new CSRF token...');
+          response = await makeGoogleCodeLoginRequest(newCsrfToken);
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
             console.error('Google login API error (after CSRF retry):', errorData);
             throw new Error(errorData.detail || 'Google authentication failed after CSRF retry');
           }
-          
-          const data = await retryResponse.json();
-          console.log('Google login successful with access token (after CSRF retry)');
-          return handleGoogleAuthSuccess(data);
         }
-        
+
+        // If we get here, the request was successful (either on first try or after retry)
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          console.error('Google login API error:', errorData);
+          console.error('Google login API error with authorization code:', errorData);
           throw new Error(errorData.detail || 'Google authentication failed');
         }
 
         const data = await response.json();
-        console.log('Google login successful with access token');
+        console.log('Google login successful with authorization code');
         return handleGoogleAuthSuccess(data);
       }
       

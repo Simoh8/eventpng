@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { makeRequests } from '../utils/apiUtils';
 import { 
   MagnifyingGlassIcon as SearchIcon,
   FunnelIcon as FilterIcon,
@@ -262,14 +263,22 @@ const HomePage = () => {
 
     const fetchFreshData = async () => {
       try {
-        const [eventsRes, statsRes, recentRes] = await Promise.all([
-          axios.get(API_ENDPOINTS.PUBLIC_EVENTS),
-          axios.get(API_ENDPOINTS.STATS),
-          axios.get(API_ENDPOINTS.RECENT_GALLERIES)
+        // Make requests with rate limiting
+        const [eventsRes, statsRes, recentRes] = await makeRequests([
+          () => axios.get(API_ENDPOINTS.PUBLIC_EVENTS),
+          () => axios.get(API_ENDPOINTS.STATS),
+          () => axios.get(API_ENDPOINTS.RECENT_GALLERIES)
         ]);
 
-        const eventsData = eventsRes.data;
-        
+        // Check for errors in responses
+        if (eventsRes.error) throw eventsRes.error;
+        if (statsRes.error) console.warn('Failed to load stats:', statsRes.error);
+        if (recentRes.error) console.warn('Failed to load recent galleries:', recentRes.error);
+
+        const eventsData = eventsRes.data || [];
+        const serverStats = statsRes.data || { total_galleries: 0, total_events: 0, total_photographers: 0 };
+        const recentGalleries = recentRes.data || [];
+
         // Calculate totals from events if available
         const eventsStats = eventsData.reduce((acc, event) => ({
           totalPhotos: acc.totalPhotos + (event.photo_count || 0),
@@ -278,11 +287,11 @@ const HomePage = () => {
         }), { totalPhotos: 0, totalGalleries: 0, totalPhotographers: 0 });
 
         const statsData = {
-          totalGalleries: eventsStats.totalGalleries || statsRes.data.total_galleries || 0,
-          totalPhotos: eventsStats.totalPhotos || statsRes.data.total_photos || 0,
-          totalEvents: eventsData.length || statsRes.data.total_events || 0,
-          totalPhotographers: eventsStats.totalPhotographers || statsRes.data.total_photographers || 0,
-          recentGalleries: recentRes.data || []
+          totalGalleries: eventsStats.totalGalleries || serverStats.total_galleries || 0,
+          totalPhotos: eventsStats.totalPhotos || serverStats.total_photos || 0,
+          totalEvents: eventsData.length || serverStats.total_events || 0,
+          totalPhotographers: eventsStats.totalPhotographers || serverStats.total_photographers || 0,
+          recentGalleries: recentGalleries
         };
 
         // Update state
