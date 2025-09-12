@@ -126,7 +126,7 @@ export default function CreateGallery() {
     retry: 1,
     refetchOnWindowFocus: false,
     onError: (error) => {
-      console.error('Error fetching events:', error);
+      // console.error('Error fetching events:', error);
     },
     select: (data) => {
       const results = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];

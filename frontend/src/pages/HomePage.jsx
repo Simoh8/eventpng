@@ -237,6 +237,7 @@ const HomePage = () => {
     const fetchData = async () => {
       try {
         setLoading(true);
+        setError(null);
         
         // Try to get cached data first
         const cachedData = getCachedData(EVENTS_CACHE_KEY);
@@ -256,7 +257,7 @@ const HomePage = () => {
         await fetchFreshData();
       } catch (err) {
         console.error('Error in fetchData:', err);
-        setError('Failed to load data. Please try again later.');
+        setError('Failed to load events. Other content may still be available.');
         setLoading(false);
       }
     };
@@ -264,33 +265,42 @@ const HomePage = () => {
     const fetchFreshData = async () => {
       try {
         // Make requests with rate limiting
-        const [eventsRes, statsRes, recentRes] = await makeRequests([
-          () => axios.get(API_ENDPOINTS.PUBLIC_EVENTS),
-          () => axios.get(API_ENDPOINTS.STATS),
-          () => axios.get(API_ENDPOINTS.RECENT_GALLERIES)
+        const [eventsRes, statsRes, recentRes] = await Promise.all([
+          axios.get(API_ENDPOINTS.PUBLIC_EVENTS).catch(err => ({ error: err })),
+          axios.get(API_ENDPOINTS.STATS).catch(err => ({ error: err })),
+          axios.get(API_ENDPOINTS.RECENT_GALLERIES).catch(err => ({ error: err }))
         ]);
 
-        // Check for errors in responses
-        if (eventsRes.error) throw eventsRes.error;
-        if (statsRes.error) console.warn('Failed to load stats:', statsRes.error);
-        if (recentRes.error) console.warn('Failed to load recent galleries:', recentRes.error);
+        // Process stats and recent galleries even if events fail
+        const serverStats = !statsRes.error && statsRes.data ? statsRes.data : { total_galleries: 0, total_events: 0, total_photographers: 0 };
+        const recentGalleries = !recentRes.error && recentRes.data ? recentRes.data : [];
 
-        const eventsData = eventsRes.data || [];
-        const serverStats = statsRes.data || { total_galleries: 0, total_events: 0, total_photographers: 0 };
-        const recentGalleries = recentRes.data || [];
+        // Process events if available
+        let eventsData = [];
+        if (!eventsRes.error && eventsRes.data) {
+          eventsData = eventsRes.data;
+          
+          // Calculate totals from events
+          const eventsStats = eventsData.reduce((acc, event) => ({
+            totalPhotos: acc.totalPhotos + (event.photo_count || 0),
+            totalGalleries: acc.totalGalleries + (event.gallery_count || 0),
+            totalPhotographers: acc.totalPhotographers + (event.photographer_count || 0)
+          }), { totalPhotos: 0, totalGalleries: 0, totalPhotographers: 0 });
 
-        // Calculate totals from events if available
-        const eventsStats = eventsData.reduce((acc, event) => ({
-          totalPhotos: acc.totalPhotos + (event.photo_count || 0),
-          totalGalleries: acc.totalGalleries + (event.gallery_count || 0),
-          totalPhotographers: acc.totalPhotographers + (event.photographer_count || 0)
-        }), { totalPhotos: 0, totalGalleries: 0, totalPhotographers: 0 });
+          // Update stats with events data
+          Object.assign(serverStats, {
+            total_galleries: eventsStats.totalGalleries || serverStats.total_galleries,
+            total_photos: eventsStats.totalPhotos || serverStats.total_photos,
+            total_photographers: eventsStats.totalPhotographers || serverStats.total_photographers,
+            total_events: eventsData.length || serverStats.total_events
+          });
+        }
 
         const statsData = {
-          totalGalleries: eventsStats.totalGalleries || serverStats.total_galleries || 0,
-          totalPhotos: eventsStats.totalPhotos || serverStats.total_photos || 0,
-          totalEvents: eventsData.length || serverStats.total_events || 0,
-          totalPhotographers: eventsStats.totalPhotographers || serverStats.total_photographers || 0,
+          totalGalleries: serverStats.total_galleries || 0,
+          totalPhotos: serverStats.total_photos || 0,
+          totalEvents: serverStats.total_events || 0,
+          totalPhotographers: serverStats.total_photographers || 0,
           recentGalleries: recentGalleries
         };
 
@@ -298,14 +308,16 @@ const HomePage = () => {
         setEvents(eventsData);
         setStats(statsData);
 
-        // Save to cache
-        saveToCache(EVENTS_CACHE_KEY, {
-          events: eventsData,
-          stats: statsData
-        });
+        // Save to cache if we got valid data
+        if (eventsData.length > 0) {
+          saveToCache(EVENTS_CACHE_KEY, {
+            events: eventsData,
+            stats: statsData
+          });
+        }
       } catch (err) {
-        console.error('Error fetching fresh data:', err);
-        throw err; // Let the outer catch handle it
+        console.error('Error in fetchFreshData:', err);
+        setError('Unable to load events at this time.');
       } finally {
         setLoading(false);
       }
@@ -314,35 +326,81 @@ const HomePage = () => {
     fetchData();
   }, []);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading events...</p>
+  // Event card skeleton loader
+  const EventSkeleton = () => (
+    <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+      <div className="h-48 bg-gray-200 animate-pulse"></div>
+      <div className="p-5">
+        <div className="h-6 bg-gray-200 rounded w-3/4 mb-4 animate-pulse"></div>
+        <div className="space-y-2">
+          <div className="h-4 bg-gray-200 rounded w-full"></div>
+          <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+        </div>
+        <div className="mt-4 flex items-center">
+          <div className="h-4 w-4 bg-gray-200 rounded-full mr-2"></div>
+          <div className="h-4 bg-gray-200 rounded w-32"></div>
+        </div>
+        <div className="mt-4 flex justify-between">
+          <div className="h-4 bg-gray-200 rounded w-16"></div>
+          <div className="h-4 bg-gray-200 rounded w-16"></div>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
 
-  if (error) {
+  // Show loading state for initial load
+  if (loading && events.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center p-6 max-w-md mx-auto bg-white rounded-lg shadow-md">
-          <div className="text-red-500 mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
+      <div className="min-h-screen bg-gray-50">
+        {/* Hero Section */}
+        <section className="relative bg-gradient-to-r from-blue-600 to-indigo-700 text-white py-20 overflow-hidden">
+          <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <div className="h-16 bg-blue-500 rounded w-3/4 mx-auto mb-6 animate-pulse"></div>
+            <div className="h-6 bg-blue-400 rounded w-1/2 mx-auto mb-8 animate-pulse"></div>
+            <div className="flex flex-col sm:flex-row justify-center gap-4">
+              <div className="h-12 bg-yellow-400 rounded-md w-48 mx-auto"></div>
+              <div className="h-12 bg-indigo-700 rounded-md w-48 mx-auto"></div>
+            </div>
           </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Something went wrong</h3>
-          <p className="text-gray-600 mb-4">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-          >
-            Try Again
-          </button>
-        </div>
+        </section>
+
+        {/* Loading content */}
+        <section className="py-12 bg-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-12">
+              <div className="h-10 bg-gray-200 rounded w-1/3 mx-auto mb-4 animate-pulse"></div>
+              <div className="h-6 bg-gray-200 rounded w-1/2 mx-auto"></div>
+            </div>
+            <div className="grid grid-cols-1 gap-5 mt-12 sm:grid-cols-2 lg:grid-cols-4">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                  <div className="flex items-start">
+                    <div className="p-3 rounded-lg bg-gray-200"></div>
+                    <div className="ml-4 flex-1">
+                      <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
+                      <div className="h-8 bg-gray-200 rounded w-3/4"></div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Loading events section */}
+        <section className="py-16 bg-gray-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-12">
+              <div className="h-10 bg-gray-200 rounded w-1/4 mx-auto mb-4"></div>
+              <div className="h-6 bg-gray-200 rounded w-1/3 mx-auto"></div>
+            </div>
+            <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3].map((i) => (
+                <EventSkeleton key={i} />
+              ))}
+            </div>
+          </div>
+        </section>
       </div>
     );
   }
@@ -602,9 +660,20 @@ const HomePage = () => {
             <p className="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
               Browse and join our upcoming photography events
             </p>
+            {error && (
+              <div className="mt-4 text-sm text-red-600 bg-red-50 p-3 rounded-md inline-block">
+                {error}
+              </div>
+            )}
           </div>
           
-          {events.length > 0 ? (
+          {loading ? (
+            <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3].map((i) => (
+                <EventSkeleton key={i} />
+              ))}
+            </div>
+          ) : events.length > 0 ? (
             <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
               {events.map((event) => (
                 <motion.div
@@ -668,6 +737,15 @@ const HomePage = () => {
                   </div>
                 </motion.div>
               ))}
+            </div>
+          ) : error ? (
+            <div className="text-center py-12">
+              <div className="inline-flex items-center px-4 py-2 rounded-md bg-gray-100 text-gray-700">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>Unable to load events. Please check your connection and try again later.</span>
+              </div>
             </div>
           ) : (
             <div className="text-center py-12">
