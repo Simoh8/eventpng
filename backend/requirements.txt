@@ -54,9 +54,7 @@ cryptography==41.0.7
 
 
 
-# mysql -u root -p
-# CREATE DATABASE eventpng CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-# CREATE USER 'eventpng_admin'@'localhost' IDENTIFIED BY '@Venom19999!.';
-# GRANT ALL PRIVILEGES ON eventpng.* TO 'eventpng_admin'@'localhost';
-# FLUSH PRIVILEGES;
-# EXIT;
+dj-rest-auth[social]==5.0.2
+django-allauth[socialaccount]==0.60.1
+python-social-auth==0.3.6
+social-auth-app-django==5.4.2
