@@ -30,6 +30,10 @@ A high-quality image gallery platform where photographers can showcase their wor
   <img src="./docs/screenshots/events-page.png" alt="Events Page" width="30%">
   <img src="./docs/screenshots/event-detail.png" alt="Event Detail" width="30%">
   <img src="./docs/screenshots/checkout.png" alt="Checkout" width="30%">
+  <img src="./docs/screenshots/Screenshot from 2025-09-08 00-06-57.png" alt="Checkout" width="30%">
+  <img src="./docs/screenshots/Screenshot from 2025-09-08 00-06-48.png" alt="Checkout" width="30%">
+
+
 </div>
 
 *More Screenshots coming soon*
