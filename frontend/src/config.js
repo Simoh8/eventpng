@@ -15,9 +15,13 @@ export const API_ENDPOINTS = {
   
   // Gallery endpoints
   PUBLIC_EVENTS: `${API_BASE_URL}/api/gallery/public/events/`,
+  STATS: `${API_BASE_URL}/api/gallery/stats/`,
+  GALLERY_STATS: `${API_BASE_URL}/api/gallery/stats/`,
+  RECENT_GALLERIES: `${API_BASE_URL}/api/gallery/recent/`,
   
   // Google OAuth
   GOOGLE_AUTH: `${API_BASE_URL}/api/accounts/google/`,
+  GOOGLE_LOGIN: `${API_BASE_URL}/api/accounts/google/`,
   GOOGLE_CONFIG: `${API_BASE_URL}/api/accounts/config/google/`,
 };
 

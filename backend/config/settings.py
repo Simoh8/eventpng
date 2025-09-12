@@ -47,6 +47,28 @@ CORS_ALLOWED_ORIGINS = [
     'http://127.0.0.1:8000',
 ]
 
+# Google OAuth Settings
+GOOGLE_OAUTH2_CLIENT_ID = os.getenv('GOOGLE_OAUTH2_CLIENT_ID')
+GOOGLE_OAUTH2_SECRET = os.getenv('GOOGLE_OAUTH2_SECRET')
+
+# Social Account Configuration
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'SCOPE': [
+            'profile',
+            'email',
+        ],
+        'AUTH_PARAMS': {
+            'access_type': 'online',
+        },
+        'APP': {
+            'client_id': GOOGLE_OAUTH2_CLIENT_ID,
+            'secret': GOOGLE_OAUTH2_SECRET,
+            'key': ''
+        }
+    }
+}
+
 # Allow all headers that might be sent by the frontend
 CORS_ALLOW_HEADERS = [
     'accept',
@@ -185,6 +207,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'config.middleware.MediaCacheControlMiddleware',  # Custom middleware for media cache control
     'allauth.account.middleware.AccountMiddleware',
 ]
 
@@ -304,9 +327,36 @@ STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')] if os.path.exists(os.path.join(BASE_DIR, 'static')) else []
 
-# Media files
+# Media files (user-uploaded files)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Custom storage backends
+DEFAULT_FILE_STORAGE = 'config.storage_backends.CachedFileSystemStorage'
+
+# Cache settings
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+    },
+    'file_cache': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': os.path.join(BASE_DIR, 'file_cache'),
+        'TIMEOUT': 60 * 60 * 24 * 7,  # 1 week
+        'OPTIONS': {
+            'MAX_ENTRIES': 1000
+        }
+    }
+}
+
+# File upload permissions
+FILE_UPLOAD_PERMISSIONS = 0o644  # rw-r--r--
+
+# Cache control settings for static and media files
+SECONDS_IN_DAY = 60 * 60 * 24
+CACHE_CONTROL_DAYS = 30
+CACHE_CONTROL_MAX_AGE = SECONDS_IN_DAY * CACHE_CONTROL_DAYS
 
 # Create media directory if it doesn't exist
 os.makedirs(MEDIA_ROOT, exist_ok=True)

@@ -78,7 +78,7 @@ def process_image(photo):
         
     try:
         # Create watermark text (e.g., username + date)
-        watermark_text = f"© {photo.uploaded_by.username if photo.uploaded_by else 'EventPix'}"
+        watermark_text = f"© {photo.uploaded_by.username if photo.uploaded_by else 'EventPNG'}"
         
         # Add watermark
         watermarked_image = add_watermark(

@@ -17,7 +17,7 @@ class ContactSubmissionSerializer(serializers.ModelSerializer):
             'subject': {
                 'required': False,  # Make subject optional
                 'allow_blank': True,  # Allow empty string
-                'default': 'Bulk Download Inquiry'  # Set default value
+                'default': 'User Inquiry'  # Set default value
             },
             'name': {'required': True},
             'email': {'required': True},
@@ -81,7 +81,7 @@ class ContactSubmissionSerializer(serializers.ModelSerializer):
         # Set default subject if not provided or empty
         subject = data.get('subject', '').strip()
         if not subject:
-            data['subject'] = 'Bulk Download Inquiry'
+            data['subject'] = 'User Inquiry'
             logger.info("Set default subject")
         
         # Log the final validated data

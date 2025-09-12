@@ -183,6 +183,11 @@ class Gallery(models.Model):
         default=0,
         help_text="Price in USD for downloading the entire gallery. 0 means free."
     )
+    featured_until = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="If set, the gallery will be featured until this date"
+    )
     cover_photo = models.ForeignKey(
         'Photo',
         on_delete=models.SET_NULL,
@@ -211,9 +216,16 @@ class Gallery(models.Model):
                 counter += 1
         super().save(*args, **kwargs)
 
-    @property
-    def photo_count(self):
+    def _get_photo_count(self):
+        if hasattr(self, '_photo_count'):
+            return self._photo_count
         return self.photos.count()
+        
+    def _set_photo_count(self, value):
+        # This is a no-op setter to handle cases where Django tries to set the attribute
+        pass
+        
+    photo_count = property(_get_photo_count, _set_photo_count)
 
 
 class Photo(models.Model):
@@ -330,7 +342,7 @@ class Photo(models.Model):
                 font = ImageFont.load_default()
                 
             # Add watermark text
-            text = f" {self.gallery.photographer.username if self.gallery.photographer else 'EventPix'}"
+            text = f" {self.gallery.photographer.username if self.gallery.photographer else 'EventPNG'}"
             
             # Get text bounding box and calculate dimensions
             bbox = draw.textbbox((0, 0), text, font=font)

@@ -23,18 +23,30 @@ export default function MainLayout() {
     navigate('/');
   };
     
-  // Navigation items - Focused on event photo browsing and purchases
+  // Get user data from nested structure if needed
+  const userData = user?.data || user || {};
+  
+  // Navigation items based on authentication and role
   const navigation = [
     { name: 'Home', href: '/' },
     { name: 'Events', href: '/events' },
     ...(isAuthenticated ? [
-      user?.is_photographer 
-        ? { name: 'Dashboard', href: '/dashboard' }
-        : { name: 'My Gallery', href: '/my-gallery' }
+      // Photographer specific navigation
+      ...(userData?.is_photographer ? [
+        { name: 'Dashboard', href: '/photographer-dashboard' },
+      ] : []),
+      // Customer specific navigation
+      ...(userData?.is_photographer === false ? [
+        { name: 'My Gallery', href: '/my-gallery' },
+      ] : []),
+      // Admin specific navigation
+      ...((userData?.is_staff || userData?.is_superuser) ? [
+        { name: 'Admin', href: '/admin/events' },
+      ] : []),
     ] : [
+      // Public navigation
       { name: 'Pricing', href: '/pricing' },
       { name: 'FAQ', href: '/faq' },
-      { name: 'Terms', href: '/terms' },
     ]),
   ];
   
@@ -43,15 +55,27 @@ export default function MainLayout() {
     ...navigation,
     ...(isAuthenticated 
       ? [
-          ...(user?.is_photographer ? [{ name: 'Create Gallery', href: '/galleries/new' }] : []),
-          { name: 'My Orders', href: '/orders' },
+          // Photographer specific mobile navigation
+          ...(userData?.is_photographer ? [
+            { name: 'Create Gallery', href: '/galleries/new' },
+          ] : []),
+          // Customer specific mobile navigation
+          ...(userData?.is_photographer === false ? [
+            { name: 'My Photos', href: '/my-photos' },
+            { name: 'My Orders', href: '/orders' },
+            { name: 'Saved', href: '/saved' },
+          ] : []),
+          // Shared authenticated navigation
           { name: 'Account Settings', href: '/settings' },
           { name: 'Help & Support', href: '/support' },
+          { name: 'Logout', href: '#', onClick: handleLogout },
         ]
       : [
+          // Public mobile navigation
           { name: 'Sign In', href: '/login' },
           { name: 'Create Account', href: '/register' },
           { name: 'Help & Support', href: '/support' },
+          { name: 'Terms', href: '/terms' },
         ]
     ),
   ];
@@ -112,7 +136,7 @@ export default function MainLayout() {
             <div className="hidden lg:flex lg:items-center lg:space-x-4">
               {isAuthenticated ? (
                 <>
-                  {user?.is_photographer && (
+                  {userData?.is_photographer && (
                     <Link
                       to="/galleries/new"
                       className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
@@ -121,7 +145,7 @@ export default function MainLayout() {
                       Create Gallery
                     </Link>
                   )}
-                  <UserMenu user={user} onLogout={handleLogout} />
+                  <UserMenu user={userData} onLogout={handleLogout} />
                 </>
               ) : (
                 <>

@@ -1,78 +1,147 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FaArrowLeft, FaCheck, FaShoppingCart, FaTimes, FaChevronLeft, FaChevronRight, FaExpand, FaCompress, FaSpinner } from 'react-icons/fa';
-import { getProtectedImageUrl } from '../utils/imageUtils';
 import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
-
-// Helper function to fetch event details
-const fetchEvent = async (id) => {
-  const { data } = await axios.get(`${API_URL}/gallery/public/events/${id}/`);
-  return data;
+// Helper function to get protected image URL
+const getProtectedImageUrl = (imageUrl, width = 800) => {
+  if (!imageUrl) return '';
+  // If the URL is already absolute, return it as is
+  if (imageUrl.startsWith('http')) return imageUrl;
+  // Otherwise, construct the full URL
+  const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+  return `${baseUrl}${imageUrl}${imageUrl.includes('?') ? '&' : '?'}w=${width}`;
 };
 
-// Helper function to fetch event images
-const fetchEventImages = async (eventId, page = 1) => {
-  const { data } = await axios.get(`${API_URL}/gallery/events/${eventId}/images/`, {
-    params: { page, page_size: 12 }
-  });
-  return data;
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+
+// Helper function to fetch event details by slug
+const fetchEvent = async (slug) => {
+  // First get the event ID from the slug
+  const eventsResponse = await axios.get(`${API_URL}/api/gallery/public/events/`);
+  const events = Array.isArray(eventsResponse.data) ? eventsResponse.data : eventsResponse.data.results || [];
+  const event = events.find(event => event.slug === slug);
+  
+  if (!event) {
+    throw new Error(`Event with slug '${slug}' not found`);
+  }
+  
+  // Now fetch the full event details with galleries and photos
+  const eventDetailResponse = await axios.get(`${API_URL}/api/gallery/public/events/${event.id}/`);
+  
+  if (!eventDetailResponse.data) {
+    throw new Error('Event details not found');
+  }
+  
+  // Process the response to match the expected format
+  const eventData = eventDetailResponse.data;
+  
+  // Flatten all photos from all galleries
+  const allPhotos = [];
+  if (eventData.galleries && Array.isArray(eventData.galleries)) {
+    eventData.galleries.forEach(gallery => {
+      if (gallery.photos && Array.isArray(gallery.photos)) {
+        gallery.photos.forEach(photo => {
+          allPhotos.push({
+            ...photo,
+            gallery_title: gallery.title,
+            gallery_id: gallery.id
+          });
+        });
+      }
+    });
+  }
+  
+  // Return the combined data
+  return {
+    ...eventData,
+    photos: {
+      results: allPhotos,
+      count: allPhotos.length,
+      next: null,  // Pagination would need to be handled differently if needed
+      previous: null
+    }
+  };
 };
 
 const EventDetail = () => {
-  const { id } = useParams();
+  const { slug } = useParams();
   const navigate = useNavigate();
   const [selectedImages, setSelectedImages] = useState(new Set());
   const [images, setImages] = useState([]);
   const [page, setPage] = useState(1);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [galleryGroups, setGalleryGroups] = useState({});
   const [isFullscreen, setIsFullscreen] = useState(false);
   const lightboxRef = useRef();
   const observer = useRef();
 
-  // Parse the ID to ensure it's a number
-  const eventId = parseInt(id, 10);
-  
-  // Fetch event data
-  const { 
-    data: event, 
-    isLoading: isLoadingEvent, 
-    isError: isEventError 
+  // Fetch event details
+  const {
+    data: event,
+    isLoading: isLoadingEvent,
+    error: eventError 
   } = useQuery({
-    queryKey: ['event', eventId],
-    queryFn: () => fetchEvent(eventId),
-    enabled: !!eventId,
-    onError: () => {
-      navigate('/events', { replace: true });
-    }
-  });
-
-  // Fetch event images with pagination
-  const { 
-    data: imagesData, 
-    isFetching: isLoadingImages,
-    isError: isImagesError
-  } = useQuery({
-    queryKey: ['eventImages', eventId, page],
-    queryFn: () => fetchEventImages(eventId, page),
-    enabled: !!eventId,
-    keepPreviousData: true,
+    queryKey: ['event', slug],
+    queryFn: () => slug ? fetchEvent(slug) : Promise.reject('No event slug provided'),
+    enabled: !!slug, // Only run the query if we have a valid slug
     onSuccess: (data) => {
-      setImages(prev => [...prev, ...data.results]);
+      if (data && data.galleries) {
+        // Initialize gallery groups with empty arrays
+        const groups = {};
+        data.galleries.forEach(gallery => {
+          groups[gallery.id] = {
+            ...gallery,
+            photos: []
+          };
+        });
+        setGalleryGroups(groups);
+      }
     }
   });
 
-  const loading = isLoadingEvent || isLoadingImages;
-  const hasMore = imagesData?.next !== null;
+  // Process event data when it's loaded
+  useEffect(() => {
+    if (event?.galleries) {
+      // Initialize gallery groups with photos
+      const groups = {};
+      const allPhotos = [];
+      
+      event.galleries.forEach(gallery => {
+        if (gallery) {
+          // Process photos for this gallery
+          const galleryPhotos = (gallery.photos || []).map(photo => ({
+            ...photo,
+            gallery_title: gallery.title,
+            gallery_id: gallery.id
+          }));
+          
+          // Add to gallery groups
+          groups[gallery.id] = {
+            ...gallery,
+            photos: galleryPhotos
+          };
+          
+          // Add to all photos
+          allPhotos.push(...galleryPhotos);
+        }
+      });
+      
+      setGalleryGroups(groups);
+      setImages(allPhotos);
+    }
+  }, [event]);
 
-  // Reset images when event changes
+  const loading = isLoadingEvent;
+  const hasMore = false; // We load all data at once now
+
+  // Reset images and page when event changes
   useEffect(() => {
     setImages([]);
     setPage(1);
-  }, [eventId]);
+  }, [event?.id]);
 
   // Infinite scroll observer
   const lastImageRef = useCallback(node => {
@@ -92,8 +161,16 @@ const EventDetail = () => {
   const openLightbox = useCallback((index) => {
     setCurrentImageIndex(index);
     setLightboxOpen(true);
-    document.body.style.overflow = 'hidden';
   }, []);
+
+  const handleGalleryClick = useCallback((gallery) => {
+    if (gallery.slug) {
+      navigate(`/gallery/${gallery.slug}`);
+    } else {
+      // Fallback to ID if slug is not available
+      navigate(`/gallery/${gallery.id}`);
+    }
+  }, [navigate]);
 
   // Close lightbox
   const closeLightbox = useCallback(() => {
@@ -241,55 +318,10 @@ const EventDetail = () => {
     );
   }, [lightboxOpen, currentImageIndex, images, closeLightbox, navigateImage, toggleFullscreen, isFullscreen]);
 
-  if (isEventError || isImagesError) {
+  // Loading state
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center">
-            <h2 className="text-3xl font-extrabold text-gray-900 mb-4">Error loading event</h2>
-            <button
-              onClick={() => navigate('/events')}
-              className="mt-4 px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
-            >
-              Back to Events
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (isLoadingEvent) {
-    return (
-      <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto flex justify-center items-center h-64">
-          <FaSpinner className="animate-spin h-12 w-12 text-primary-600" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!event) {
-    return (
-      <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center">
-            <h2 className="text-3xl font-extrabold text-gray-900 mb-4">Event not found</h2>
-            <button
-              onClick={() => navigate('/events')}
-              className="mt-4 px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
-            >
-              Back to Events
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <button
             onClick={() => navigate(-1)}
@@ -298,141 +330,264 @@ const EventDetail = () => {
             <FaArrowLeft className="mr-2" /> Back to Events
           </button>
           
-          <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-            <div className="md:flex">
-              <div className="md:w-1/2">
-                <img 
-                  src={getProtectedImageUrl(event.cover_image?.image || '')} 
-                  alt={event.name}
-                  className="w-full h-64 md:h-auto object-cover cursor-pointer"
-                  onClick={() => openLightbox(0)}
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = 'https://via.placeholder.com/800x600?text=No+Image';
-                  }}
-                />
-              </div>
-              <div className="p-6 md:w-1/2">
-                <div className="flex items-center mb-4">
-                  {event.category && (
-                    <span className="inline-block bg-primary-100 text-primary-800 text-xs px-2 py-1 rounded-full font-semibold">
-                      {event.category}
-                    </span>
-                  )}
-                  <span className="ml-2 text-sm text-gray-600">
-                    {new Date(event.date).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
-                  </span>
-                </div>
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">{event.name}</h1>
-                <div className="flex items-center text-gray-600 mb-4">
-                  <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  {event.location}
-                </div>
-                {event.description && <p className="text-gray-700 mb-6">{event.description}</p>}
-                <div className="flex items-center justify-between">
-                  {event.price && (
-                    <span className="text-2xl font-bold text-gray-900">
-                      ${parseFloat(event.price).toFixed(2)}
-                    </span>
-                  )}
-                  <button className="bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-6 rounded-lg flex items-center transition-colors">
-                    <FaShoppingCart className="mr-2" /> Add to Cart
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-12">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Event Gallery</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {images.map((image, index) => {
-                const isLastImage = index === images.length - 1;
-                return (
-                  <div 
-                    key={image.id}
-                    ref={isLastImage ? lastImageRef : null}
-                    className={`group relative aspect-square overflow-hidden rounded-lg cursor-pointer transform transition-all duration-300 hover:scale-105 ${
-                      selectedImages.has(image.id) ? 'ring-4 ring-primary-500' : 'ring-1 ring-gray-200 hover:ring-2 hover:ring-primary-400'
-                    }`}
-                    onClick={() => openLightbox(index + 1)}
-                  >
-                    <img 
-                      src={getProtectedImageUrl(image.image)} 
-                      alt={image.title || `Event image ${index + 1}`}
-                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Found';
-                      }}
-                    />
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-300 flex items-center justify-center">
-                      <div className="opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 transition-all duration-300">
-                        <FaExpand className="text-white text-xl drop-shadow-lg" />
-                      </div>
-                    </div>
-                    {selectedImages.has(image.id) && (
-                      <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
-                        <div className="bg-primary-600 rounded-full p-1">
-                          <FaCheck className="text-white" />
-                        </div>
-                      </div>
-                    )}
-                    {image.is_featured && (
-                      <span className="absolute top-2 left-2 bg-yellow-400 text-yellow-900 text-xs font-semibold px-2 py-1 rounded">
-                        Featured
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            {loading && (
-              <div className="flex justify-center my-8">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
-              </div>
-            )}
-            {!loading && images.length === 0 && (
-              <div className="text-center py-12 text-gray-500">
-                No additional images found for this event.
-              </div>
-            )}
+          <div className="flex items-center justify-center py-12">
+            <FaSpinner className="animate-spin text-4xl text-blue-500 mr-3" />
+            <span className="text-lg">Loading event...</span>
           </div>
         </div>
       </div>
+    );
+  }
 
+  // Error state
+  if (eventError) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center text-gray-600 hover:text-gray-900 mb-6 transition-colors"
+          >
+            <FaArrowLeft className="mr-2" /> Back to Events
+          </button>
+          
+          <div className="bg-white rounded-lg shadow-lg p-6 text-center">
+            <h2 className="text-2xl font-bold text-red-500 mb-4">Error Loading Event</h2>
+            <p className="text-gray-600 mb-6">We couldn't load the event. Please try again later.</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading state while fetching event data
+  if (isLoadingEvent) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <FaSpinner className="animate-spin text-4xl text-blue-500 mx-auto mb-4" />
+          <p className="text-gray-600">Loading event details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if event failed to load
+  if (eventError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-red-500 mb-4">Error Loading Event</h2>
+          <p className="text-gray-600 mb-6">We couldn't load the event. Please try again later.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Ensure we have event data before rendering
+  if (!event) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <FaSpinner className="animate-spin text-4xl text-blue-500 mx-auto mb-4" />
+          <p className="text-gray-600">Loading event data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Check if we have any galleries
+  const hasGalleries = Object.keys(galleryGroups).length > 0;
+  const allPhotos = Object.values(galleryGroups).reduce((acc, gallery) => {
+    return [...acc, ...(gallery.photos || [])];
+  }, []);
+  
+  // Loading state for the entire component
+  const isLoading = isLoadingEvent || (hasGalleries && allPhotos.length === 0);
+  
+  return (
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
+        <button
+          onClick={() => navigate(-1)}
+          className="flex items-center text-gray-600 hover:text-gray-900 mb-6 transition-colors"
+        >
+          <FaArrowLeft className="mr-2" /> Back to Events
+        </button>
+        
+        {/* Event Header */}
+        <div className="bg-white rounded-lg shadow-lg overflow-hidden mb-8">
+          <div className="md:flex">
+            <div className="md:w-1/2">
+              {event?.cover_image?.image ? (
+                <img 
+                  src={getProtectedImageUrl(event.cover_image.image)} 
+                  alt={event.name || 'Event cover'}
+                  className="w-full h-64 md:h-auto object-cover"
+                  onError={(e) => {
+                    e.target.onerror = null; 
+                    e.target.src = 'https://via.placeholder.com/800x600?text=No+Image+Available';
+                  }}
+                />
+              ) : (
+                <div className="w-full h-64 bg-gray-200 flex items-center justify-center">
+                  <span className="text-gray-400">No cover image available</span>
+                </div>
+              )}
+            </div>
+            <div className="p-6 md:w-1/2">
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">{event.name}</h1>
+              {event.date && (
+                <p className="text-gray-600 mb-4">
+                  {new Date(event.date).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
+                </p>
+              )}
+              {event.location && (
+                <p className="text-gray-600 mb-4">{event.location}</p>
+              )}
+              {event.description && (
+                <div className="prose max-w-none text-gray-600">
+                  {event.description}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Gallery Grid */}
+        <div className="mt-12">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">Galleries</h2>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <FaSpinner className="animate-spin text-blue-500 mr-2" />
+              <span>Loading galleries...</span>
+            </div>
+          ) : Object.values(galleryGroups).length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {Object.values(galleryGroups).map(gallery => (
+                <div 
+                  key={gallery.id} 
+                  className="bg-white rounded-lg shadow-md overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
+                  onClick={() => navigate(`/gallery/${gallery.slug || gallery.id}`)}
+                >
+                  <div className="p-4">
+                    <h3 className="text-lg font-semibold mb-2">{gallery.title || 'Untitled Gallery'}</h3>
+                    {gallery.description && (
+                      <p className="text-gray-600 mb-4">{gallery.description}</p>
+                    )}
+                    
+                    {gallery.photos && gallery.photos.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2 mb-4">
+                        {gallery.photos.slice(0, 4).map((photo, index) => (
+                          <div key={photo.id || index} className="aspect-square overflow-hidden">
+                            <img 
+                              src={getProtectedImageUrl(photo.image, 300)} 
+                              alt={photo.caption || `Photo ${index + 1}`}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Found';
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="aspect-square bg-gray-100 flex items-center justify-center text-gray-400 mb-4">
+                        No photos in this gallery
+                      </div>
+                    )}
+                    
+                    <button 
+                      onClick={() => handleGalleryClick(gallery)}
+                      className="w-full bg-primary-500 text-white py-2 px-4 rounded hover:bg-primary-600 transition-colors"
+                    >
+                      View Gallery ({gallery.photos?.length || 0} photos)
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center p-8 text-gray-500">
+              No galleries found for this event.
+            </div>
+          )}
+        </div>
+
+        {/* All Photos Section */}
+        {allPhotos.length > 0 && (
+          <div className="mt-12">
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">All Photos</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {allPhotos.map((photo, index) => (
+                <div 
+                  key={photo.id || index}
+                  className="aspect-square bg-gray-100 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+                  ref={index === allPhotos.length - 1 ? lastImageRef : null}
+                  onClick={() => openLightbox(index)}
+                >
+                  <img 
+                    src={getProtectedImageUrl(photo.image, 300)} 
+                    alt={`Photo ${index + 1}`}
+                    className="w-full h-full object-cover hover:opacity-90 transition-opacity cursor-pointer"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Found';
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+            {loading && (
+              <div className="flex justify-center mt-8">
+                <FaSpinner className="animate-spin text-2xl text-blue-500 mr-2" />
+                <span>Loading photos...</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      
+      {/* Lightbox */}
       <Lightbox />
-
+      
+      {/* Selection Actions */}
       {selectedImages.size > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white shadow-lg border-t border-gray-200 px-4 py-3">
-          <div className="max-w-7xl mx-auto flex justify-between items-center">
-            <div className="text-gray-700">
-              {selectedImages.size} {selectedImages.size === 1 ? 'image' : 'images'} selected
-            </div>
-            <div className="space-x-3">
-              <button
-                onClick={() => setSelectedImages(new Set())}
-                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-              >
-                Clear
-              </button>
-              <button
-                onClick={handleAddToCart}
-                className="px-6 py-2 border border-transparent rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 flex items-center"
-              >
-                <FaShoppingCart className="mr-2" />
-                Add to Cart ({selectedImages.size})
-              </button>
-            </div>
+        <div className="fixed bottom-0 left-0 right-0 bg-white shadow-lg py-4 px-6 flex justify-between items-center">
+          <div className="text-gray-700">
+            {selectedImages.size} {selectedImages.size === 1 ? 'photo' : 'photos'} selected
+          </div>
+          <div className="space-x-4">
+            <button 
+              onClick={() => setSelectedImages(new Set())}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={handleAddToCart}
+              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 flex items-center"
+            >
+              <FaShoppingCart className="mr-2" />
+              Add to Cart
+            </button>
           </div>
         </div>
       )}

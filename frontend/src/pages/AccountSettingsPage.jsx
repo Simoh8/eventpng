@@ -22,26 +22,12 @@ const AccountSettingsPage = () => {
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        console.log('Starting to fetch user data...');
         setIsLoading(true);
         
-        // Check if we have an access token
         const token = localStorage.getItem('access_token');
-        console.log('Access token:', token ? 'exists' : 'missing');
-        
-        // Make the API request
-        console.log('Making request to /accounts/me/');
-        const response = await api.get('/accounts/me/');
-        console.log('API Response:', response);
-        
+        const response = await api.get('/api/accounts/me/');
         const responseData = response.data;
-        console.log('User data received:', responseData);
-        
-        // Extract the user data from the nested data property
         const userData = responseData.data || {};
-        console.log('Extracted user data:', userData);
-        
-        // Update form data with the received user data
         const newFormData = {
           full_name: userData.full_name || '',
           email: userData.email || '',
@@ -49,15 +35,11 @@ const AccountSettingsPage = () => {
           bio: userData.bio || '',
         };
         
-        console.log('Updating form data with:', newFormData);
         setFormData(newFormData);
       } catch (error) {
-        console.error('Failed to fetch user data:', error);
-        console.error('Error response:', error.response);
-        
+
         toast.error('Failed to load user data');
         if (error.response?.status === 401) {
-          console.log('Unauthorized - redirecting to login');
           navigate('/login');
         }
       } finally {
@@ -98,7 +80,7 @@ const AccountSettingsPage = () => {
         bio: formData.bio,
       };
 
-      const response = await api.patch('/accounts/me/update/', updateData);
+      const response = await api.patch('/api/accounts/me/update/', updateData);
       
       // Update auth context with new user data
       if (response.data.data) {

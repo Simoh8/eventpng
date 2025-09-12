@@ -9,6 +9,7 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for the user object."""
     email = serializers.EmailField(required=False)  # Make email optional for updates
+    is_photographer = serializers.BooleanField(read_only=True)  # Explicitly include is_photographer
     
     class Meta:
         model = User

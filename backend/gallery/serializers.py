@@ -2,6 +2,78 @@ from rest_framework import serializers
 from .models import Event, Gallery, Photo, Download
 from accounts.serializers import UserSerializer
 
+class PhotoSerializer(serializers.ModelSerializer):
+    """Serializer for photos in galleries."""
+    image_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Photo
+        fields = ['id', 'title', 'description', 'image', 'image_url', 'width', 'height', 'created_at']
+        read_only_fields = ['id', 'created_at']
+    
+    def get_image_url(self, obj):
+        request = self.context.get('request')
+        if obj.image:
+            return request.build_absolute_uri(obj.image.url) if request else obj.image.url
+        return None
+
+class GalleryWithPhotosSerializer(serializers.ModelSerializer):
+    """Serializer for galleries that includes their photos."""
+    photos = PhotoSerializer(many=True, read_only=True, context={'request': None})
+    
+    class Meta:
+        model = Gallery
+        fields = ['id', 'title', 'description', 'cover_photo', 'photos', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+class PublicEventDetailSerializer(serializers.ModelSerializer):
+    """Serializer for public event detail with galleries and photos."""
+    galleries = serializers.SerializerMethodField()
+    created_by = serializers.SerializerMethodField()
+    is_private = serializers.SerializerMethodField()
+    cover_photo = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Event
+        fields = [
+            'id', 'name', 'slug', 'description', 'date', 'location', 
+            'cover_photo', 'galleries', 'created_by', 'is_private', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
+    
+    def get_created_by(self, obj):
+        if obj.created_by:
+            return obj.created_by.get_full_name() or obj.created_by.email
+        return None
+    
+    def get_is_private(self, obj):
+        return obj.privacy != 'public'
+        
+    def get_cover_photo(self, obj):
+        # Get the primary cover or first available cover
+        cover = obj.covers.filter(is_primary=True).first() or obj.covers.first()
+        if cover and cover.image:
+            request = self.context.get('request')
+            if request is not None and hasattr(request, 'build_absolute_uri'):
+                return request.build_absolute_uri(cover.image.url)
+            return cover.image.url
+        return None
+        
+    def get_galleries(self, obj):
+        # Use the prefetched galleries_data if available, otherwise query them
+        galleries = getattr(obj, 'galleries_data', None) or Gallery.objects.filter(
+            event=obj,
+            is_public=True
+        ).prefetch_related('photos')
+        
+        # Use the GalleryWithPhotosSerializer to serialize the galleries
+        return GalleryWithPhotosSerializer(
+            galleries,
+            many=True,
+            context=self.context
+        ).data
+
+
 class PublicEventSerializer(serializers.ModelSerializer):
     """Serializer for public event listing (shows all events but marks private ones)."""
     created_by = serializers.SerializerMethodField()
@@ -55,17 +127,29 @@ class EventListSerializer(serializers.ModelSerializer):
 class EventSerializer(serializers.ModelSerializer):
     """Serializer for the Event model with full access."""
     created_by = UserSerializer(read_only=True)
+    galleries = serializers.SerializerMethodField()
     
     class Meta:
         model = Event
         fields = [
             'id', 'name', 'slug', 'description', 'date', 'location',
-            'privacy', 'pin', 'created_by', 'created_at', 'updated_at'
+            'privacy', 'pin', 'created_by', 'created_at', 'updated_at', 'galleries'
         ]
-        read_only_fields = ['id', 'slug', 'created_by', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'slug', 'created_by', 'created_at', 'updated_at', 'galleries']
         extra_kwargs = {
             'pin': {'write_only': True, 'required': False}  # Make pin optional and write-only
         }
+    
+    def get_galleries(self, obj):
+        """Get galleries for this event."""
+        request = self.context.get('request')
+        galleries = obj.galleries.all()
+        
+        # Filter by visibility if not the owner
+        if not (request and request.user == obj.created_by):
+            galleries = galleries.filter(is_public=True)
+            
+        return GalleryListSerializer(galleries, many=True, context=self.context).data
     
     def to_representation(self, instance):
         """Customize the response data."""
@@ -111,28 +195,65 @@ class GalleryListSerializer(serializers.ModelSerializer):
     """Serializer for listing galleries with basic information."""
     cover_photo = serializers.SerializerMethodField()
     photographer = UserSerializer(read_only=True)
-    photo_count = serializers.IntegerField(read_only=True)
+    total_photos = serializers.IntegerField(read_only=True, source='photo_count')
     
     class Meta:
         model = Gallery
         fields = [
             'id', 'title', 'slug', 'description', 'photographer',
-            'cover_photo', 'photo_count', 'is_public', 'price',
+            'cover_photo', 'total_photos', 'is_public', 'price',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'slug', 'created_at', 'updated_at', 'photo_count']
+        read_only_fields = ['id', 'slug', 'created_at', 'updated_at', 'total_photos']
     
     def get_cover_photo(self, obj):
         if obj.cover_photo and obj.cover_photo.image:
             return obj.cover_photo.image.url
         return None
 
-class GalleryDetailSerializer(GalleryListSerializer):
-    """Serializer for detailed gallery view including photos."""
-    photos = PhotoSerializer(many=True, read_only=True)
+class GalleryDetailSerializer(serializers.ModelSerializer):
+    """Serializer for detailed gallery view including photos and event."""
+    photos = serializers.SerializerMethodField()
+    event = serializers.SerializerMethodField()
+    cover_photo = serializers.SerializerMethodField()
+    photographer = UserSerializer(read_only=True)
     
-    class Meta(GalleryListSerializer.Meta):
-        fields = GalleryListSerializer.Meta.fields + ['photos']
+    class Meta:
+        model = Gallery
+        fields = [
+            'id', 'title', 'slug', 'description', 'photos', 
+            'event', 'photographer', 'cover_photo', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def get_photos(self, obj):
+        # Get public photos for the gallery
+        photos = obj.photos.filter(is_public=True)
+        return PhotoSerializer(
+            photos, 
+            many=True,
+            context=self.context
+        ).data
+    
+    def get_event(self, obj):
+        if not obj.event:
+            return None
+        return {
+            'id': obj.event.id,
+            'name': obj.event.name,
+            'slug': obj.event.slug,
+            'date': obj.event.date
+        }
+        
+    def get_cover_photo(self, obj):
+        # Get the cover photo or first photo in the gallery
+        cover = obj.cover_photo or obj.photos.filter(is_public=True).first()
+        if cover and cover.image:
+            request = self.context.get('request')
+            if request is not None and hasattr(request, 'build_absolute_uri'):
+                return request.build_absolute_uri(cover.image.url)
+            return cover.image.url
+        return None
 
 class GalleryCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating galleries with photos."""
@@ -145,7 +266,11 @@ class GalleryCreateSerializer(serializers.ModelSerializer):
         write_only=True,
         required=True
     )
-    event = serializers.PrimaryKeyRelatedField(queryset=Event.objects.all())
+    event = serializers.PrimaryKeyRelatedField(
+        queryset=Event.objects.all(),
+        required=True,
+        help_text="Event ID this gallery belongs to"
+    )
     
     class Meta:
         model = Gallery
@@ -155,14 +280,20 @@ class GalleryCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         from .utils import process_image
         
-        # Extract photos from validated data
+        # Extract photos and event from validated data
         photos_data = validated_data.pop('photos', [])
+        event = validated_data.pop('event', None)
         
-        # Create gallery with the current user as the photographer
-        gallery = Gallery.objects.create(
-            photographer=self.context['request'].user,
-            **validated_data
-        )
+        # Set the photographer to the current user
+        validated_data['photographer'] = self.context['request'].user
+        
+        # Create the gallery with the event
+        gallery = super().create(validated_data)
+        
+        # Set the event after creation to avoid M2M issues
+        if event:
+            gallery.event = event
+            gallery.save()
         
         # Create and process each photo
         for photo_data in photos_data:
