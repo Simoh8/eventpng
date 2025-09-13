@@ -49,21 +49,50 @@ const Events = () => {
     e.preventDefault();
     setPinError('');
     
+    // Get CSRF token from cookies
+    const getCookie = (name) => {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === (name + '=')) {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+    };
+    
+    const csrftoken = getCookie('csrftoken');
+    
     try {
-      const response = await axios.post(
-        `${API_ENDPOINTS.API_BASE_URL}/api/gallery/events/${currentEvent.slug}/verify-pin/`,
-        { pin }
-      );
+      const response = await axios({
+        method: 'post',
+        url: `/api/gallery/events/${currentEvent.slug}/verify-pin/`,
+        baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000',
+        withCredentials: true,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrftoken,
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        data: { pin }
+      });
       
-      if (response.data.valid) {
-        // Store the verified PIN in session storage
-        sessionStorage.setItem(`event_${currentEvent.id}_pin`, pin);
+      if (response.data.success) {
+        // Store verification in session storage
+        sessionStorage.setItem(`event_${currentEvent.slug}_verified`, 'true');
         navigate(`/events/${currentEvent.slug}`);
       } else {
-        setPinError('Invalid PIN. Please try again.');
+        setPinError(response.data.error || 'Invalid PIN. Please try again.');
       }
     } catch (err) {
-      setPinError('Error verifying PIN. Please try again.');
+      console.error('PIN verification error:', err);
+      const errorMessage = err.response?.data?.error || 
+                         (err.response?.status === 403 ? 'Session expired. Please refresh the page and try again.' : 'Error verifying PIN. Please try again.');
+      setPinError(errorMessage);
     }
   };
 

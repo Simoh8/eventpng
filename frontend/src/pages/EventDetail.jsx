@@ -263,13 +263,10 @@ const EventDetail = () => {
       const groups = {};
       const allPhotos = [];
       
-      console.log('Event galleries:', event.galleries); // Debug log
       
       event.galleries.forEach(gallery => {
         if (gallery) {
-          console.log('Processing gallery:', gallery.title, gallery); // Debug log
           const galleryPhotos = (gallery.photos || []).map(photo => {
-            console.log('Processing photo:', photo); // Debug log
             return {
               ...photo,
               gallery_title: gallery.title,
@@ -287,7 +284,6 @@ const EventDetail = () => {
         }
       });
       
-      console.log('Processed gallery groups:', groups); // Debug log
       setGalleryGroups(groups);
       setImages(allPhotos);
     }
@@ -365,7 +361,6 @@ const EventDetail = () => {
   }, []);
   
   const handleAddToCart = useCallback(() => {
-    console.log('Added to cart:', Array.from(selectedImages));
     alert(`${selectedImages.size} images added to cart!`);
     setSelectedImages(new Set());
   }, [selectedImages]);
@@ -641,7 +636,7 @@ const EventDetail = () => {
                                       e.target.onerror = null;
                                       e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Found';
                                     }}
-                                    onLoad={() => console.log('Image loaded successfully:', imageUrl)}
+                                    // onLoad={() => console.log('Image loaded successfully:', imageUrl)}
                                   />
                                 ) : (
                                   <div className="w-full h-48 bg-gray-200 flex items-center justify-center">

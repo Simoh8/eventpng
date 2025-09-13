@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { API_BASE_URL } from '../config';
 import { useAuth } from '../context/AuthContext';
@@ -15,7 +15,105 @@ const GalleryDetail = () => {
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [requiresPin, setRequiresPin] = useState(false);
   const galleryRef = useRef(null);
+  
+  // Check if gallery is private and requires PIN
+  const checkGalleryAccess = (galleryData) => {
+    if (galleryData.is_private && !galleryData.is_verified) {
+      setRequiresPin(true);
+      setShowPinModal(true);
+      return false;
+    }
+    return true;
+  };
+  
+  // Get queryClient instance
+  const queryClient = useQueryClient();
+  
+  // Verify event PIN for private galleries
+  const verifyGalleryPin = async (pin) => {
+    if (!slug) {
+      console.error('No slug available for PIN verification');
+      return false;
+    }
+    
+    console.log('Starting PIN verification for slug:', slug);
+    setIsVerifying(true);
+    
+    try {
+      // First, get the gallery to find its event
+      console.log('Fetching gallery details...');
+      const galleryResponse = await fetch(`${API_BASE_URL}/api/gallery/public/galleries/${slug}/`);
+      console.log('Gallery response status:', galleryResponse.status);
+      
+      if (!galleryResponse.ok) {
+        const errorText = await galleryResponse.text();
+        console.error('Failed to fetch gallery details:', errorText);
+        throw new Error(`Failed to fetch gallery details: ${galleryResponse.status} ${galleryResponse.statusText}`);
+      }
+      
+      const galleryData = await galleryResponse.json();
+      console.log('Gallery data:', galleryData);
+      
+      if (!galleryData.event || !galleryData.event.slug) {
+        console.error('Gallery is not associated with an event');
+        throw new Error('Gallery is not associated with an event');
+      }
+      
+      console.log('Verifying PIN for event:', galleryData.event.slug);
+      const verifyUrl = `${API_BASE_URL}/api/gallery/events/${galleryData.event.slug}/verify-pin/`;
+      console.log('Verification URL:', verifyUrl);
+      
+      // Now verify the event PIN
+      console.log('Sending PIN verification request...');
+      const response = await fetch(verifyUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // Important for session cookies
+        body: JSON.stringify({
+          pin: pin
+        })
+      });
+      
+      console.log('Verification response status:', response.status);
+      console.log('Response headers:', Object.fromEntries([...response.headers]));
+      
+      console.log('Verification response status:', response.status);
+      const responseData = await response.json().catch(e => ({}));
+      console.log('Verification response data:', responseData);
+      
+      if (response.ok) {
+        if (responseData.success) {
+          console.log('PIN verification successful');
+          // Store verification in session storage
+          sessionStorage.setItem(`event_${galleryData.event.slug}_verified`, 'true');
+          setRequiresPin(false);
+          setShowPinModal(false);
+          // Refresh the gallery data
+          queryClient.invalidateQueries(['gallery', slug]);
+          return true;
+        } else {
+          console.error('PIN verification failed:', responseData.error);
+          toast.error(responseData.error || 'Invalid PIN. Please try again.');
+        }
+      } else {
+        console.error('Error response from server:', responseData);
+        toast.error(responseData.error || `Failed to verify PIN (${response.status}). Please try again.`);
+      }
+      return false;
+    } catch (error) {
+      console.error('Error in verifyGalleryPin:', error);
+      toast.error(error.message || 'An error occurred while verifying the PIN. Please try again.');
+      return false;
+    } finally {
+      setIsVerifying(false);
+    }
+  };
   
   // Disable right-click and keyboard shortcuts for screenshots
   useEffect(() => {
@@ -190,19 +288,35 @@ const GalleryDetail = () => {
   const { data: gallery, isLoading, error } = useQuery({
     queryKey: ['gallery', slug],
     queryFn: async () => {
+      // Check if we have a verified session for this gallery
+      const isVerified = sessionStorage.getItem(`gallery_${slug}_verified`) === 'true';
+      
       // First try to fetch using the ID endpoint if the slug is a number
       let response;
       try {
+        const headers = {};
+        // If gallery is private and we have a verified session, include the verification token
+        if (isVerified) {
+          headers['X-Gallery-Verification'] = sessionStorage.getItem(`gallery_${slug}_token`) || '';
+        }
+        
         // Check if the slug is a number (ID)
         if (!isNaN(slug)) {
           // Use the direct ID-based endpoint
-          response = await fetch(`${API_BASE_URL}/api/gallery/public/galleries/by-id/${slug}/`);
+          response = await fetch(`${API_BASE_URL}/api/gallery/public/galleries/by-id/${slug}/`, { headers });
         } else {
           // Try with the slug endpoint
-          response = await fetch(`${API_BASE_URL}/api/gallery/public/galleries/${slug}/`);
+          response = await fetch(`${API_BASE_URL}/api/gallery/public/galleries/${slug}/`, { headers });
         }
         
         if (!response.ok) {
+          if (response.status === 403) {
+            // If we get a 403, the gallery is private and requires a PIN
+            const errorData = await response.json().catch(() => ({}));
+            if (errorData.requires_pin) {
+              return { is_private: true, requires_pin: true };
+            }
+          }
           throw new Error('Gallery not found');
         }
         
@@ -211,6 +325,11 @@ const GalleryDetail = () => {
         // If the canonical slug is different from the one in the URL, update the URL
         if (data.slug && data.slug !== slug) {
           window.history.replaceState({}, '', `/gallery/${data.slug}`);
+        }
+        
+        // Check if this is a private gallery that needs PIN verification
+        if (data.is_private && !isVerified) {
+          return { ...data, requires_pin: true };
         }
         
         return data;
@@ -257,6 +376,63 @@ const GalleryDetail = () => {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+      </div>
+    );
+  }
+
+  // Show PIN verification modal for private galleries
+  if (gallery?.requires_pin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
+          <div className="text-center mb-6">
+            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100">
+              <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <h2 className="mt-3 text-xl font-semibold text-gray-900">Private Gallery</h2>
+            <p className="mt-2 text-sm text-gray-500">Please enter the PIN to access this gallery</p>
+          </div>
+          
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const pin = formData.get('pin');
+            const isValid = await verifyGalleryPin(pin);
+            if (!isValid) {
+              toast.error('Invalid PIN. Please try again.');
+            }
+          }}>
+            <div className="mb-4">
+              <input
+                type="password"
+                name="pin"
+                required
+                maxLength="6"
+                pattern="\d{6}"
+                placeholder="Enter 6-digit PIN"
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={isVerifying}
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            >
+              {isVerifying ? 'Verifying...' : 'Access Gallery'}
+            </button>
+          </form>
+          
+          <div className="mt-4 text-center">
+            <button
+              onClick={() => navigate(-1)}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Go back to events
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
