@@ -92,6 +92,10 @@ class Event(models.Model):
         return self.covers.all().order_by('order')
         
     @property
+    def requires_pin(self):
+        """Check if this event requires a PIN for access."""
+        return self.privacy == 'private' and self.pin is not None
+        
     def primary_cover(self):
         """Return the primary cover image or first available."""
         return self.covers.filter(is_primary=True).first() or self.covers.first()

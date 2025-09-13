@@ -1,22 +1,40 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FaArrowLeft, FaCheck, FaShoppingCart, FaTimes, FaChevronLeft, FaChevronRight, FaExpand, FaCompress, FaSpinner } from 'react-icons/fa';
-import { useQuery } from '@tanstack/react-query';
+import { 
+  FaArrowLeft, 
+  FaCheck, 
+  FaShoppingCart, 
+  FaTimes, 
+  FaChevronLeft, 
+  FaChevronRight, 
+  FaExpand, 
+  FaCompress, 
+  FaSpinner, 
+  FaLock,
+  FaChevronCircleLeft,
+  FaChevronCircleRight
+} from 'react-icons/fa';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
+import EventPinModal from '../components/EventPinModal';
 
 // Helper function to get protected image URL
 const getProtectedImageUrl = (imageUrl, width = 800) => {
-  if (!imageUrl) return '';
+  if (!imageUrl) {
+    return null;
+  }
   // If the URL is already absolute, return it as is
-  if (imageUrl.startsWith('http')) return imageUrl;
+  if (imageUrl.startsWith('http')) {
+    return imageUrl;
+  }
   // Otherwise, construct the full URL
   const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-  return `${baseUrl}${imageUrl}${imageUrl.includes('?') ? '&' : '?'}w=${width}`;
+  const fullUrl = `${baseUrl}${imageUrl}${imageUrl.includes('?') ? '&' : '?'}w=${width}`;
+  return fullUrl;
 };
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
-// Helper function to fetch event details by slug
 const fetchEvent = async (slug) => {
   // First get the event ID from the slug
   const eventsResponse = await axios.get(`${API_URL}/api/gallery/public/events/`);
@@ -27,17 +45,14 @@ const fetchEvent = async (slug) => {
     throw new Error(`Event with slug '${slug}' not found`);
   }
   
-  // Now fetch the full event details with galleries and photos
   const eventDetailResponse = await axios.get(`${API_URL}/api/gallery/public/events/${event.id}/`);
   
   if (!eventDetailResponse.data) {
     throw new Error('Event details not found');
   }
   
-  // Process the response to match the expected format
   const eventData = eventDetailResponse.data;
   
-  // Flatten all photos from all galleries
   const allPhotos = [];
   if (eventData.galleries && Array.isArray(eventData.galleries)) {
     eventData.galleries.forEach(gallery => {
@@ -53,7 +68,6 @@ const fetchEvent = async (slug) => {
     });
   }
   
-  // Return the combined data
   return {
     ...eventData,
     photos: {
@@ -66,8 +80,25 @@ const fetchEvent = async (slug) => {
 };
 
 const EventDetail = () => {
+  // Router hooks
   const { slug } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  
+  // Fetch event details first
+  const { data: event, isLoading: isLoadingEvent, error: eventError } = useQuery({
+    queryKey: ['event', slug],
+    queryFn: () => fetchEvent(slug),
+    retry: false,
+    onSuccess: (data) => {
+      if (data.requires_pin && !data.is_verified) {
+        setRequiresPin(true);
+        setShowPinModal(true);
+      }
+    }
+  });
+  
+  // State management
   const [selectedImages, setSelectedImages] = useState(new Set());
   const [images, setImages] = useState([]);
   const [page, setPage] = useState(1);
@@ -75,110 +106,44 @@ const EventDetail = () => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [galleryGroups, setGalleryGroups] = useState({});
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [requiresPin, setRequiresPin] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorState, setErrorState] = useState(null);
+  const [currentSlides, setCurrentSlides] = useState({});
+  
+  // Refs
   const lightboxRef = useRef();
   const observer = useRef();
-
-  // Fetch event details
-  const {
-    data: event,
-    isLoading: isLoadingEvent,
-    error: eventError 
-  } = useQuery({
-    queryKey: ['event', slug],
-    queryFn: () => slug ? fetchEvent(slug) : Promise.reject('No event slug provided'),
-    enabled: !!slug, // Only run the query if we have a valid slug
-    onSuccess: (data) => {
-      if (data && data.galleries) {
-        // Initialize gallery groups with empty arrays
-        const groups = {};
-        data.galleries.forEach(gallery => {
-          groups[gallery.id] = {
-            ...gallery,
-            photos: []
-          };
-        });
-        setGalleryGroups(groups);
-      }
-    }
-  });
-
-  // Process event data when it's loaded
+  
+  // Initialize images state when event data is loaded
   useEffect(() => {
-    if (event?.galleries) {
-      // Initialize gallery groups with photos
-      const groups = {};
-      const allPhotos = [];
-      
-      event.galleries.forEach(gallery => {
-        if (gallery) {
-          // Process photos for this gallery
-          const galleryPhotos = (gallery.photos || []).map(photo => ({
-            ...photo,
-            gallery_title: gallery.title,
-            gallery_id: gallery.id
-          }));
-          
-          // Add to gallery groups
-          groups[gallery.id] = {
-            ...gallery,
-            photos: galleryPhotos
-          };
-          
-          // Add to all photos
-          allPhotos.push(...galleryPhotos);
-        }
-      });
-      
-      setGalleryGroups(groups);
-      setImages(allPhotos);
+    if (event?.photos?.results) {
+      setImages(event.photos.results);
     }
   }, [event]);
-
-  const loading = isLoadingEvent;
-  const hasMore = false; // We load all data at once now
-
-  // Reset images and page when event changes
-  useEffect(() => {
-    setImages([]);
-    setPage(1);
-  }, [event?.id]);
-
-  // Infinite scroll observer
-  const lastImageRef = useCallback(node => {
-    if (loading || !hasMore) return;
-    if (observer.current) observer.current.disconnect();
-
-    observer.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting) {
-        setPage(prev => prev + 1);
-      }
-    });
-
-    if (node) observer.current.observe(node);
-  }, [loading, hasMore]);
-
-  // Open lightbox with selected image
-  const openLightbox = useCallback((index) => {
-    setCurrentImageIndex(index);
-    setLightboxOpen(true);
-  }, []);
-
-  const handleGalleryClick = useCallback((gallery) => {
-    if (gallery.slug) {
-      navigate(`/gallery/${gallery.slug}`);
-    } else {
-      // Fallback to ID if slug is not available
-      navigate(`/gallery/${gallery.id}`);
-    }
-  }, [navigate]);
-
-  // Close lightbox
+  
+  // Define closeLightbox first as it has no dependencies
   const closeLightbox = useCallback(() => {
     setLightboxOpen(false);
     document.body.style.overflow = 'auto';
   }, []);
-
-  // Navigate to previous/next image in lightbox
+  
+  // Define toggleFullscreen next as it only depends on lightboxRef
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      lightboxRef.current?.requestFullscreen?.().catch(err => {
+        console.error('Error enabling fullscreen:', err);
+      });
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen?.();
+      setIsFullscreen(false);
+    }
+  }, []);
+  
+  // Define navigateImage after images is set
   const navigateImage = useCallback((direction) => {
     setCurrentImageIndex(prev => {
       const newIndex = prev + direction;
@@ -187,10 +152,10 @@ const EventDetail = () => {
       return newIndex;
     });
   }, [images.length]);
-
-  // Handle keyboard navigation in lightbox
+  
+  // Define keyboard navigation effect after all its dependencies
   useEffect(() => {
-    if (!lightboxOpen) return;
+    if (!lightboxOpen) return () => {};
 
     const handleKeyDown = (e) => {
       switch (e.key) {
@@ -213,44 +178,18 @@ const EventDetail = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [lightboxOpen, navigateImage, closeLightbox]);
-
-  // Toggle fullscreen mode
-  const toggleFullscreen = useCallback(() => {
-    if (!document.fullscreenElement) {
-      lightboxRef.current?.requestFullscreen?.().catch(err => {
-        console.error('Error enabling fullscreen:', err);
-      });
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen?.();
-      setIsFullscreen(false);
+  }, [lightboxOpen, navigateImage, closeLightbox, toggleFullscreen]);
+  
+  // Update loading and error states when query state changes
+  useEffect(() => {
+    setIsLoading(isLoadingEvent);
+    if (eventError) {
+      setErrorState(eventError);
     }
-  }, []);
-
-  // Toggle image selection
-  const toggleImageSelection = useCallback((e, imageId) => {
-    e.stopPropagation();
-    setSelectedImages(prev => {
-      const newSelection = new Set(prev);
-      if (newSelection.has(imageId)) {
-        newSelection.delete(imageId);
-      } else {
-        newSelection.add(imageId);
-      }
-      return newSelection;
-    });
-  }, []);
-
-  // Handle add to cart
-  const handleAddToCart = useCallback(() => {
-    console.log('Added to cart:', Array.from(selectedImages));
-    alert(`${selectedImages.size} images added to cart!`);
-    setSelectedImages(new Set());
-  }, [selectedImages]);
-
+  }, [isLoadingEvent, eventError]);
+  
   // Lightbox component
-  const Lightbox = useCallback(() => {
+  const renderLightbox = useCallback(() => {
     if (!lightboxOpen) return null;
 
     return (
@@ -316,31 +255,170 @@ const EventDetail = () => {
         </div>
       </div>
     );
-  }, [lightboxOpen, currentImageIndex, images, closeLightbox, navigateImage, toggleFullscreen, isFullscreen]);
+  }, [lightboxOpen, closeLightbox, navigateImage, images, currentImageIndex, toggleFullscreen, isFullscreen]);
+  
+  // Process event data when it's loaded
+  useEffect(() => {
+    if (event?.galleries) {
+      const groups = {};
+      const allPhotos = [];
+      
+      console.log('Event galleries:', event.galleries); // Debug log
+      
+      event.galleries.forEach(gallery => {
+        if (gallery) {
+          console.log('Processing gallery:', gallery.title, gallery); // Debug log
+          const galleryPhotos = (gallery.photos || []).map(photo => {
+            console.log('Processing photo:', photo); // Debug log
+            return {
+              ...photo,
+              gallery_title: gallery.title,
+              gallery_id: gallery.id
+            };
+          });
+          
+          groups[gallery.id] = {
+            ...gallery,
+            photos: galleryPhotos,
+            currentIndex: 0 // Add current index for each gallery
+          };
+          
+          allPhotos.push(...galleryPhotos);
+        }
+      });
+      
+      console.log('Processed gallery groups:', groups); // Debug log
+      setGalleryGroups(groups);
+      setImages(allPhotos);
+    }
+  }, [event]);
+  
+  // Auto-scroll effect for galleries
+  useEffect(() => {
+    if (Object.keys(galleryGroups).length === 0) return;
+    
+    const interval = setInterval(() => {
+      setGalleryGroups(prevGroups => {
+        const newGroups = { ...prevGroups };
+        
+        Object.keys(newGroups).forEach(galleryId => {
+          const gallery = newGroups[galleryId];
+          if (gallery.photos && gallery.photos.length > 1) {
+            // Auto-advance to next image
+            newGroups[galleryId] = {
+              ...gallery,
+              currentIndex: (gallery.currentIndex + 1) % gallery.photos.length
+            };
+            
+            // Update the current slide for the transform effect
+            setCurrentSlides(prev => ({
+              ...prev,
+              [galleryId]: newGroups[galleryId].currentIndex
+            }));
+          }
+        });
+        
+        return newGroups;
+      });
+    }, 3000); // Change image every 3 seconds
+    
+    return () => clearInterval(interval);
+  }, [galleryGroups]);
+  
+  // Reset images and page when event changes
+  useEffect(() => {
+    setImages([]);
+    setPage(1);
+  }, [event?.id]);
+  
+  // Event handlers
+  const handlePinSuccess = useCallback(() => {
+    queryClient.invalidateQueries(['event', slug]);
+    setRequiresPin(false);
+  }, [queryClient, slug]);
+  
+  const openLightbox = useCallback((index) => {
+    setCurrentImageIndex(index);
+    setLightboxOpen(true);
+  }, []);
+  
+  const handleGalleryClick = useCallback((gallery) => {
+    if (gallery.slug) {
+      navigate(`/gallery/${gallery.slug}`);
+    } else {
+      navigate(`/gallery/${gallery.id}`);
+    }
+  }, [navigate]);
+  
+  
+  const toggleImageSelection = useCallback((e, imageId) => {
+    e.stopPropagation();
+    setSelectedImages(prev => {
+      const newSelection = new Set(prev);
+      if (newSelection.has(imageId)) {
+        newSelection.delete(imageId);
+      } else {
+        newSelection.add(imageId);
+      }
+      return newSelection;
+    });
+  }, []);
+  
+  const handleAddToCart = useCallback(() => {
+    console.log('Added to cart:', Array.from(selectedImages));
+    alert(`${selectedImages.size} images added to cart!`);
+    setSelectedImages(new Set());
+  }, [selectedImages]);
+  
+  // Keyboard navigation effect
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    
+    const handleKeyDown = (e) => {
+      switch (e.key) {
+        case 'Escape':
+          closeLightbox();
+          break;
+        case 'ArrowLeft':
+          navigateImage(-1);
+          break;
+        case 'ArrowRight':
+          navigateImage(1);
+          break;
+        case 'f':
+          toggleFullscreen();
+          break;
+        default:
+          break;
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxOpen, navigateImage, closeLightbox, toggleFullscreen]);
+  
+  // Update loading and error states when query state changes
+  useEffect(() => {
+    setIsLoading(isLoadingEvent);
+    if (eventError) {
+      setErrorState(eventError);
+    }
+  }, [isLoadingEvent, eventError]);
 
   // Loading state
-  if (loading) {
+  if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center text-gray-600 hover:text-gray-900 mb-6 transition-colors"
-          >
-            <FaArrowLeft className="mr-2" /> Back to Events
-          </button>
-          
-          <div className="flex items-center justify-center py-12">
-            <FaSpinner className="animate-spin text-4xl text-blue-500 mr-3" />
-            <span className="text-lg">Loading event...</span>
-          </div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <FaSpinner className="animate-spin text-4xl text-blue-500 mx-auto mb-4" />
+          <p className="text-gray-600">Loading event...</p>
         </div>
       </div>
     );
   }
 
   // Error state
-  if (eventError) {
+  if (errorState) {
     return (
       <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
@@ -366,19 +444,68 @@ const EventDetail = () => {
     );
   }
 
-  // Show loading state while fetching event data
+  // Show lock icon and message for private events that require PIN
+  if (requiresPin && !event?.is_verified) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center text-gray-600 hover:text-gray-900 mb-6 transition-colors"
+          >
+            <FaArrowLeft className="mr-2" /> Back to Events
+          </button>
+          
+          <div className="bg-white rounded-lg shadow-lg p-6 text-center">
+            <div className="mb-4">
+              <FaLock size={48} className="text-muted mb-3" />
+              <h3>Private Event</h3>
+              <p className="text-muted">This is a private event. Please enter the PIN to continue.</p>
+              <button 
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                onClick={() => setShowPinModal(true)}
+                disabled={isVerifying}
+              >
+                {isVerifying ? 'Verifying...' : 'Enter PIN'}
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        {/* PIN Verification Modal */}
+        {event && (
+          <EventPinModal
+            show={showPinModal}
+            onHide={() => setShowPinModal(false)}
+            event={event}
+            onSuccess={handlePinSuccess}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Loading state
   if (isLoadingEvent) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <FaSpinner className="animate-spin text-4xl text-blue-500 mx-auto mb-4" />
-          <p className="text-gray-600">Loading event details...</p>
+      <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center text-gray-600 hover:text-gray-900 mb-6 transition-colors"
+          >
+            <FaArrowLeft className="mr-2" /> Back to Events
+          </button>
+          
+          <div className="flex items-center justify-center py-12">
+            <FaSpinner className="animate-spin text-blue-500 mr-3" />
+            <span className="text-lg">Loading event...</span>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Show error state if event failed to load
   if (eventError) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -415,132 +542,239 @@ const EventDetail = () => {
   }, []);
   
   // Loading state for the entire component
-  const isLoading = isLoadingEvent || (hasGalleries && allPhotos.length === 0);
+  const isPageLoading = isLoading || (hasGalleries && allPhotos.length === 0);
   
+  if (isPageLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <FaSpinner className="animate-spin text-4xl text-blue-500 mx-auto mb-4" />
+          <p className="text-gray-600">Loading event...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center text-gray-600 hover:text-gray-900 mb-6 transition-colors"
-        >
-          <FaArrowLeft className="mr-2" /> Back to Events
-        </button>
-        
-        {/* Event Header */}
-        <div className="bg-white rounded-lg shadow-lg overflow-hidden mb-8">
-          <div className="md:flex">
-            <div className="md:w-1/2">
-              {event?.cover_image?.image ? (
-                <img 
-                  src={getProtectedImageUrl(event.cover_image.image)} 
-                  alt={event.name || 'Event cover'}
-                  className="w-full h-64 md:h-auto object-cover"
-                  onError={(e) => {
-                    e.target.onerror = null; 
-                    e.target.src = 'https://via.placeholder.com/800x600?text=No+Image+Available';
-                  }}
-                />
-              ) : (
-                <div className="w-full h-64 bg-gray-200 flex items-center justify-center">
-                  <span className="text-gray-400">No cover image available</span>
-                </div>
-              )}
-            </div>
-            <div className="p-6 md:w-1/2">
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">{event.name}</h1>
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        {/* Back button and title */}
+        <div className="mb-6">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+          >
+            <FaArrowLeft className="mr-2" /> Back to Events
+          </button>
+          <h1 className="mt-4 text-3xl font-bold text-gray-900">{event.title}</h1>
+        </div>
+
+        {/* Event details */}
+        <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
+          <div className="px-4 py-5 sm:px-6">
+            <h2 className="text-lg leading-6 font-medium text-gray-900">Event Information</h2>
+            <p className="mt-1 max-w-2xl text-sm text-gray-500">Details about the event</p>
+          </div>
+          <div className="border-t border-gray-200 px-4 py-5 sm:p-0">
+            <dl className="sm:divide-y sm:divide-gray-200">
+
               {event.date && (
-                <p className="text-gray-600 mb-4">
-                  {new Date(event.date).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
-                </p>
-              )}
-              {event.location && (
-                <p className="text-gray-600 mb-4">{event.location}</p>
+                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                  <dt className="text-sm font-medium text-gray-500">Date</dt>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                    {new Date(event.date).toLocaleDateString()}
+                  </dd>
+                </div>
               )}
               {event.description && (
-                <div className="prose max-w-none text-gray-600">
-                  {event.description}
+                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                  <dt className="text-sm font-medium text-gray-500">Description</dt>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                    {event.description}
+                  </dd>
                 </div>
               )}
-            </div>
+            </dl>
           </div>
         </div>
 
-        {/* Gallery Grid */}
-        <div className="mt-12">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">Galleries</h2>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <FaSpinner className="animate-spin text-blue-500 mr-2" />
-              <span>Loading galleries...</span>
-            </div>
-          ) : Object.values(galleryGroups).length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Object.values(galleryGroups).map(gallery => (
-                <div 
-                  key={gallery.id} 
-                  className="bg-white rounded-lg shadow-md overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
-                  onClick={() => navigate(`/gallery/${gallery.slug || gallery.id}`)}
-                >
-                  <div className="p-4">
-                    <h3 className="text-lg font-semibold mb-2">{gallery.title || 'Untitled Gallery'}</h3>
-                    {gallery.description && (
-                      <p className="text-gray-600 mb-4">{gallery.description}</p>
-                    )}
-                    
+        {/* Galleries */}
+        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+          <div className="px-4 py-5 sm:px-6">
+            <h2 className="text-lg leading-6 font-medium text-gray-900">Galleries</h2>
+            <p className="mt-1 max-w-2xl text-sm text-gray-500">Browse photos from the event</p>
+          </div>
+          <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
+            {Object.keys(galleryGroups).length > 0 ? (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {Object.values(galleryGroups).map((gallery) => (
+                  <div
+                    key={gallery.id}
+                    className="group relative bg-gray-100 rounded-lg overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
+                    onClick={() => handleGalleryClick(gallery)}
+                  >
                     {gallery.photos && gallery.photos.length > 0 ? (
-                      <div className="grid grid-cols-2 gap-2 mb-4">
-                        {gallery.photos.slice(0, 4).map((photo, index) => (
-                          <div key={photo.id || index} className="aspect-square overflow-hidden">
-                            <img 
-                              src={getProtectedImageUrl(photo.image, 300)} 
-                              alt={photo.caption || `Photo ${index + 1}`}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                e.target.onerror = null;
-                                e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Found';
+                      <div className="relative w-full h-48 overflow-hidden">
+                        <div 
+                          className="flex transition-transform duration-500 ease-in-out"
+                          style={{ 
+                            width: `${gallery.photos.length * 100}%`,
+                            transform: `translateX(-${(gallery.currentIndex || 0) * (100 / gallery.photos.length)}%)` 
+                          }}
+                        >
+                          {gallery.photos.map((photo, index) => {
+                            const imageUrl = getProtectedImageUrl(photo.url || photo.image || photo.original || '', 600);
+                            
+                            return (
+                              <div 
+                                key={index} 
+                                className="w-full flex-shrink-0"
+                                style={{ width: `${100 / gallery.photos.length}%` }}
+                              >
+                                {imageUrl ? (
+                                  <img
+                                    src={imageUrl}
+                                    alt={`Slide ${index + 1}`}
+                                    className="w-full h-48 object-cover"
+                                    onError={(e) => {
+                                      console.error('Error loading image:', e.target.src);
+                                      e.target.onerror = null;
+                                      e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Found';
+                                    }}
+                                    onLoad={() => console.log('Image loaded successfully:', imageUrl)}
+                                  />
+                                ) : (
+                                  <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
+                                    <span className="text-gray-400">No image available</span>
+                                    <div className="hidden">
+                                      Photo data: {JSON.stringify(photo)}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {gallery.photos.length > 1 && (
+                          <>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const newIndex = gallery.currentIndex === 0 
+                                  ? gallery.photos.length - 1 
+                                  : gallery.currentIndex - 1;
+                                
+                                setGalleryGroups(prev => ({
+                                  ...prev,
+                                  [gallery.id]: {
+                                    ...gallery,
+                                    currentIndex: newIndex
+                                  }
+                                }));
                               }}
-                            />
-                          </div>
-                        ))}
+                              className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-70 transition-all z-10"
+                              aria-label="Previous image"
+                            >
+                              <FaChevronLeft />
+                            </button>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const newIndex = (gallery.currentIndex + 1) % gallery.photos.length;
+                                
+                                setGalleryGroups(prev => ({
+                                  ...prev,
+                                  [gallery.id]: {
+                                    ...gallery,
+                                    currentIndex: newIndex
+                                  }
+                                }));
+                              }}
+                              className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-70 transition-all z-10"
+                              aria-label="Next image"
+                            >
+                              <FaChevronRight />
+                            </button>
+                            
+                            {/* Dots indicator */}
+                            <div className="absolute bottom-2 left-0 right-0 flex justify-center space-x-2">
+                              {gallery.photos.map((_, index) => (
+                                <button
+                                  key={index}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setGalleryGroups(prev => ({
+                                      ...prev,
+                                      [gallery.id]: {
+                                        ...gallery,
+                                        currentIndex: index
+                                      }
+                                    }));
+                                  }}
+                                  className={`w-2 h-2 rounded-full transition-all ${
+                                    index === gallery.currentIndex 
+                                      ? 'bg-white w-4' 
+                                      : 'bg-white bg-opacity-50 w-2'
+                                  }`}
+                                  aria-label={`Go to slide ${index + 1}`}
+                                />
+                              ))}
+                            </div>
+                          </>
+                        )}
                       </div>
                     ) : (
-                      <div className="aspect-square bg-gray-100 flex items-center justify-center text-gray-400 mb-4">
-                        No photos in this gallery
+                      <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
+                        <span className="text-gray-400">No photos available</span>
                       </div>
                     )}
-                    
-                    <button 
-                      onClick={() => handleGalleryClick(gallery)}
-                      className="w-full bg-primary-500 text-white py-2 px-4 rounded hover:bg-primary-600 transition-colors"
-                    >
-                      View Gallery ({gallery.photos?.length || 0} photos)
-                    </button>
+                    <div className="p-4">
+                      <h3 className="text-lg font-medium text-gray-900">{gallery.title}</h3>
+                      <p className="mt-1 text-sm text-gray-500">
+                        {gallery.photos?.length || 0} photos
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center p-8 text-gray-500">
-              No galleries found for this event.
-            </div>
-          )}
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-gray-500">No galleries found for this event.</p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* All Photos Section */}
-        {allPhotos.length > 0 && (
+        {images.length > 0 && (
           <div className="mt-12">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">All Photos</h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900">All Photos</h2>
+              {selectedImages.size > 0 && (
+                <div className="space-x-2">
+                  <button 
+                    onClick={() => setSelectedImages(new Set())}
+                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleAddToCart}
+                    className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 flex items-center"
+                  >
+                    <FaShoppingCart className="mr-2" />
+                    Add to Cart ({selectedImages.size})
+                  </button>
+                </div>
+              )}
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {allPhotos.map((photo, index) => (
+              {images.map((photo, index) => (
                 <div 
                   key={photo.id || index}
-                  className="aspect-square bg-gray-100 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow"
-                  ref={index === allPhotos.length - 1 ? lastImageRef : null}
+                  className={`aspect-square bg-gray-100 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow relative ${
+                    selectedImages.has(photo.id) ? 'ring-2 ring-blue-500' : ''
+                  }`}
                   onClick={() => openLightbox(index)}
                 >
                   <img 
@@ -552,44 +786,39 @@ const EventDetail = () => {
                       e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Found';
                     }}
                   />
+                  <div 
+                    className="absolute top-2 right-2 p-1 bg-white rounded-full shadow-md"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleImageSelection(photo.id);
+                    }}
+                  >
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                      selectedImages.has(photo.id) 
+                        ? 'bg-blue-500 border-blue-500' 
+                        : 'border-gray-300 bg-white'
+                    }`}>
+                      {selectedImages.has(photo.id) && <FaCheck className="text-white text-xs" />}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
-            {loading && (
-              <div className="flex justify-center mt-8">
-                <FaSpinner className="animate-spin text-2xl text-blue-500 mr-2" />
-                <span>Loading photos...</span>
-              </div>
-            )}
           </div>
         )}
       </div>
-      
+
       {/* Lightbox */}
-      <Lightbox />
-      
-      {/* Selection Actions */}
-      {selectedImages.size > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white shadow-lg py-4 px-6 flex justify-between items-center">
-          <div className="text-gray-700">
-            {selectedImages.size} {selectedImages.size === 1 ? 'photo' : 'photos'} selected
-          </div>
-          <div className="space-x-4">
-            <button 
-              onClick={() => setSelectedImages(new Set())}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button 
-              onClick={handleAddToCart}
-              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 flex items-center"
-            >
-              <FaShoppingCart className="mr-2" />
-              Add to Cart
-            </button>
-          </div>
-        </div>
+      {renderLightbox()}
+
+      {/* PIN Verification Modal */}
+      {showPinModal && event && (
+        <EventPinModal
+          show={showPinModal}
+          onHide={() => setShowPinModal(false)}
+          event={event}
+          onSuccess={handlePinSuccess}
+        />
       )}
     </div>
   );

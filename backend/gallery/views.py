@@ -504,19 +504,24 @@ import logging
 logger = logging.getLogger(__name__)
 
 class PublicEventListView(generics.ListAPIView):
-    """View for listing all events (no authentication required)."""
+    """
+    View for listing all events (no authentication required).
+    Shows all events but hides private event details until PIN is verified.
+    """
     serializer_class = serializers.PublicEventSerializer
     permission_classes = [permissions.AllowAny]
-    pagination_class = None  # Disable pagination for this view
+    pagination_class = None
     
     def get_queryset(self):
-        """Return only public events."""
-        return Event.objects.filter(privacy='public')
+        """Return all events, ordered by date (newest first)."""
+        return Event.objects.all().order_by('-date')
     
     def get_serializer_context(self):
         """Add request to serializer context."""
         context = super().get_serializer_context()
         context['request'] = self.request
+        # Check which private events the user has access to via session
+        context['verified_events'] = self.request.session.get('verified_events', [])
         return context
 
 
@@ -543,40 +548,66 @@ class PublicEventBySlugView(generics.RetrieveAPIView):
 
 
 class PublicEventDetailView(generics.RetrieveAPIView):
-    """View for retrieving a single public event with its galleries and photos."""
+    """View for retrieving a single event with its galleries and photos.
+    
+    For public events: Returns full event details with public galleries and photos.
+    For private events: Returns limited details until PIN is verified.
+    """
     serializer_class = serializers.PublicEventDetailSerializer
     permission_classes = [permissions.AllowAny]
     lookup_field = 'pk'
     
     def get_queryset(self):
-        """Return only public events with their public galleries and photos."""
-        return Event.objects.filter(privacy='public')
+        """Return all events, but access control is handled in get_object."""
+        return Event.objects.all()
     
     def get_serializer_context(self):
-        """Add request to serializer context."""
+        """Add request and verification status to serializer context."""
         context = super().get_serializer_context()
         context['request'] = self.request
+        context['verified_events'] = self.request.session.get('verified_events', [])
         return context
-    
+        
     def get_object(self):
-        """Get the event with prefetched public galleries and photos."""
+        """Get the event with appropriate access control."""
         try:
-            # Get the event
-            event = super().get_object()
+            event = self.get_queryset().get(pk=self.kwargs['pk'])
             
-            # Get public galleries with their photos
-            galleries = Gallery.objects.filter(
-                event=event,
-                is_public=True
-            ).prefetch_related('photos')
-            
-            # Create a custom attribute for the serializer
-            event.galleries_data = galleries
-            
+            # For public events, return all public galleries and photos
+            if event.privacy == 'public':
+                event.prefetched_galleries = event.galleries.filter(
+                    is_public=True,
+                    is_active=True
+                ).prefetch_related(
+                    models.Prefetch(
+                        'photos',
+                        queryset=Photo.objects.filter(is_public=True).order_by('order', 'created_at'),
+                        to_attr='prefetched_photos'
+                    )
+                )
+            # For private events, only return basic info until verified
+            else:
+                # Check if this event is in the user's verified_events session
+                verified_events = self.request.session.get('verified_events', [])
+                if str(event.id) in verified_events:
+                    # User has verified access, return all galleries and photos
+                    event.prefetched_galleries = event.galleries.filter(
+                        is_active=True
+                    ).prefetch_related(
+                        models.Prefetch(
+                            'photos',
+                            queryset=Photo.objects.filter(is_public=True).order_by('order', 'created_at'),
+                            to_attr='prefetched_photos'
+                        )
+                    )
+                else:
+                    # User hasn't verified, only return basic event info
+                    event.prefetched_galleries = []
+                    
             return event
             
         except Event.DoesNotExist:
-            raise Http404("No Event matches the given query.")
+            raise exceptions.NotFound("Event not found")
 
 
 class VerifyEventPinView(APIView):
@@ -587,20 +618,36 @@ class VerifyEventPinView(APIView):
         event = get_object_or_404(Event, slug=slug)
         pin = request.data.get('pin', '')
         
-        if event.privacy == 'public':
-            return Response({'verified': True, 'event': serializers.EventSerializer(event).data})
+        # Check if the event is private and has a PIN
+        if event.privacy != 'private' or not event.pin:
+            return Response(
+                {'error': 'This event does not require a PIN'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Verify the PIN
+        if event.pin != pin:
+            return Response(
+                {'error': 'Invalid PIN code'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
             
-        if event.pin == pin:
-            return Response({
-                'verified': True,
-                'event': serializers.EventSerializer(event).data
-            })
+        # Store verification in session
+        verified_events = request.session.get('verified_events', [])
+        if str(event.id) not in verified_events:
+            verified_events.append(str(event.id))
+            request.session['verified_events'] = verified_events
+            request.session.modified = True
             
-        return Response(
-            {'error': 'Invalid PIN'}, 
-            status=status.HTTP_403_FORBIDDEN
-        )
-
+        return Response({
+            'success': True,
+            'event': {
+                'id': event.id,
+                'name': event.name,
+                'slug': event.slug,
+                'is_verified': True
+            }
+        })
 
 @api_view(['GET'])
 @permission_classes([permissions.AllowAny])
