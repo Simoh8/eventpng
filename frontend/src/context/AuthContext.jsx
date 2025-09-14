@@ -460,12 +460,6 @@ export const AuthProvider = ({ children }) => {
     loginWithGoogle
   ]);
 
-  // Redirect to login if not authenticated and not on a public page
-  useEffect(() => {
-    if (!state.isLoading && !state.isAuthenticated && !['/login', '/register', '/forgot-password'].includes(location.pathname)) {
-      navigate('/login', { state: { from: location } });
-    }
-  }, [state.isAuthenticated, state.isLoading, navigate, location]);
 
   return (
     <AuthContext.Provider value={contextValue}>

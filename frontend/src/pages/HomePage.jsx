@@ -10,7 +10,6 @@ import {
   MagnifyingGlassIcon as SearchIcon,
   FunnelIcon as FilterIcon,
   CalendarIcon,
-  MapPinIcon,
   LockClosedIcon,
   ArrowRightIcon,
   PhotoIcon,

@@ -9,9 +9,29 @@ const api = axios.create({
   },
 });
 
+// Flag to prevent multiple simultaneous token refresh attempts
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
 // Add a request interceptor to include the auth token in requests
 api.interceptors.request.use(
   (config) => {
+    // Don't intercept refresh token request to prevent infinite loops
+    if (config.url.includes('/token/refresh/')) {
+      return config;
+    }
+    
     const token = localStorage.getItem('access');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -23,29 +43,158 @@ api.interceptors.request.use(
   }
 );
 
+// Add a response interceptor to handle token refresh
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // If the error is 401 and we haven't already tried to refresh the token
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      // If we're already refreshing the token, add this request to the queue
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        })
+          .then((token) => {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            return api(originalRequest);
+          })
+          .catch((err) => {
+            return Promise.reject(err);
+          });
+      }
+
+      // Mark that we're refreshing the token
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        // Try to refresh the token
+        const { access } = await authService.refreshToken();
+        
+        // Update the authorization header
+        originalRequest.headers.Authorization = `Bearer ${access}`;
+        
+        // Process any queued requests
+        processQueue(null, access);
+        
+        // Retry the original request
+        return api(originalRequest);
+      } catch (refreshError) {
+        // If refresh fails, clear auth data and reject all queued requests
+        processQueue(refreshError, null);
+        authService.logout();
+        
+        // // Redirect to login if we're not already there
+        // if (!window.location.pathname.includes('/login')) {
+        //   window.location.href = '/login';
+        // }
+        
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+    
+    // For other errors, just reject
+    return Promise.reject(error);
+  }
+);
+
 // Check if token is valid
 const isTokenValid = (token) => {
-  if (!token) return false;
+  if (!token || typeof token !== 'string') {
+    console.log('[authService] No token or invalid token format');
+    return false;
+  }
   
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.exp * 1000 > Date.now();
+    // Split the token into parts
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      console.error('[authService] Invalid token format');
+      return false;
+    }
+    
+    // Decode the payload
+    const payload = JSON.parse(atob(parts[1]));
+    
+    // Check if token has expired
+    const currentTime = Date.now() / 1000; // Convert to seconds
+    const isExpired = payload.exp < currentTime;
+    
+    if (isExpired) {
+      console.log('[authService] Token has expired');
+      return false;
+    }
+    
+    // Additional validations can be added here (e.g., check issuer, audience, etc.)
+    
+    return true;
+    
   } catch (error) {
-    console.error('Error validating token:', error);
+    console.error('[authService] Error validating token:', error);
     return false;
   }
 };
 
-// Get stored user from localStorage
+// Get stored user from localStorage with validation
 const getStoredUser = () => {
-  const user = localStorage.getItem('user');
-  return user ? JSON.parse(user) : null;
+  try {
+    const userStr = localStorage.getItem('user');
+    if (!userStr) {
+      console.log('[authService] No user data found in localStorage');
+      return null;
+    }
+    
+    const user = JSON.parse(userStr);
+    
+    // Basic validation of user object
+    if (!user || typeof user !== 'object' || !user.id) {
+      console.error('[authService] Invalid user data in localStorage');
+      localStorage.removeItem('user');
+      return null;
+    }
+    
+    console.log('[authService] Retrieved user from localStorage:', { 
+      id: user.id, 
+      email: user.email || 'no-email',
+      name: user.name || 'no-name'
+    });
+    
+    return user;
+    
+  } catch (error) {
+    console.error('[authService] Error parsing user data:', error);
+    // Clean up corrupted user data
+    localStorage.removeItem('user');
+    return null;
+  }
 };
 
-// Check if user is authenticated
+// Check if user is authenticated with comprehensive validation
 const isAuthenticated = () => {
   const token = localStorage.getItem('access');
-  return isTokenValid(token);
+  const user = getStoredUser();
+  
+  // Check if we have both a valid token and user data
+  const tokenValid = isTokenValid(token);
+  const hasUser = !!user;
+  
+  console.log('[authService] Authentication check:', {
+    hasToken: !!token,
+    tokenValid,
+    hasUser
+  });
+  
+  // If token is invalid but we have a user, clean up
+  if (!tokenValid && hasUser) {
+    console.log('[authService] Token invalid but user data exists, cleaning up...');
+    localStorage.removeItem('user');
+  }
+  
+  return tokenValid && hasUser;
 };
 
 // Auth service methods
@@ -79,7 +228,13 @@ const authService = {
       // Clear any existing auth data
       this.logout();
       
-      const response = await api.post('/api/accounts/login/', credentials);
+      console.log('[authService] Attempting to login with credentials:', { email: credentials.email });
+      const response = await api.post('/api/accounts/token/', {
+        email: credentials.email,
+        password: credentials.password
+      });
+      
+      console.log('[authService] Login response received');
       const { access, refresh, user } = response.data;
       
       if (access && user) {
@@ -135,55 +290,82 @@ const authService = {
       
       const refreshToken = localStorage.getItem('refresh');
       if (!refreshToken) {
+        console.error('[authService] No refresh token available');
         throw new Error('No refresh token available');
       }
       
-      const response = await api.post(
+      // Create a new axios instance without interceptors to avoid infinite loops
+      const refreshApi = axios.create({
+        baseURL: API_BASE_URL,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: 10000 // 10 second timeout
+      });
+      
+      const response = await refreshApi.post(
         '/api/accounts/token/refresh/',
-        { refresh: refreshToken },
-        {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 10000 // 10 second timeout
-        }
+        { refresh: refreshToken }
       );
       
       const { access, refresh: newRefreshToken } = response.data;
       
       if (!access) {
+        console.error('[authService] No access token in refresh response');
         throw new Error('No access token in refresh response');
+      }
+      
+      console.log('[authService] New access token received');
+      
+      // Verify the new token is valid before saving
+      if (!isTokenValid(access)) {
+        console.error('[authService] New token is invalid');
+        throw new Error('New token is invalid');
       }
       
       // Update tokens in localStorage
       localStorage.setItem('access', access);
       if (newRefreshToken) {
+        console.log('[authService] New refresh token received');
         localStorage.setItem('refresh', newRefreshToken);
       }
       
-      // Update auth header
+      // Update auth header for future requests
       this.setAuthHeader(access);
       
-      // Verify the new token is valid
-      if (!isTokenValid(access)) {
-        throw new Error('New token is invalid');
-      }
-      
       console.log('[authService] Token refresh successful');
-      return { access, refresh: newRefreshToken || refreshToken };
+      return { 
+        access, 
+        refresh: newRefreshToken || refreshToken 
+      };
       
     } catch (error) {
-      console.error('Error refreshing token:', error);
-      this.logout();
+      console.error('[authService] Token refresh failed:', error);
       
-      // Add more specific error handling if needed
+      // Log detailed error information
       if (error.response) {
-        console.error('Response data:', error.response.data);
-        console.error('Status:', error.response.status);
+        console.error('[authService] Response status:', error.response.status);
+        console.error('[authService] Response data:', error.response.data);
+        
+        // If we get a 401, the refresh token is invalid or expired
+        if (error.response.status === 401) {
+          console.log('[authService] Refresh token is invalid or expired');
+          // Clear all auth data
+          this.logout();
+          throw new Error('Session expired. Please log in again.');
+        }
       } else if (error.request) {
-        console.error('No response received:', error.request);
+        console.error('[authService] No response received:', error.request);
       } else {
-        console.error('Request setup error:', error.message);
+        console.error('[authService] Request setup error:', error.message);
       }
       
+      // Don't logout for network errors, just throw
+      if (!error.response) {
+        throw new Error('Network error. Please check your connection.');
+      }
+      
+      // For other errors, let the caller decide what to do
       throw error;
     }
   },
@@ -200,10 +382,14 @@ const authService = {
   
   // Set authentication header
   setAuthHeader: function(token) {
-    if (token) {
+    if (token && isTokenValid(token)) {
+      console.log('[authService] Setting auth header with valid token');
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      localStorage.setItem('access', token); // Ensure token is saved
     } else {
+      console.log('[authService] Removing invalid or expired auth header');
       delete api.defaults.headers.common['Authorization'];
+      localStorage.removeItem('access');
     }
   },
 
