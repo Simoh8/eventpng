@@ -18,7 +18,8 @@ const processQueue = (error, token = null) => {
     if (error) {
       prom.reject(error);
     } else {
-      prom.resolve(token);
+      return;
+
     }
   });
   failedQueue = [];
@@ -201,25 +202,22 @@ const isAuthenticated = () => {
 const authService = {
   // Google OAuth login
   googleAuth: async function(credential) {
-    try {
-      const response = await api.post('/api/accounts/google/', { credential });
-      const { access, refresh, user } = response.data;
-      
-      if (access && user) {
-        localStorage.setItem('access', access);
-        if (refresh) {
-          localStorage.setItem('refresh', refresh);
-        }
-        localStorage.setItem('user', JSON.stringify(user));
-        this.setAuthHeader(access);
-        return user;
+    const response = await api.post('/api/accounts/google/', { credential });
+    const { access, refresh, user } = response.data;
+  
+    if (access && user) {
+      localStorage.setItem('access', access);
+      if (refresh) {
+        localStorage.setItem('refresh', refresh);
       }
-      
-      throw new Error('Invalid response from server');
-    } catch (error) {
-      console.error('Google auth error:', error);
-      throw error;
+      localStorage.setItem('user', JSON.stringify(user));
+      this.setAuthHeader(access);
+  
+      // return everything so AuthProvider can use it
+      return { access, refresh, user };
     }
+  
+    throw new Error('Invalid response from server');
   },
 
   // Login user

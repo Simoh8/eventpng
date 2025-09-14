@@ -18,6 +18,88 @@ import { makeRequest } from '../utils/apiUtils';
 import { API_BASE_URL, API_ENDPOINTS } from '../config';
 import EventPinModal from '../components/EventPinModal';
 
+// Cache configuration
+const CACHE_CONFIG = {
+  EVENT_CACHE_KEY: 'event_cache',
+  CACHE_DURATION: 60 * 60 * 1000, // 1 hour in milliseconds
+  MAX_CACHE_ITEMS: 20 // Maximum number of events to cache
+};
+
+// Cache utility functions
+const getEventCache = () => {
+  try {
+    const cache = localStorage.getItem(CACHE_CONFIG.EVENT_CACHE_KEY);
+    return cache ? JSON.parse(cache) : {};
+  } catch (error) {
+    console.error('Error reading event cache:', error);
+    return {};
+  }
+};
+
+const setEventCache = (cache) => {
+  try {
+    localStorage.setItem(CACHE_CONFIG.EVENT_CACHE_KEY, JSON.stringify(cache));
+  } catch (error) {
+    console.error('Error writing event cache:', error);
+    // If storage is full, try to clean up old items
+    cleanupCache();
+  }
+};
+
+const cleanupCache = () => {
+  try {
+    const cache = getEventCache();
+    const now = Date.now();
+    const validEntries = {};
+    let count = 0;
+    
+    // Keep only valid entries and limit total count
+    Object.entries(cache).forEach(([key, value]) => {
+      if (now - value.timestamp < CACHE_CONFIG.CACHE_DURATION && count < CACHE_CONFIG.MAX_CACHE_ITEMS) {
+        validEntries[key] = value;
+        count++;
+      }
+    });
+    
+    setEventCache(validEntries);
+  } catch (error) {
+    console.error('Error cleaning up cache:', error);
+  }
+};
+
+const getCachedEvent = (slug) => {
+  const cache = getEventCache();
+  const cached = cache[slug];
+  
+  if (cached && Date.now() - cached.timestamp < CACHE_CONFIG.CACHE_DURATION) {
+    return cached.data;
+  }
+  
+  return null;
+};
+
+const setCachedEvent = (slug, data) => {
+  const cache = getEventCache();
+  
+  // Clean up before adding new item if we're approaching the limit
+  if (Object.keys(cache).length >= CACHE_CONFIG.MAX_CACHE_ITEMS) {
+    cleanupCache();
+  }
+  
+  cache[slug] = {
+    data,
+    timestamp: Date.now()
+  };
+  
+  setEventCache(cache);
+};
+
+const clearCachedEvent = (slug) => {
+  const cache = getEventCache();
+  delete cache[slug];
+  setEventCache(cache);
+};
+
 const getProtectedImageUrl = (imageUrl, width = 800) => {
   if (!imageUrl) {
     return null;
@@ -29,9 +111,15 @@ const getProtectedImageUrl = (imageUrl, width = 800) => {
   return fullUrl;
 };
 
-
 const fetchEvent = async (slug) => {
   try {
+    // Check cache first
+    const cachedEvent = getCachedEvent(slug);
+    if (cachedEvent) {
+      console.log('Returning cached event:', slug);
+      return cachedEvent;
+    }
+
     // First try to get the event by slug with credentials
     try {
       // Check if we have a verified session for this event
@@ -44,7 +132,10 @@ const fetchEvent = async (slug) => {
       );
       
       if (eventDetailResponse.data) {
-        return processEventData(eventDetailResponse.data);
+        const processedData = processEventData(eventDetailResponse.data);
+        // Cache the successful response
+        setCachedEvent(slug, processedData);
+        return processedData;
       }
     } catch (error) {
       // If 404 and we have a numeric slug, try by ID
@@ -58,7 +149,10 @@ const fetchEvent = async (slug) => {
           );
           
           if (eventDetailResponse.data) {
-            return processEventData(eventDetailResponse.data);
+            const processedData = processEventData(eventDetailResponse.data);
+            // Cache the successful response
+            setCachedEvent(slug, processedData);
+            return processedData;
           }
         } catch (idError) {
           console.error('Error fetching event by ID:', idError);
@@ -157,8 +251,12 @@ const EventDetail = () => {
     queryFn: () => fetchEvent(slug),
     enabled: !!slug && isVerificationChecked && !requiresPin,
     retry: false,
+    staleTime: 30 * 60 * 1000, // 30 minutes - consider data fresh for this long
+    cacheTime: 60 * 60 * 1000, // 1 hour - keep in cache for this long
     onError: (error) => {
       setErrorState(error);
+      // Clear cache if there's an error to force refetch next time
+      clearCachedEvent(slug);
     },
     onSettled: () => {
       setIsLoading(false);
@@ -388,6 +486,8 @@ const EventDetail = () => {
   const handlePinSuccess = useCallback(() => {
     setShowPinModal(false);
     setRequiresPin(false);
+    // Clear the cache for this event to force a fresh fetch
+    clearCachedEvent(slug);
     // Clear the query cache and refetch the event data
     queryClient.invalidateQueries(['event', slug]);
   }, [queryClient, slug]);

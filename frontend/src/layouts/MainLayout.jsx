@@ -68,7 +68,7 @@ export default function MainLayout() {
           // Shared authenticated navigation
           { name: 'Account Settings', href: '/settings' },
           { name: 'Help & Support', href: '/support' },
-          { name: 'Logout', href: '#', onClick: handleLogout },
+          // { name: 'Logout', href: '#', onClick: handleLogout },
         ]
       : [
           // Public mobile navigation

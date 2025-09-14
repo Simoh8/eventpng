@@ -7,39 +7,42 @@ import * as yup from 'yup';
 import authService from '../../services/authService';
 import FormInput from '../forms/FormInput';
 
-// Helper function to handle Google OAuth response
+
 const handleGoogleLogin = async (response, onSuccess, setError) => {
   try {
     console.log('Google OAuth response received');
-    
+
     if (!response.credential) {
       throw new Error('No credential received from Google');
     }
-    
+
     console.log('Initiating Google authentication with backend...');
-    
+
     // Clear any existing auth data before Google login
     localStorage.removeItem('access');
     localStorage.removeItem('refresh');
     localStorage.removeItem('user');
-    
+
     // Send the credential to the backend
     const result = await authService.googleAuth(response.credential);
-    
+
     console.log('Google authentication result:', result);
-    
-    // Check if we have an access token
-    if (result && (result.accessToken || result.token)) {
+
+    // ✅ Fix: check SimpleJWT-style tokens
+    if (result && result.access) {
       console.log('Authentication successful, storing user data');
-      
-      // Store user data in localStorage if available
+
+      localStorage.setItem('access', result.access);
+      if (result.refresh) {
+        localStorage.setItem('refresh', result.refresh);
+      }
       if (result.user) {
         localStorage.setItem('user', JSON.stringify(result.user));
       }
-      
-      // Force a small delay to ensure state updates propagate
+
+      // Small delay to let context update
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       console.log('Calling onSuccess callback');
       onSuccess();
     } else {
@@ -47,13 +50,15 @@ const handleGoogleLogin = async (response, onSuccess, setError) => {
     }
   } catch (err) {
     console.error('Google login error:', err);
-    const errorMessage = err.response?.data?.message || 
-                        err.message || 
-                        'Google login failed. Please try again.';
+    const errorMessage =
+      err.response?.data?.message ||
+      err.message ||
+      'Google login failed. Please try again.';
     console.error('Error details:', errorMessage);
     setError(errorMessage);
   }
 };
+
 
 // Define validation schema using Yup
 const loginSchema = yup.object().shape({

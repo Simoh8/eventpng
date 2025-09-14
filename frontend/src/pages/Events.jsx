@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query'; // Import useQueryClient here
 import { 
   MagnifyingGlassIcon as SearchIcon,
   FunnelIcon as FilterIcon,
@@ -13,21 +13,56 @@ import { motion, AnimatePresence } from 'framer-motion';
 import api from '../services/api';
 import EventCard from '../components/events/EventCard';
 
-// Default cover image for events without a cover
-const defaultCoverImage = 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=1470&q=80';
 
-// Helper function to format date
-const formatDate = (dateString) => {
-  if (!dateString) return '';
-  const options = { year: 'numeric', month: 'long', day: 'numeric' };
-  return new Date(dateString).toLocaleDateString('en-US', options);
+
+
+// Cache key generator for consistent query keys
+const generateCacheKey = (searchQuery, selectedCategory) => [
+  'events',
+  { 
+    search: searchQuery || 'all',
+    category: selectedCategory || 'all'
+  }
+];
+
+// Local storage cache for PINs to avoid re-entering for the same event
+const PIN_CACHE_KEY = 'event_pin_cache';
+
+const getCachedPin = (eventSlug) => {
+  try {
+    const cache = JSON.parse(localStorage.getItem(PIN_CACHE_KEY) || '{}');
+    return cache[eventSlug];
+  } catch {
+    return null;
+  }
 };
 
-// Number of items per page
-const ITEMS_PER_PAGE = 12;
+const setCachedPin = (eventSlug, pin) => {
+  try {
+    const cache = JSON.parse(localStorage.getItem(PIN_CACHE_KEY) || '{}');
+    cache[eventSlug] = pin;
+    localStorage.setItem(PIN_CACHE_KEY, JSON.stringify(cache));
+  } catch (error) {
+    console.warn('Failed to cache PIN:', error);
+  }
+};
+
+// Memoized event processor to avoid unnecessary re-renders
+const processEvents = (eventsData) => {
+  if (!eventsData) return [];
+  
+  const eventsArray = Array.isArray(eventsData) ? eventsData : [];
+  
+  return eventsArray.map(event => ({
+    ...event,
+    is_private: event.privacy === 'private',
+    category: event.category || 'Event'
+  }));
+};
 
 const Events = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient(); // Use the hook properly
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [showFilters, setShowFilters] = useState(false);
@@ -35,92 +70,48 @@ const Events = () => {
   const [currentEvent, setCurrentEvent] = useState(null);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   
-  // Fetch events with pagination
-  // Since the API returns a direct array, we'll use a regular query
+  // Debounce search to avoid excessive API calls
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Fetch events with enhanced caching
   const {
     data: eventsData,
     error,
     status,
+    isFetching,
   } = useQuery({
-    queryKey: ['events', { searchQuery, category: selectedCategory }],
-    queryFn: async () => {
+    queryKey: generateCacheKey(debouncedSearch, selectedCategory),
+    queryFn: async ({ signal }) => {
       const params = {
-        search: searchQuery || undefined,
+        search: debouncedSearch || undefined,
         category: selectedCategory !== 'All' ? selectedCategory : undefined,
       };
       
-      const response = await api.get('/api/gallery/public/events/', { params });
-      console.log('API Response:', response.data);
+      const response = await api.get('/api/gallery/public/events/', { 
+        params,
+        signal // Add abort signal for cancellation
+      });
+      
       return response.data;
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000, // 5 minutes stale time
+    cacheTime: 30 * 60 * 1000, // 30 minutes cache time
+    keepPreviousData: true, // Keep previous data while fetching new data
+    refetchOnWindowFocus: false, // Don't refetch when window gains focus
   });
   
-  // Process events data for the EventCard component
-  const events = useMemo(() => {
-    if (!eventsData) {
-      console.log('No events data yet');
-      return [];
-    }
-    
-    // Ensure we have an array and map to expected format
-    const eventsArray = Array.isArray(eventsData) ? eventsData : [];
-    console.log('Processing events array:', eventsArray);
-    
-    const processedEvents = eventsArray.map(event => {
-      const processed = {
-        ...event,
-        // Map privacy field to is_private boolean expected by EventCard
-        is_private: event.privacy === 'private',
-        // Add a default category if not present
-        category: event.category || 'Event'
-      };
-      console.log('Processed event:', processed);
-      return processed;
-    });
-    
-    console.log('Final processed events:', processedEvents);
-    return processedEvents;
-  }, [eventsData]);
-  
-  // Removed pagination code since we're not using it
+  // Process events with useMemo to avoid unnecessary processing
+  const events = useMemo(() => processEvents(eventsData), [eventsData]);
 
-  // Handle event click - check if PIN is needed
-  const handleEventClick = (event) => {
-    if (event.is_private) {
-      setCurrentEvent(event);
-      setShowPinModal(true);
-    } else {
-      navigate(`/events/${event.slug}`);
-    }
-  };
-
-  // Handle PIN submission
-  const handlePinSubmit = async (e) => {
-    e.preventDefault();
-    setPinError('');
-    
-    try {
-      const response = await api.post(
-        `/api/events/${currentEvent.slug}/verify-pin/`,
-        { pin }
-      );
-      
-      if (response?.data?.verified) {
-        navigate(`/events/${currentEvent.slug}`, {
-          state: { pinVerified: true }
-        });
-      } else {
-        setPinError('Invalid PIN. Please try again.');
-      }
-    } catch (err) {
-      console.error('Error verifying PIN:', err);
-      setPinError('Failed to verify PIN. Please try again.');
-    }
-  };
-
-  // Get unique categories from events
+  // Memoized categories calculation
   const categories = useMemo(() => {
     const allCategories = new Set(['All']);
     events.forEach(event => {
@@ -132,19 +123,88 @@ const Events = () => {
     return Array.from(allCategories).sort();
   }, [events]);
 
-  // Handle search with debounce
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-    }, 300);
-    
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  // Handle event click with PIN caching
+  const handleEventClick = useCallback((event) => {
+    if (event.is_private) {
+      // Check if we have a cached PIN for this event
+      const cachedPin = getCachedPin(event.slug);
+      if (cachedPin) {
+        // Auto-verify with cached PIN
+        verifyPin(event, cachedPin);
+      } else {
+        setCurrentEvent(event);
+        setShowPinModal(true);
+      }
+    } else {
+      navigate(`/events/${event.slug}`);
+    }
+  }, [navigate]);
 
-  // Loading state
-  if (status === 'loading') {
+  // PIN verification function
+  const verifyPin = useCallback(async (event, pinToVerify) => {
+    try {
+      const response = await api.post(
+        `/api/events/${event.slug}/verify-pin/`,
+        { pin: pinToVerify }
+      );
+      
+      if (response?.data?.verified) {
+        // Cache the successful PIN
+        setCachedPin(event.slug, pinToVerify);
+        
+        navigate(`/events/${event.slug}`, {
+          state: { pinVerified: true }
+        });
+      } else {
+        setPinError('Invalid PIN. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error verifying PIN:', err);
+      setPinError('Failed to verify PIN. Please try again.');
+    }
+  }, [navigate]);
+
+  // Handle PIN submission
+  const handlePinSubmit = async (e) => {
+    e.preventDefault();
+    setPinError('');
+    
+    await verifyPin(currentEvent, pin);
+  };
+
+  // Prefetch events for common categories on component mount
+  useEffect(() => {
+    // Prefetch 'All' category for faster switching
+    queryClient.prefetchQuery({
+      queryKey: generateCacheKey('', 'All'),
+      queryFn: async () => {
+        const response = await api.get('/api/gallery/public/events/');
+        return response.data;
+      },
+    });
+  }, [queryClient]);
+
+  // Prefetch other categories when they become visible in the filter
+  useEffect(() => {
+    if (showFilters) {
+      categories.forEach(category => {
+        if (category !== 'All' && category !== selectedCategory) {
+          queryClient.prefetchQuery({
+            queryKey: generateCacheKey('', category),
+            queryFn: async () => {
+              const response = await api.get('/api/gallery/public/events/', {
+                params: { category }
+              });
+              return response.data;
+            },
+          });
+        }
+      });
+    }
+  }, [showFilters, categories, selectedCategory, queryClient]);
+
+  // Loading state with better loading indicators
+  if (status === 'loading' && !eventsData) {
     return (
       <div className="bg-gray-50 min-h-screen py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
@@ -208,22 +268,8 @@ const Events = () => {
     );
   }
 
-  // Debug component to log state
-  const DebugInfo = () => {
-    console.log('Current state:', {
-      searchQuery,
-      selectedCategory,
-      events,
-      eventsData,
-      status,
-      error
-    });
-    return null;
-  };
-
   return (
     <div className="bg-gray-50 min-h-screen py-12 px-4 sm:px-6 lg:px-8">
-      <DebugInfo />
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-12">
           <h1 className="text-3xl font-bold text-gray-900 sm:text-4xl">Upcoming Events</h1>
@@ -261,7 +307,7 @@ const Events = () => {
                 <button
                   key={category}
                   onClick={() => setSelectedCategory(category)}
-                  className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
                     selectedCategory === category
                       ? 'bg-blue-100 text-blue-800'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -274,12 +320,18 @@ const Events = () => {
           </div>
         </div>
 
-        {/* Events Grid */}
-        {status === 'loading' ? (
-          <div className="mt-8 flex justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+        {/* Loading indicator for background updates */}
+        {isFetching && (
+          <div className="fixed top-4 right-4 z-50">
+            <div className="bg-blue-500 text-white px-3 py-1 rounded-full text-sm flex items-center">
+              <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-b-2 border-white mr-2"></div>
+              Updating...
+            </div>
           </div>
-        ) : events.length > 0 ? (
+        )}
+
+        {/* Events Grid */}
+        {events.length > 0 ? (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {events.map((event) => (
               <EventCard 

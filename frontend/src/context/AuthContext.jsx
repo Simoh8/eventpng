@@ -413,21 +413,23 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // Google login function
-  const loginWithGoogle = useCallback(async (accessToken) => {
+
+
+  const loginWithGoogle = useCallback(async (credential) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
-    
+  
     try {
-      // Call your Google login API here
-      // const response = await api.post('/auth/google/', { access_token: accessToken });
-      // const { user, accessToken: token } = response.data;
-      // authService.setToken(token);
-      // handleLoginSuccess(user);
-      // return { success: true };
-      
-      // For now, just simulate a successful Google login
-      return { success: false, error: 'Google login not implemented' };
+      const { access, refresh, user } = await authService.googleAuth(credential);
+  
+      if (!access || !user) {
+        throw new Error('Authentication failed: No valid token received');
+      }
+  
+      handleLoginSuccess(user); // updates context state + redirects
+  
+      return { success: true };
     } catch (error) {
+      console.error('[loginWithGoogle] Error:', error);
       setState(prev => ({
         ...prev,
         isLoading: false,
@@ -435,7 +437,9 @@ export const AuthProvider = ({ children }) => {
       }));
       return { success: false, error: error.message };
     }
-  }, []);
+  }, [handleLoginSuccess]);
+  
+  
 
   // Provide the auth context value
   const contextValue = useMemo(() => ({

@@ -133,12 +133,12 @@ const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
 
 
 
-
 function AppContent() {
   return (
     <Routes>
-      {/* ================= PUBLIC ROUTES ================= */}
+      {/* ================= ROUTES WITH NAVBAR (MainLayout) ================= */}
       <Route path="/" element={<MainLayout />}>
+        {/* --- Public --- */}
         <Route index element={<HomePage />} />
         <Route path="events" element={<Events />} />
         <Route path="events/:slug" element={<EventDetail />} />
@@ -146,126 +146,128 @@ function AppContent() {
         <Route path="pricing" element={<PricingPage />} />
         <Route path="faq" element={<FaqPage />} />
         <Route path="terms" element={<TermsAndPrivacy />} />
-        <Route path="login" element={<LoginPage />} />
-        <Route path="register" element={<RegisterPage />} />
+
+        {/* --- Customer --- */}
+        <Route
+          path="my-gallery"
+          element={
+            <ProtectedRoute allowedRoles={['customer']}>
+              <CustomerDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="my-photos"
+          element={
+            <ProtectedRoute allowedRoles={['customer']}>
+              <MyPhotosPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="orders"
+          element={
+            <ProtectedRoute allowedRoles={['customer']}>
+              <MyOrdersPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="saved"
+          element={
+            <ProtectedRoute allowedRoles={['customer']}>
+              <SavedPhotosPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* --- Photographer --- */}
+        <Route
+          path="photographer-dashboard"
+          element={
+            <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
+              <PhotographerDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="dashboard"
+          element={
+            <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
+              <PhotographerDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="galleries/new"
+          element={
+            <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
+              <CreateGallery />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* --- Shared protected --- */}
+        <Route
+          path="settings"
+          element={
+            <ProtectedRoute allowedRoles={['customer', 'photographer', 'staff']}>
+              <AccountSettingsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="support"
+          element={
+            <ProtectedRoute allowedRoles={['customer', 'photographer', 'staff']}>
+              <HelpAndSupportPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* --- Admin --- */}
+        <Route
+          path="admin/events"
+          element={
+            <ProtectedRoute requiredRole="staff" allowedRoles={['staff']}>
+              <AdminEvents />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="admin/events/new"
+          element={
+            <ProtectedRoute requiredRole="staff" allowedRoles={['staff']}>
+              <EventForm />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="admin/events/:id/edit"
+          element={
+            <ProtectedRoute requiredRole="staff" allowedRoles={['staff']}>
+              <EventForm />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* --- Legacy redirect --- */}
+        <Route
+          path="old-dashboard"
+          element={
+            <ProtectedRoute>
+              <DashboardRedirect />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* --- 404 --- */}
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
 
-      {/* ================= CUSTOMER ROUTES ================= */}
-      <Route
-        path="/my-gallery"
-        element={
-          <ProtectedRoute allowedRoles={['customer']}>
-            <CustomerDashboard />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/my-photos"
-        element={
-          <ProtectedRoute allowedRoles={['customer']}>
-            <MyPhotosPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/orders"
-        element={
-          <ProtectedRoute allowedRoles={['customer']}>
-            <MyOrdersPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/saved"
-        element={
-          <ProtectedRoute allowedRoles={['customer']}>
-            <SavedPhotosPage />
-          </ProtectedRoute>
-        }
-      />
-
-      {/* ================= PHOTOGRAPHER ROUTES ================= */}
-      <Route
-        path="/photographer-dashboard"
-        element={
-          <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
-            <PhotographerDashboard />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/dashboard"
-        element={
-          <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
-            <PhotographerDashboard />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/galleries/new"
-        element={
-          <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
-            <CreateGallery />
-          </ProtectedRoute>
-        }
-      />
-
-      {/* ================= SHARED PROTECTED ROUTES ================= */}
-      <Route
-        path="/settings"
-        element={
-          <ProtectedRoute allowedRoles={['customer', 'photographer', 'staff']}>
-            <AccountSettingsPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/support"
-        element={
-          <ProtectedRoute allowedRoles={['customer', 'photographer', 'staff']}>
-            <HelpAndSupportPage />
-          </ProtectedRoute>
-        }
-      />
-
-      {/* ================= ADMIN ROUTES ================= */}
-      <Route
-        path="/admin/events"
-        element={
-          <ProtectedRoute requiredRole="staff" allowedRoles={['staff']}>
-            <AdminEvents />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/events/new"
-        element={
-          <ProtectedRoute requiredRole="staff" allowedRoles={['staff']}>
-            <EventForm />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/events/:id/edit"
-        element={
-          <ProtectedRoute requiredRole="staff" allowedRoles={['staff']}>
-            <EventForm />
-          </ProtectedRoute>
-        }
-      />
-
-      {/* ================= LEGACY / MISC ================= */}
-      <Route
-        path="/old-dashboard"
-        element={
-          <ProtectedRoute>
-            <DashboardRedirect />
-          </ProtectedRoute>
-        }
-      />
-
-      {/* ================= 404 ================= */}
-      <Route path="*" element={<NotFoundPage />} />
+      {/* ================= AUTH ROUTES (no navbar) ================= */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
     </Routes>
   );
 }

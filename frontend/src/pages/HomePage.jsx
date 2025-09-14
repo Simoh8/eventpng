@@ -29,18 +29,6 @@ import { useAuth } from '../context/AuthContext';
 // Default cover image if none is provided from the API
 const DEFAULT_COVER_IMAGE = 'https://images.unsplash.com/photo-1516450360452-1f389e6b5cef?auto=format&fit=crop&w=1470&q=80';
 
-const formatDate = (dateString) => {
-  if (!dateString) return '';
-  const options = { 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  };
-  return new Date(dateString).toLocaleDateString('en-US', options);
-};
-
 // Stats card component with loading state
 const StatCard = ({ icon: Icon, title, value, color = 'blue', description = null, isLoading = false }) => {
   const colorClasses = {
