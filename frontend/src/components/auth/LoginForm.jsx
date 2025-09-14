@@ -18,6 +18,11 @@ const handleGoogleLogin = async (response, onSuccess, setError) => {
     
     console.log('Initiating Google authentication with backend...');
     
+    // Clear any existing auth data before Google login
+    localStorage.removeItem('access');
+    localStorage.removeItem('refresh');
+    localStorage.removeItem('user');
+    
     // Send the credential to the backend
     const result = await authService.googleAuth(response.credential);
     
@@ -25,7 +30,17 @@ const handleGoogleLogin = async (response, onSuccess, setError) => {
     
     // Check if we have an access token
     if (result && (result.accessToken || result.token)) {
-      console.log('Authentication successful, calling onSuccess callback');
+      console.log('Authentication successful, storing user data');
+      
+      // Store user data in localStorage if available
+      if (result.user) {
+        localStorage.setItem('user', JSON.stringify(result.user));
+      }
+      
+      // Force a small delay to ensure state updates propagate
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      console.log('Calling onSuccess callback');
       onSuccess();
     } else {
       throw new Error('Authentication failed: No valid token received');
@@ -73,6 +88,12 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
 
     try {
       console.log('2. [LoginForm] Calling authService.login...');
+      
+      // Clear any existing auth data before login
+      localStorage.removeItem('access');
+      localStorage.removeItem('refresh');
+      localStorage.removeItem('user');
+      
       const response = await authService.login({
         email: formData.email,
         password: formData.password,
@@ -82,7 +103,15 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
         hasUser: !!response?.user,
         hasToken: !!response?.accessToken
       });
-
+      
+      // Store user data in localStorage
+      if (response?.user) {
+        localStorage.setItem('user', JSON.stringify(response.user));
+      }
+      
+      // Force a small delay to ensure state updates propagate
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       // Call onSuccess callback which will handle the navigation
       if (onSuccess) {
         console.log('4. [LoginForm] Calling onSuccess callback with redirectTo:', redirectTo);

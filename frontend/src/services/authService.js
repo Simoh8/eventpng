@@ -23,23 +23,6 @@ api.interceptors.request.use(
   }
 );
 
-// Helper function to get CSRF token from cookies
-const getCSRFToken = () => {
-  if (typeof document === 'undefined') return ''; // For server-side rendering
-  
-  const name = 'csrftoken=';
-  const decodedCookie = decodeURIComponent(document.cookie);
-  const cookieArray = decodedCookie.split(';');
-  
-  for (let i = 0; i < cookieArray.length; i++) {
-    let cookie = cookieArray[i].trim();
-    if (cookie.indexOf(name) === 0) {
-      return cookie.substring(name.length, cookie.length);
-    }
-  }
-  return '';
-};
-
 // Check if token is valid
 const isTokenValid = (token) => {
   if (!token) return false;
@@ -48,271 +31,175 @@ const isTokenValid = (token) => {
     const payload = JSON.parse(atob(token.split('.')[1]));
     return payload.exp * 1000 > Date.now();
   } catch (error) {
-    console.error('Error checking token:', error);
+    console.error('Error validating token:', error);
     return false;
   }
 };
 
 // Get stored user from localStorage
 const getStoredUser = () => {
-  try {
-    const userStr = localStorage.getItem('user');
-    return userStr ? JSON.parse(userStr) : null;
-  } catch (error) {
-    console.error('Error parsing user data:', error);
-    return null;
-  }
+  const user = localStorage.getItem('user');
+  return user ? JSON.parse(user) : null;
 };
 
 // Check if user is authenticated
 const isAuthenticated = () => {
-  try {
-    const token = localStorage.getItem('access');
-    if (!token) {
-      console.log('[authService] No access token found');
-      return false;
-    }
-    
-    // Check if token is valid
-    const isValid = isTokenValid(token);
-    console.log('[authService] Token validation result:', isValid);
-    
-    // Additional check for user data in localStorage
-    const user = JSON.parse(localStorage.getItem('user') || 'null');
-    const hasUserData = !!user && typeof user === 'object' && 'id' in user;
-    console.log('[authService] Has user data:', hasUserData);
-    
-    return isValid && hasUserData;
-  } catch (error) {
-    console.error('[authService] Error checking authentication:', error);
-    return false;
-  }
+  const token = localStorage.getItem('access');
+  return isTokenValid(token);
 };
 
 // Auth service methods
 const authService = {
   // Google OAuth login
-  async googleAuth(credential) {
+  googleAuth: async function(credential) {
     try {
-      console.log('Sending Google credential to backend...');
+      const response = await api.post('/api/accounts/google/', { credential });
+      const { access, refresh, user } = response.data;
       
-      // Send the credential to the backend
-      const response = await api.post('/api/accounts/google/', 
-        { credential },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          withCredentials: true
+      if (access && user) {
+        localStorage.setItem('access', access);
+        if (refresh) {
+          localStorage.setItem('refresh', refresh);
         }
-      );
-      
-      console.log('Google auth response:', response.data);
-      
-      // Store the tokens
-      if (response.data.access) {
-        localStorage.setItem('access', response.data.access);
-        if (response.data.refresh) {
-          localStorage.setItem('refresh', response.data.refresh);
-        }
-        
-        try {
-          // Get user profile
-          const userResponse = await api.get('/api/accounts/me/');
-          if (userResponse.data) {
-            const userData = userResponse.data;
-            // Store user data
-            localStorage.setItem('user', JSON.stringify(userData));
-            return {
-              ...response.data,
-              user: userData
-            };
-          }
-        } catch (profileError) {
-          console.warn('Could not fetch user profile:', profileError);
-          // Continue with the response even if profile fetch fails
-        }
+        localStorage.setItem('user', JSON.stringify(user));
+        this.setAuthHeader(access);
+        return user;
       }
       
-      return response.data;
+      throw new Error('Invalid response from server');
     } catch (error) {
-      console.error('Google authentication error:', error);
+      console.error('Google auth error:', error);
       throw error;
     }
   },
 
   // Login user
-  async login(credentials) {
+  login: async function(credentials) {
     try {
-      console.log('1. [authService.login] Attempting login with credentials');
+      // Clear any existing auth data
+      this.logout();
       
-      // Make the login request
-      console.log('2. [authService.login] Sending login request to /api/accounts/token/');
-      const response = await api.post('/api/accounts/token/', credentials);
+      const response = await api.post('/api/accounts/login/', credentials);
+      const { access, refresh, user } = response.data;
       
-      console.log('3. [authService.login] Login response received');
-      const { access, refresh } = response.data;
-      
-      if (!access) {
-        console.error('4. [authService.login] No access token in response:', response.data);
-        throw new Error('No access token received from server');
+      if (access && user) {
+        localStorage.setItem('access', access);
+        if (refresh) {
+          localStorage.setItem('refresh', refresh);
+        }
+        localStorage.setItem('user', JSON.stringify(user));
+        this.setAuthHeader(access);
+        return user;
       }
       
-      console.log('4. [authService.login] Login successful, storing tokens');
-      
-      // Store tokens in localStorage
-      localStorage.setItem('access', access);
-      if (refresh) {
-        localStorage.setItem('refresh', refresh);
-      }
-      
-      // Set default auth header
-      api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
-      console.log('5. [authService.login] Auth header set');
-      
-      // Get user profile
-      console.log('6. [authService.login] Fetching user profile...');
-      const user = await this.getProfile();
-      
-      if (!user) {
-        console.error('7. [authService.login] Failed to fetch user profile');
-        throw new Error('Failed to fetch user profile after login');
-      }
-      
-      console.log('7. [authService.login] User profile fetched successfully');
-      return { 
-        user, 
-        accessToken: access,
-        refreshToken: refresh 
-      };
+      throw new Error('Invalid response from server');
     } catch (error) {
-      throw this.handleError(error);
+      console.error('Login error:', error);
+      throw error;
     }
   },
 
   // Logout user
-  logout() {
-    // Clear tokens from storage
+  logout: function() {
     localStorage.removeItem('access');
     localStorage.removeItem('refresh');
     localStorage.removeItem('user');
-    
-    // Remove auth header
     delete api.defaults.headers.common['Authorization'];
   },
 
   // Get user profile
-  async getProfile() {
+  getProfile: async function() {
     try {
-      console.log('1. [authService.getProfile] Starting profile fetch');
+      const response = await api.get('/api/accounts/profile/');
+      const userData = response.data;
       
-      // Check if we have a token
-      const token = localStorage.getItem('access');
-      if (!token) {
-        console.error('2. [authService.getProfile] No access token found');
-        return null;
+      if (!userData || !userData.id) {
+        throw new Error('Invalid user data received');
       }
       
-      console.log('2. [authService.getProfile] Token found, preparing request');
-      
-      // Set auth header for this request
-      const config = {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        withCredentials: true
-      };
-      
-      console.log('3. [authService.getProfile] Sending request to /api/accounts/me/');
-      const response = await api.get('/api/accounts/me/', config);
-      
-      if (!response.data) {
-        console.error('4. [authService.getProfile] No data in response');
-        throw new Error('No user data received');
-      }
-      
-      console.log('4. [authService.getProfile] Received profile data');
-      
-      // Handle different response formats
-      let userData = response.data;
-      if (userData && userData.data) {
-        console.log('5. [authService.getProfile] Unwrapping nested data structure');
-        userData = userData.data; // Handle nested data structure
-      }
-      
-      if (!userData) {
-        console.error('6. [authService.getProfile] Invalid user data format');
-        throw new Error('Invalid user data format received');
-      }
-      
-      // Store user data in localStorage
-      console.log('6. [authService.getProfile] Storing user data in localStorage');
+      // Update stored user data
       localStorage.setItem('user', JSON.stringify(userData));
-      
-      console.log('7. [authService.getProfile] Profile fetch successful');
-      
       return userData;
     } catch (error) {
-      // If unauthorized, clear tokens and redirect to login
-      if (error.response && error.response.status === 401) {
+      if (error.response?.status === 401) {
         this.logout();
       }
-      throw this.handleError(error);
+      throw error;
     }
   },
 
   // Refresh access token
-  async refreshToken() {
+  refreshToken: async function() {
     try {
+      console.log('[authService] Starting token refresh');
+      
       const refreshToken = localStorage.getItem('refresh');
       if (!refreshToken) {
         throw new Error('No refresh token available');
       }
       
-      const response = await api.post('/api/accounts/token/refresh/', {
-        refresh: refreshToken
-      });
+      const response = await api.post(
+        '/api/accounts/token/refresh/',
+        { refresh: refreshToken },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10000 // 10 second timeout
+        }
+      );
       
-      const { access } = response.data;
+      const { access, refresh: newRefreshToken } = response.data;
       
       if (!access) {
         throw new Error('No access token in refresh response');
       }
       
-      // Update the access token in localStorage and axios defaults
+      // Update tokens in localStorage
       localStorage.setItem('access', access);
-      api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
+      if (newRefreshToken) {
+        localStorage.setItem('refresh', newRefreshToken);
+      }
       
-      return access;
+      // Update auth header
+      this.setAuthHeader(access);
+      
+      // Verify the new token is valid
+      if (!isTokenValid(access)) {
+        throw new Error('New token is invalid');
+      }
+      
+      console.log('[authService] Token refresh successful');
+      return { access, refresh: newRefreshToken || refreshToken };
+      
     } catch (error) {
+      console.error('Error refreshing token:', error);
       this.logout();
-      throw this.handleError(error);
+      
+      // Add more specific error handling if needed
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+        console.error('Status:', error.response.status);
+      } else if (error.request) {
+        console.error('No response received:', error.request);
+      } else {
+        console.error('Request setup error:', error.message);
+      }
+      
+      throw error;
     }
   },
 
   // Get current user
-  getCurrentUser() {
-    const user = localStorage.getItem('user');
-    return user ? JSON.parse(user) : null;
+  getCurrentUser: function() {
+    return getStoredUser();
   },
 
   // Update user data
-  updateUser(userData) {
+  updateUser: function(userData) {
     localStorage.setItem('user', JSON.stringify(userData));
-  },
-
-  // Logout user
-  logout() {
-    // Clear tokens from storage
-    localStorage.removeItem('access');
-    localStorage.removeItem('refresh');
-    localStorage.removeItem('user');
-    delete api.defaults.headers.common['Authorization'];
   },
   
   // Set authentication header
-  setAuthHeader(token) {
+  setAuthHeader: function(token) {
     if (token) {
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     } else {
@@ -321,7 +208,7 @@ const authService = {
   },
 
   // Helper to get CSRF token
-  getCSRFToken() {
+  getCSRFToken: function() {
     if (typeof document === 'undefined') return '';
     
     const name = 'csrftoken=';
@@ -338,10 +225,13 @@ const authService = {
   },
   
   // Check if user is authenticated
-  isAuthenticated,
+  isAuthenticated: isAuthenticated,
   
   // Get stored user
-  getStoredUser
+  getStoredUser: getStoredUser,
+  
+  // Token validation
+  isTokenValid: isTokenValid
 };
 
 export default authService;

@@ -30,8 +30,8 @@ import NotFoundPage from './pages/NotFoundPage';
 // Dashboard Redirect Component
 const DashboardRedirect = () => {
   const { user, isAuthenticated, isLoading } = useAuth();
+  const token = localStorage.getItem('access');
   
-
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -40,18 +40,26 @@ const DashboardRedirect = () => {
     );
   }
   
-  // If not authenticated, redirect to login
-  if (!isAuthenticated) {
+  // If not authenticated and no token, redirect to login
+  if (!isAuthenticated && !token) {
     return <Navigate to="/login" replace />;
   }
   
   // Handle nested user data structure (user.data)
   const userData = user?.data || user || {};
   
-  // Check if user is a photographer
+  // Check if user is a photographer or staff
   const isPhotographer = userData?.is_photographer === true;
+  const isStaff = userData?.is_staff || userData?.is_superuser;
   
-  const redirectPath = isPhotographer ? '/photographer-dashboard' : '/my-gallery';
+  // Determine redirect path based on user role
+  let redirectPath = '/my-gallery'; // Default for customers
+  
+  if (isStaff) {
+    redirectPath = '/admin/events';
+  } else if (isPhotographer) {
+    redirectPath = '/photographer-dashboard';
+  }
   
   return <Navigate to={redirectPath} replace />;
 };
@@ -70,7 +78,12 @@ const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
   // Handle initial authentication check
   useEffect(() => {
     if (!isLoading) {
-      setAuthChecked(true);
+      // Add a small delay to ensure auth state is properly updated
+      const timer = setTimeout(() => {
+        setAuthChecked(true);
+      }, 100);
+      
+      return () => clearTimeout(timer);
     }
   }, [isLoading]);
 
@@ -84,10 +97,19 @@ const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
     );
   }
   
-  // If not authenticated and no token, redirect to login
-  if (!isAuthenticated && !token) {
-    console.log('4. [ProtectedRoute] Not authenticated, redirecting to login');
-    console.log('5. [ProtectedRoute] Saving current location for redirect:', location.pathname);
+  // If no required role and no allowed roles, allow access (public route)
+  if (!requiredRole && (!allowedRoles || allowedRoles.length === 0)) {
+    console.log('4. [ProtectedRoute] No role requirements, allowing access');
+    return children;
+  }
+  
+  // Check authentication state based on both context and token
+  const isUserAuthenticated = isAuthenticated || (token && token !== 'undefined');
+  
+  // If not authenticated, redirect to login
+  if (!isUserAuthenticated) {
+    console.log('5. [ProtectedRoute] Not authenticated, redirecting to login');
+    console.log('6. [ProtectedRoute] Saving current location for redirect:', location.pathname);
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
   
@@ -161,6 +183,7 @@ function AppContent() {
   return (
     <Routes>
       <Route path="/" element={<MainLayout />}>
+        {/* Public Routes - No authentication required */}
         <Route index element={<HomePage />} />
         <Route path="events" element={<Events />} />
         <Route path="events/:slug" element={<EventDetail />} />
@@ -171,7 +194,7 @@ function AppContent() {
         <Route path="login" element={<LoginPage />} />
         <Route path="register" element={<RegisterPage />} />
         
-        {/* Photographer Routes */}
+        {/* Photographer Routes - Protected */}
         <Route 
           path="photographer-dashboard" 
           element={
@@ -197,7 +220,7 @@ function AppContent() {
           } 
         />
 
-        {/* Customer Routes */}
+        {/* Customer Routes - Protected */}
         <Route 
           path="my-gallery" 
           element={
@@ -231,7 +254,7 @@ function AppContent() {
           } 
         />
 
-        {/* Shared Routes */}
+        {/* Shared Protected Routes */}
         <Route 
           path="settings" 
           element={
@@ -249,7 +272,7 @@ function AppContent() {
           } 
         />
 
-        {/* Admin Routes */}
+        {/* Admin Routes - Protected */}
         <Route 
           path="admin/events" 
           element={
@@ -274,14 +297,8 @@ function AppContent() {
             </ProtectedRoute>
           } 
         />
-        <Route 
-          path="admin/events/:id/edit" 
-          element={
-            <ProtectedRoute requiredRole="staff">
-              <EventForm />
-            </ProtectedRoute>
-          } 
-        />
+        
+        {/* Old Dashboard - Protected but without specific role requirements */}
         <Route 
           path="old-dashboard" 
           element={

@@ -21,10 +21,21 @@ export default function LoginPage() {
   
   // If user is already authenticated, redirect them
   useEffect(() => {
-    console.log('useEffect - isAuthenticated changed:', isAuthenticated);
-    if (isAuthenticated) {
-      console.log('User is already authenticated, redirecting to:', from);
-      navigate(from, { replace: true });
+    console.log('useEffect - isAuthenticated changed:', isAuthenticated, 'from:', from);
+    const token = localStorage.getItem('access');
+    const isUserAuthenticated = isAuthenticated || (token && token !== 'undefined');
+    
+    if (isUserAuthenticated) {
+      console.log('User is authenticated, redirecting to:', from);
+      // Use a small timeout to ensure the auth state is fully updated
+      const timer = setTimeout(() => {
+        navigate(from, { 
+          replace: true,
+          state: { from: undefined } // Clear the from state to prevent loops
+        });
+      }, 100);
+      
+      return () => clearTimeout(timer);
     }
   }, [isAuthenticated, from, navigate]);
   

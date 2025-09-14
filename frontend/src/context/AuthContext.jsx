@@ -25,19 +25,43 @@ export const AuthProvider = ({ children }) => {
   
   const [state, setState] = useState(() => {
     // Initialize state from localStorage if available
-    const storedUser = authService.getStoredUser();
     const token = localStorage.getItem('access');
-    const isAuthenticated = token && storedUser; // Only consider authenticated if both token and user exist
+    const storedUser = authService.getStoredUser();
+    
+    // Check if token is valid using the authService method
+    const isTokenValid = token && (() => {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        return payload.exp * 1000 > Date.now();
+      } catch (error) {
+        console.error('Error validating token:', error);
+        return false;
+      }
+    })();
+    const isAuthenticated = isTokenValid && storedUser;
     
     console.log('1. [AuthProvider] Initializing state', {
       hasStoredUser: !!storedUser,
       hasToken: !!token,
+      isTokenValid,
       isAuthenticated
     });
     
+    // If token is invalid but exists, clear it
+    if (token && !isTokenValid) {
+      console.log('2. [AuthProvider] Invalid token found, clearing auth data');
+      authService.logout();
+      return {
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+        error: null
+      };
+    }
+    
     return {
-      user: storedUser,
-      isAuthenticated,
+      user: isAuthenticated ? storedUser : null,
+      isAuthenticated: !!isAuthenticated,
       isLoading: false, // Don't start in loading state
       error: null
     };
@@ -62,31 +86,125 @@ export const AuthProvider = ({ children }) => {
   const { data: userData, isLoading: isUserLoading, refetch: refetchUser } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
-      console.log('1. [useQuery] Fetching user profile...');
-      try {
-        // Check if we have an access token
-        const token = localStorage.getItem('access');
-        if (!token) {
-          console.log('2. [useQuery] No access token found, not authenticated');
-          // Ensure we clear any existing auth state
-          setState(prev => ({
-            ...prev,
-            user: null,
-            isAuthenticated: false,
-            isLoading: false
-          }));
-          return null;
+      console.log('1. [useQuery] Starting authentication check...');
+      
+      // Check if we have an access token
+      const token = localStorage.getItem('access');
+      const storedUser = authService.getStoredUser();
+      
+      // If no token, clear any existing auth state
+      if (!token) {
+        console.log('2. [useQuery] No access token found, not authenticated');
+        if (storedUser) {
+          console.log('2.1. [useQuery] Found stale user data, clearing...');
+          authService.logout();
         }
         
-        // Set auth header
-        authService.setAuthHeader(token);
+        setState(prev => ({
+          ...prev,
+          user: null,
+          isAuthenticated: false,
+          isLoading: false
+        }));
+        return null;
+      }
+      
+      // Check if token is valid
+      const isTokenValid = (() => {
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          return payload.exp * 1000 > Date.now();
+        } catch (error) {
+          console.error('Error validating token:', error);
+          return false;
+        }
+      })();
+      
+      if (!isTokenValid) {
+        console.log('2. [useQuery] Token is invalid or expired, attempting to refresh...');
         
-        console.log('2. [useQuery] Fetching user profile from API...');
+        try {
+          // Attempt to refresh the token
+          const refreshToken = localStorage.getItem('refresh');
+          if (refreshToken) {
+            console.log('2.1. [useQuery] Attempting to refresh token...');
+            const newTokens = await authService.refreshToken();
+            if (newTokens && newTokens.access) {
+              console.log('2.2. [useQuery] Token refresh successful');
+              // Set the new token and try to get the profile again
+              localStorage.setItem('access', newTokens.access);
+              if (newTokens.refresh) {
+                localStorage.setItem('refresh', newTokens.refresh);
+              }
+              // Continue with getting the profile
+              const user = await authService.getProfile();
+              if (user) {
+                console.log('2.3. [useQuery] Successfully refreshed user data');
+                setState(prev => ({
+                  ...prev,
+                  user,
+                  isAuthenticated: true,
+                  isLoading: false
+                }));
+                return user;
+              }
+            }
+          }
+        } catch (refreshError) {
+          console.error('2.4. [useQuery] Token refresh failed:', refreshError);
+        }
+        
+        // If we get here, refresh failed or wasn't possible
+        console.log('2.5. [useQuery] Token refresh failed or not possible, logging out');
+        authService.logout();
+        setState(prev => ({
+          ...prev,
+          user: null,
+          isAuthenticated: false,
+          isLoading: false
+        }));
+        return null;
+      }
+      
+      // Set auth header
+      authService.setAuthHeader(token);
+      
+      // If we have a valid user in localStorage and token is valid, use it
+      if (storedUser) {
+        console.log('3. [useQuery] Using stored user data');
+        setState(prev => ({
+          ...prev,
+          user: storedUser,
+          isAuthenticated: true,
+          isLoading: false
+        }));
+        
+        // Fetch fresh user data in the background
+        console.log('3.1. [useQuery] Fetching fresh user data in background...');
+        authService.getProfile().then(freshUser => {
+          if (freshUser) {
+            console.log('3.2. [useQuery] Fresh user data received');
+            setState(prev => ({
+              ...prev,
+              user: freshUser,
+              isAuthenticated: true
+            }));
+          }
+        }).catch(error => {
+          console.error('3.3. [useQuery] Error fetching fresh user data:', error);
+        });
+        
+        return storedUser;
+      }
+      
+      // If we get here, we have a valid token but no user data
+      console.log('4. [useQuery] No stored user, fetching from API...');
+      try {
         const user = await authService.getProfile();
-        console.log('3. [useQuery] Fetched user profile:', user ? 'User data received' : 'No user data');
+        console.log('5. [useQuery] Fetched user profile:', user ? 'User data received' : 'No user data');
         
         if (!user) {
-          console.log('4. [useQuery] No user data received, clearing auth');
+          console.log('6. [useQuery] No user data received, clearing auth');
           authService.logout();
           setState(prev => ({
             ...prev,
