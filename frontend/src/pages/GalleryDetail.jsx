@@ -195,7 +195,7 @@ const GalleryDetail = () => {
     if (isDownloading) return;
     
     // Check if user is authenticated
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('access');
     if (!token) {
       // Redirect to login with a return URL
       navigate('/login', { state: { from: window.location.pathname } });
@@ -227,7 +227,7 @@ const GalleryDetail = () => {
     if (!gallery?.photos?.length) return;
     
     // Check if user is authenticated
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('access');
     if (!token) {
       // Redirect to login with a return URL
       navigate('/login', { state: { from: window.location.pathname } });

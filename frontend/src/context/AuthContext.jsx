@@ -23,16 +23,36 @@ export const AuthProvider = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   
-  const [state, setState] = useState({
-    user: authService.getStoredUser(),
-    isAuthenticated: authService.isAuthenticated(),
-    isLoading: true,
-    error: null
+  const [state, setState] = useState(() => {
+    // Initialize state from localStorage if available
+    const storedUser = authService.getStoredUser();
+    const isAuthenticated = authService.isAuthenticated();
+    
+    console.log('1. [AuthProvider] Initializing state', {
+      hasStoredUser: !!storedUser,
+      isAuthenticated,
+      hasToken: !!localStorage.getItem('access')
+    });
+    
+    return {
+      user: storedUser,
+      isAuthenticated,
+      isLoading: isAuthenticated, // Only show loading if we think we're authenticated
+      error: null
+    };
   });
+  
+  // Effect to handle component unmount
+  useEffect(() => {
+    return () => {
+      console.log('[AuthProvider] Cleaning up...');
+      // Any cleanup if needed
+    };
+  }, []);
 
   // Debug log initial state
   console.log('AuthProvider mounted', {
-    hasToken: !!localStorage.getItem('token'),
+    hasToken: !!localStorage.getItem('access'),
     storedUser: authService.getStoredUser(),
     isAuthenticated: authService.isAuthenticated()
   });
@@ -43,18 +63,36 @@ export const AuthProvider = ({ children }) => {
     queryFn: async () => {
       console.log('1. [useQuery] Fetching user profile...');
       try {
-        if (!authService.isAuthenticated()) {
-          console.log('2. [useQuery] Not authenticated, skipping profile fetch');
+        // Check if we have an access token
+        const token = localStorage.getItem('access');
+        if (!token) {
+          console.log('2. [useQuery] No access token found, not authenticated');
+          // Ensure we clear any existing auth state
+          setState(prev => ({
+            ...prev,
+            user: null,
+            isAuthenticated: false,
+            isLoading: false
+          }));
           return null;
         }
         
+        // Set auth header
+        authService.setAuthHeader(token);
+        
         console.log('2. [useQuery] Fetching user profile from API...');
         const user = await authService.getProfile();
-        console.log('3. [useQuery] Fetched user profile:', user);
+        console.log('3. [useQuery] Fetched user profile:', user ? 'User data received' : 'No user data');
         
         if (!user) {
           console.log('4. [useQuery] No user data received, clearing auth');
           authService.logout();
+          setState(prev => ({
+            ...prev,
+            user: null,
+            isAuthenticated: false,
+            isLoading: false
+          }));
           return null;
         }
         
@@ -75,24 +113,37 @@ export const AuthProvider = ({ children }) => {
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: 1,
     refetchOnWindowFocus: false,
+    // Don't retry on 401 errors
+    retry: (failureCount, error) => {
+      if (error?.response?.status === 401) return false;
+      return failureCount < 2; // Retry other errors up to 2 times
+    },
     onSuccess: (data) => {
       console.log('8. [useQuery onSuccess] Updating auth state with user data:', !!data);
-      setState(prev => ({
-        ...prev,
+      setState({
         user: data,
         isAuthenticated: !!data,
         isLoading: false,
         error: null
-      }));
+      });
     },
     onError: (error) => {
       console.error('9. [useQuery onError] Error in user query:', error);
+      // Only update state if we're not already in an error state
       setState(prev => ({
         ...prev,
         user: null,
         isAuthenticated: false,
         isLoading: false,
         error: error.message
+      }));
+    },
+    // Add onSettled to ensure loading state is always updated
+    onSettled: () => {
+      console.log('10. [useQuery onSettled] Query completed');
+      setState(prev => ({
+        ...prev,
+        isLoading: false
       }));
     }
   });
@@ -110,8 +161,21 @@ export const AuthProvider = ({ children }) => {
     console.log('2. [handleLoginSuccess] Storing user data in localStorage');
     localStorage.setItem('user', JSON.stringify(userData));
     
+    // Determine redirect path based on user role
+    let redirectPath = '/';
+    if (userData.is_staff || userData.is_superuser) {
+      redirectPath = '/admin/dashboard';
+    } else if (userData.is_photographer) {
+      redirectPath = '/photographer/dashboard';
+    } else {
+      redirectPath = '/my-gallery';
+    }
+    
+    // Get the redirect path from location state or use the default based on user role
+    const targetPath = location.state?.from?.pathname || redirectPath;
+    
     // Update state
-    console.log('3. [handleLoginSuccess] Updating auth state');
+    console.log('3. [handleLoginSuccess] Updating auth state, redirecting to:', targetPath);
     setState(prev => ({
       ...prev,
       user: userData,
@@ -124,17 +188,15 @@ export const AuthProvider = ({ children }) => {
     console.log('4. [handleLoginSuccess] Updating React Query cache');
     queryClient.setQueryData(['currentUser'], userData);
     
-    // Get redirect path
-    const from = location.state?.from?.pathname || '/';
-    console.log('5. [handleLoginSuccess] Will redirect to:', from);
+    console.log('5. [handleLoginSuccess] Will redirect to:', targetPath);
     
     // Force a re-render of protected routes
     console.log('6. [handleLoginSuccess] Forcing re-render of protected routes');
     queryClient.invalidateQueries(['currentUser']);
     
     // Redirect
-    console.log('7. [handleLoginSuccess] Navigating to:', from);
-    navigate(from, { 
+    console.log('7. [handleLoginSuccess] Navigating to:', targetPath);
+    navigate(targetPath, { 
       replace: true,
       state: { from: undefined } // Clear the from state to prevent loops
     });

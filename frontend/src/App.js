@@ -1,5 +1,5 @@
-import React from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toaster } from 'react-hot-toast';
 import { GoogleOAuthProvider } from '@react-oauth/google';
@@ -62,23 +62,44 @@ const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
   
   const { isAuthenticated, user, isLoading } = useAuth();
   const location = useLocation();
+  const [initialLoad, setInitialLoad] = useState(true);
   
-  console.log('2. [ProtectedRoute] Auth state - isAuthenticated:', isAuthenticated, 'isLoading:', isLoading, 'user:', user);
+  console.log('2. [ProtectedRoute] Auth state - isAuthenticated:', isAuthenticated, 'isLoading:', isLoading, 'hasUser:', !!user);
   
-  // Show loading state while checking auth
-  if (isLoading) {
-    console.log('3. [ProtectedRoute] Loading auth state, showing spinner');
+  // Handle initial load and authentication state changes
+  useEffect(() => {
+    if (!isLoading) {
+      setInitialLoad(false);
+    }
+  }, [isLoading]);
+  
+  // Show loading state while checking auth on initial load
+  if (isLoading && initialLoad) {
+    console.log('3. [ProtectedRoute] Initial loading state, showing spinner');
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
       </div>
     );
   }
   
-  // Redirect to login if not authenticated
-  if (!isAuthenticated) {
-    console.log('3. [ProtectedRoute] Not authenticated, redirecting to login');
-    console.log('4. [ProtectedRoute] Saving current location for redirect:', location.pathname);
+  // Check if we have a token but not authenticated (possible stale state)
+  const token = localStorage.getItem('access');
+  if (token && !isAuthenticated && !isLoading) {
+    console.log('4. [ProtectedRoute] Token exists but not authenticated, forcing refresh');
+    // Force a hard refresh to reset the app state
+    window.location.href = window.location.href;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+      </div>
+    );
+  }
+  
+  // If not authenticated and no token, redirect to login
+  if (!isAuthenticated && !token) {
+    console.log('5. [ProtectedRoute] Not authenticated, redirecting to login');
+    console.log('6. [ProtectedRoute] Saving current location for redirect:', location.pathname);
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
   

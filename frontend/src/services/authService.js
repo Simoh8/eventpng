@@ -12,7 +12,7 @@ const api = axios.create({
 // Add a request interceptor to include the auth token in requests
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('access');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -290,6 +290,15 @@ const authService = {
     localStorage.removeItem('refresh');
     localStorage.removeItem('user');
     delete api.defaults.headers.common['Authorization'];
+  },
+  
+  // Set authentication header
+  setAuthHeader(token) {
+    if (token) {
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    } else {
+      delete api.defaults.headers.common['Authorization'];
+    }
   },
 
   // Helper to get CSRF token

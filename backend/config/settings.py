@@ -123,19 +123,7 @@ SOCIALACCOUNT_PROVIDERS = {
 }
 
 # Allow all headers that might be sent by the frontend
-CORS_ALLOW_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'cache-control',
-    'content-type',
-    'dnt',
-    'origin',
-    'pragma',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
-]
+
 
 # Allow all methods
 CORS_ALLOW_METHODS = [
