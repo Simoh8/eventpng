@@ -1,18 +1,17 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { API_BASE_URL } from '../config';
+import { useQuery } from '@tanstack/react-query';
 import { 
   MagnifyingGlassIcon as SearchIcon,
   FunnelIcon as FilterIcon,
-  CalendarIcon,
-  MapPinIcon,
-  LockClosedIcon,
-  ArrowRightIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  LockClosedIcon
 } from '@heroicons/react/24/outline';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEvents } from '../hooks/useEvents';
-import axios from 'axios';
-import { API_ENDPOINTS } from '../config';
+import api from '../services/api';
+import EventCard from '../components/events/EventCard';
 
 // Default cover image for events without a cover
 const defaultCoverImage = 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=1470&q=80';
@@ -24,9 +23,11 @@ const formatDate = (dateString) => {
   return new Date(dateString).toLocaleDateString('en-US', options);
 };
 
+// Number of items per page
+const ITEMS_PER_PAGE = 12;
+
 const Events = () => {
   const navigate = useNavigate();
-  const { data: events = [], isLoading, error } = useEvents();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [showFilters, setShowFilters] = useState(false);
@@ -34,6 +35,56 @@ const Events = () => {
   const [currentEvent, setCurrentEvent] = useState(null);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');
+  
+  // Fetch events with pagination
+  // Since the API returns a direct array, we'll use a regular query
+  const {
+    data: eventsData,
+    error,
+    status,
+  } = useQuery({
+    queryKey: ['events', { searchQuery, category: selectedCategory }],
+    queryFn: async () => {
+      const params = {
+        search: searchQuery || undefined,
+        category: selectedCategory !== 'All' ? selectedCategory : undefined,
+      };
+      
+      const response = await api.get('/api/gallery/public/events/', { params });
+      console.log('API Response:', response.data);
+      return response.data;
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+  
+  // Process events data for the EventCard component
+  const events = useMemo(() => {
+    if (!eventsData) {
+      console.log('No events data yet');
+      return [];
+    }
+    
+    // Ensure we have an array and map to expected format
+    const eventsArray = Array.isArray(eventsData) ? eventsData : [];
+    console.log('Processing events array:', eventsArray);
+    
+    const processedEvents = eventsArray.map(event => {
+      const processed = {
+        ...event,
+        // Map privacy field to is_private boolean expected by EventCard
+        is_private: event.privacy === 'private',
+        // Add a default category if not present
+        category: event.category || 'Event'
+      };
+      console.log('Processed event:', processed);
+      return processed;
+    });
+    
+    console.log('Final processed events:', processedEvents);
+    return processedEvents;
+  }, [eventsData]);
+  
+  // Removed pagination code since we're not using it
 
   // Handle event click - check if PIN is needed
   const handleEventClick = (event) => {
@@ -50,128 +101,102 @@ const Events = () => {
     e.preventDefault();
     setPinError('');
     
-    // Get CSRF token from cookies
-    const getCookie = (name) => {
-      let cookieValue = null;
-      if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-          const cookie = cookies[i].trim();
-          if (cookie.substring(0, name.length + 1) === (name + '=')) {
-            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-            break;
-          }
-        }
-      }
-      return cookieValue;
-    };
-    
-    const csrftoken = getCookie('csrftoken');
-    
     try {
-      const response = await axios({
-        method: 'post',
-        url: `/api/gallery/events/${currentEvent.slug}/verify-pin/`,
-        withCredentials: true,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrftoken,
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        data: { pin }
-      });
+      const response = await api.post(
+        `/api/events/${currentEvent.slug}/verify-pin/`,
+        { pin }
+      );
       
-      if (response.data.success) {
-        // Store verification in session storage
-        sessionStorage.setItem(`event_${currentEvent.slug}_verified`, 'true');
-        navigate(`/events/${currentEvent.slug}`);
+      if (response?.data?.verified) {
+        navigate(`/events/${currentEvent.slug}`, {
+          state: { pinVerified: true }
+        });
       } else {
-        setPinError(response.data.error || 'Invalid PIN. Please try again.');
+        setPinError('Invalid PIN. Please try again.');
       }
     } catch (err) {
-      console.error('PIN verification error:', err);
-      const errorMessage = err.response?.data?.error || 
-                         (err.response?.status === 403 ? 'Session expired. Please refresh the page and try again.' : 'Error verifying PIN. Please try again.');
-      setPinError(errorMessage);
+      console.error('Error verifying PIN:', err);
+      setPinError('Failed to verify PIN. Please try again.');
     }
   };
 
-  // Memoize the events data processing
-  const { categories, filteredEvents, sortedEvents } = useMemo(() => {
-    // Get unique categories from events
-    const categoriesList = ['All', ...new Set(
-      Array.isArray(events) 
-        ? events.flatMap(event => {
-            // Handle both string and array categories
-            if (Array.isArray(event.categories)) {
-              return event.categories;
-            } else if (event.category) {
-              return [event.category];
-            }
-            return [];
-          }).filter(Boolean) // Remove any undefined/null values
-        : []
-    )];
-
-    // Filter events based on search query and category
-    const filtered = Array.isArray(events) 
-      ? events.filter(event => {
-          if (!event) return false;
-          
-          const searchLower = searchQuery.toLowerCase();
-          const matchesSearch = 
-            (event.name && event.name.toLowerCase().includes(searchLower)) ||
-            (event.description && event.description.toLowerCase().includes(searchLower));
-          
-          const matchesCategory = selectedCategory === 'All' || 
-            (event.category && event.category === selectedCategory) ||
-            (Array.isArray(event.categories) && event.categories.includes(selectedCategory));
-          
-          return matchesSearch && matchesCategory;
-        })
-      : [];
-    
-    // Sort events by date (newest first)
-    const sorted = [...filtered].sort((a, b) => {
-      const dateA = a.date ? new Date(a.date) : new Date(0);
-      const dateB = b.date ? new Date(b.date) : new Date(0);
-      return dateB - dateA;
-    });
-
-    return { 
-      categories: categoriesList, 
-      filteredEvents: filtered, 
-      sortedEvents: sorted 
-    };
-  }, [events, searchQuery, selectedCategory]);
-
-  // Handle API errors
-  if (error) {
-    console.error('Error fetching events:', error);
-    let errorMessage = 'Failed to load events. ';
-    
-    if (error.code === 'ECONNABORTED') {
-      errorMessage += 'Request timed out. Please try again.';
-    } else if (error.response) {
-      if (error.response.status === 401) {
-        errorMessage = 'Please log in to view events.';
-      } else if (error.response.status === 403) {
-        errorMessage = 'You do not have permission to view these events.';
-      } else {
-        errorMessage += `Server responded with status ${error.response.status}`;
+  // Get unique categories from events
+  const categories = useMemo(() => {
+    const allCategories = new Set(['All']);
+    events.forEach(event => {
+      const category = event.category?.trim();
+      if (category) {
+        allCategories.add(category);
       }
-    } else if (error.request) {
-      errorMessage += 'No response from server. Please check your connection.';
-    } else {
-      errorMessage += error.message || 'An unknown error occurred.';
-    }
+    });
+    return Array.from(allCategories).sort();
+  }, [events]);
 
+  // Handle search with debounce
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Loading state
+  if (status === 'loading') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center p-6 max-w-md mx-auto bg-white rounded-lg shadow-lg">
-          <div className="text-red-500 text-4xl mb-4">⚠️</div>
-          <h2 className="text-xl font-semibold text-gray-800 mb-2">Error Loading Events</h2>
-          <p className="text-gray-600 mb-6">{errorMessage}</p>
+      <div className="bg-gray-50 min-h-screen py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="animate-pulse space-y-8">
+            {/* Search and filter skeleton */}
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4">
+              <div className="h-12 bg-gray-200 rounded-lg w-full max-w-md"></div>
+              <div className="h-12 bg-gray-200 rounded-lg w-32"></div>
+            </div>
+            
+            {/* Categories skeleton */}
+            <div className="flex flex-wrap gap-2 mb-8">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="h-8 bg-gray-200 rounded-full w-24"></div>
+              ))}
+            </div>
+            
+            {/* Events grid skeleton */}
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="bg-white rounded-lg shadow-md overflow-hidden h-full flex flex-col">
+                  <div className="h-48 bg-gray-200"></div>
+                  <div className="p-4 flex-1 flex flex-col">
+                    <div className="h-6 bg-gray-200 rounded w-3/4 mb-2"></div>
+                    <div className="space-y-2 mt-2">
+                      <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+                      <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+                    </div>
+                    <div className="mt-4 flex justify-between items-center">
+                      <div className="h-6 bg-gray-200 rounded-full w-16"></div>
+                      <div className="h-4 bg-gray-200 rounded w-20"></div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (status === 'error') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="text-center">
+          <div className="text-6xl mb-4 text-red-500">⚠️</div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Error loading events</h2>
+          <p className="text-gray-600 mb-6">
+            {error?.message || 'An error occurred while fetching events. Please try again.'}
+          </p>
           <button
             onClick={() => window.location.reload()}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
@@ -183,194 +208,96 @@ const Events = () => {
     );
   }
 
-  // Loading skeleton
-  if (isLoading) {
-    return (
-      <div className="bg-gray-50 min-h-screen py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="animate-pulse space-y-8">
-            <div className="h-10 bg-gray-200 rounded w-1/3 mx-auto"></div>
-            <div className="h-6 bg-gray-200 rounded w-1/4 mx-auto"></div>
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="bg-white rounded-lg shadow overflow-hidden">
-                  <div className="h-48 bg-gray-200"></div>
-                  <div className="p-4 space-y-3">
-                    <div className="h-6 bg-gray-200 rounded w-3/4"></div>
-                    <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                    <div className="h-4 bg-gray-200 rounded w-1/3"></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Debug component to log state
+  const DebugInfo = () => {
+    console.log('Current state:', {
+      searchQuery,
+      selectedCategory,
+      events,
+      eventsData,
+      status,
+      error
+    });
+    return null;
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+    <div className="bg-gray-50 min-h-screen py-12 px-4 sm:px-6 lg:px-8">
+      <DebugInfo />
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-3xl font-bold text-gray-900 sm:text-4xl">Upcoming Events</h1>
-          <p className="mt-3 text-xl text-gray-500">
-            Find and explore our events
-          </p>
+          <p className="mt-3 text-xl text-gray-500">Find and explore amazing events around you</p>
         </div>
 
         {/* Search and Filter */}
         <div className="mb-8">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div className="relative flex-1 max-w-xl">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
+            <div className="relative w-full max-w-md">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <SearchIcon className="h-5 w-5 text-gray-400" />
               </div>
               <input
                 type="text"
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 placeholder="Search events..."
+                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
             <button
-              type="button"
-              className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
               onClick={() => setShowFilters(!showFilters)}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
-              <FilterIcon className="-ml-1 mr-2 h-5 w-5 text-gray-400" />
-              Filter
+              <FilterIcon className="h-4 w-4 mr-2" />
+              Filters
             </button>
           </div>
 
-          {/* Filters */}
-          <AnimatePresence>
-            {showFilters && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden mt-4"
-              >
-                <div className="bg-white p-4 rounded-lg shadow">
-                  <h3 className="text-sm font-medium text-gray-900 mb-3">Categories</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {categories.map((category) => (
-                      <button
-                        key={category}
-                        type="button"
-                        className={`px-3 py-1 rounded-full text-sm font-medium ${
-                          selectedCategory === category
-                            ? 'bg-indigo-100 text-indigo-800'
-                            : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-                        }`}
-                        onClick={() => setSelectedCategory(category)}
-                      >
-                        {category}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {/* Categories */}
+          <div className={`${showFilters ? 'block' : 'hidden'} sm:block`}>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {categories.map((category) => (
+                <button
+                  key={category}
+                  onClick={() => setSelectedCategory(category)}
+                  className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    selectedCategory === category
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Events Grid */}
-        {error ? (
-          <div className="text-center py-12">
-            <p className="text-red-600">{error}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-              Retry
-            </button>
+        {status === 'loading' ? (
+          <div className="mt-8 flex justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
           </div>
-        ) : sortedEvents.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-xl shadow-sm">
-            <div className="mx-auto h-16 w-16 text-gray-400">
-              <SearchIcon className="h-full w-full" />
-            </div>
-            <h3 className="mt-4 text-lg font-medium text-gray-900">No events found</h3>
-            <p className="mt-2 text-gray-500 max-w-md mx-auto">
-              We couldn't find any events matching your search. Try adjusting your filters or search term.
-            </p>
-            <div className="mt-6">
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setSelectedCategory('All');
-                }}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Clear all filters
-              </button>
-            </div>
+        ) : events.length > 0 ? (
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {events.map((event) => (
+              <EventCard 
+                key={event.id}
+                event={event} 
+                onClick={handleEventClick} 
+              />
+            ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {sortedEvents.map((event) => (
-              <motion.div
-                key={event.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-                className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300 relative"
-              >
-                {event.is_private && (
-                  <div className="absolute top-2 right-2 z-10">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                      <LockClosedIcon className="h-3 w-3 mr-1" />
-                      Private
-                    </span>
-                  </div>
-                )}
-                <div 
-                  onClick={() => handleEventClick(event)}
-                  className="cursor-pointer"
-                >
-                  <div className="relative h-48 bg-gray-200 overflow-hidden">
-                    <img
-                      src={event.cover_image || defaultCoverImage}
-                      alt={event.name}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div className="p-4">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-1 line-clamp-1">
-                      {event.name}
-                    </h3>
-                    <div className="flex items-center text-sm text-gray-500 mb-2">
-                      <CalendarIcon className="h-4 w-4 mr-1" />
-                      <span>{formatDate(event.date)}</span>
-                    </div>
-                    {event.location && (
-                      <div className="flex items-center text-sm text-gray-500 mb-2">
-                        <MapPinIcon className="h-4 w-4 mr-1 flex-shrink-0" />
-                        <span className="line-clamp-1">{event.location}</span>
-                      </div>
-                    )}
-                    {event.description && (
-                      <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-                        {event.description}
-                      </p>
-                    )}
-                    <div className="flex justify-between items-center mt-4">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                        {event.category || 'General'}
-                      </span>
-                      <div className="flex items-center text-sm text-indigo-600 hover:text-indigo-800">
-                        <span>View Details</span>
-                        <ArrowRightIcon className="ml-1 h-4 w-4" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
+          <div className="text-center py-12">
+            <div className="text-gray-400 text-5xl mb-4">📭</div>
+            <h3 className="text-lg font-medium text-gray-900 mb-1">No events found</h3>
+            <p className="text-gray-500">
+              {searchQuery || selectedCategory !== 'All'
+                ? 'Try adjusting your search or filter criteria.'
+                : 'Check back later for upcoming events.'}
+            </p>
           </div>
         )}
       </div>
@@ -413,10 +340,11 @@ const Events = () => {
                       id="pin"
                       value={pin}
                       onChange={(e) => setPin(e.target.value)}
-                      className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                      className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md p-2"
                       placeholder="Enter PIN"
                       autoComplete="off"
                       autoFocus
+                      required
                     />
                     {pinError && (
                       <p className="mt-2 text-sm text-red-600">{pinError}</p>
@@ -424,21 +352,23 @@ const Events = () => {
                   </div>
                   <div className="mt-5 sm:mt-6 sm:grid sm:grid-cols-2 sm:gap-3 sm:grid-flow-row-dense">
                     <button
-                      type="submit"
-                      className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:col-start-2 sm:text-sm"
-                    >
-                      Verify PIN
-                    </button>
-                    <button
                       type="button"
-                      className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:col-start-1 sm:text-sm"
                       onClick={() => {
                         setShowPinModal(false);
+                        setCurrentEvent(null);
                         setPin('');
                         setPinError('');
                       }}
+                      className="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:col-start-1 sm:text-sm"
                     >
                       Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="mt-3 w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:col-start-2 sm:text-sm"
+                      disabled={!pin.trim()}
+                    >
+                      Verify PIN
                     </button>
                   </div>
                 </form>
