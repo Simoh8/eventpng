@@ -24,6 +24,9 @@ REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.coreapi.AutoSchema',
 }
 
+
+
+
 # JWT Settings
 REST_USE_JWT = True
 JWT_AUTH_COOKIE = 'access'

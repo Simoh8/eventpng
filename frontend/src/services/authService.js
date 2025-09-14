@@ -260,28 +260,30 @@ const authService = {
     delete api.defaults.headers.common['Authorization'];
   },
 
-  // Get user profile
-  getProfile: async function() {
-    try {
-      const response = await api.get('/api/accounts/profile/');
-      const userData = response.data;
+  // getProfile: async function() {
+  //   try {
+  //     const response = await api.get('/api/accounts/profile/');
+  //     const userData = response.data;
       
-      if (!userData || !userData.id) {
-        throw new Error('Invalid user data received');
-      }
+  //     if (!userData || !userData.id) {
+  //       throw new Error('Invalid user data received');
+  //     }
       
-      // Update stored user data
-      localStorage.setItem('user', JSON.stringify(userData));
-      return userData;
-    } catch (error) {
-      if (error.response?.status === 401) {
-        this.logout();
-      }
-      throw error;
-    }
-  },
+  //     // Update stored user data
+  //     localStorage.setItem('user', JSON.stringify(userData));
+  //     return userData;
+  //   } catch (error) {
+  //     if (error.response?.status === 401) {
+  //       this.logout();
+  //     }
+  //     throw error;
+  //   }
+  // },
 
   // Refresh access token
+  
+  
+  
   refreshToken: async function() {
     try {
       console.log('[authService] Starting token refresh');
