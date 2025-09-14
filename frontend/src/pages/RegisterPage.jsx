@@ -56,14 +56,7 @@ export default function RegisterPage() {
       setStatus(null); // Clear previous errors
       setSubmitting(true);
       
-      console.log('Sending registration request with data:', {
-        full_name: values.name,
-        email: values.email,
-        password: values.password,
-        confirm_password: values.password,
-        is_photographer: values.isPhotographer || false
-      });
-      
+    
       // Show loading toast
       toastId = toast.loading('Creating your account...');
       
@@ -82,7 +75,6 @@ export default function RegisterPage() {
       
       if (success) {
         const message = data?.message || 'Registration successful! Welcome to EventPhoto!';
-        console.log('Registration successful:', data);
         setSuccessMessage(message);
         setIsSuccess(true);
         
@@ -101,7 +93,7 @@ export default function RegisterPage() {
           navigate('/dashboard');
         }, 3000);
       } else {
-        console.error('Registration failed:', error);
+        
         
         if (isValidationError && fieldErrors) {
           // Set field-specific errors
@@ -136,7 +128,6 @@ export default function RegisterPage() {
         }
       }
     } catch (err) {
-      console.error('Registration error:', err);
       const errorMsg = 'An unexpected error occurred. Please try again.';
       setStatus({ error: errorMsg });
       

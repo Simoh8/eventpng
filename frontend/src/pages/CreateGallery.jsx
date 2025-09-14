@@ -11,8 +11,6 @@ import { getProtectedImageUrl } from '../utils/imageUtils';
 // Fetch events for the current photographer
 const fetchEvents = async () => {
   const token = localStorage.getItem('access');
-  console.log('Fetching events from:', `${API_BASE_URL}/api/gallery/events/`);
-  console.log('Using token:', token ? 'Token exists' : 'No token found');
   
   try {
     const response = await fetch(`${API_BASE_URL}/api/gallery/events/`, {
@@ -22,23 +20,18 @@ const fetchEvents = async () => {
       },
     });
     
-    console.log('Response status:', response.status);
-    
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Error response text:', errorText);
       let errorData;
       try {
         errorData = JSON.parse(errorText);
       } catch (e) {
         errorData = { detail: errorText };
       }
-      console.error('Failed to fetch events:', errorData);
       throw new Error(errorData.detail || 'Failed to fetch events');
     }
     
     const data = await response.json();
-    console.log('Events data received:', data);
     
     // Handle both paginated and non-paginated responses
     if (data && data.results && Array.isArray(data.results)) {
@@ -68,12 +61,6 @@ const createGallery = async ({ eventId, photos, title, description }) => {
   // Append each photo to the form data
   photos.forEach((photo) => {
     formData.append('photos', photo);
-  });
-
-  console.log('Creating gallery with data:', {
-    eventId,
-    title,
-    photoCount: photos.length,
   });
 
   const response = await fetch(`${API_BASE_URL}/api/gallery/galleries/create/`, {
@@ -155,7 +142,7 @@ export default function CreateGallery() {
   // Log events for debugging
   useEffect(() => {
     if (events.length > 0) {
-      console.log('Fetched events:', events);
+      refetchEvents();
     }
   }, [events]);
 
@@ -366,7 +353,6 @@ export default function CreateGallery() {
                     
                     {selectedEvent && (() => {
                       const selected = events.find(e => e.id.toString() === selectedEvent.toString());
-                      console.log('Selected event:', selected); // Debug log
                       return selected ? (
                         <div className="mt-2 p-2 bg-blue-50 rounded-md">
                           <p className="text-sm font-medium text-blue-800">

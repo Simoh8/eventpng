@@ -40,35 +40,26 @@ const GalleryDetail = () => {
       return false;
     }
     
-    console.log('Starting PIN verification for slug:', slug);
     setIsVerifying(true);
     
     try {
       // First, get the gallery to find its event
-      console.log('Fetching gallery details...');
       const galleryResponse = await fetch(`${API_BASE_URL}/api/gallery/public/galleries/${slug}/`);
-      console.log('Gallery response status:', galleryResponse.status);
       
       if (!galleryResponse.ok) {
         const errorText = await galleryResponse.text();
-        console.error('Failed to fetch gallery details:', errorText);
         throw new Error(`Failed to fetch gallery details: ${galleryResponse.status} ${galleryResponse.statusText}`);
       }
       
       const galleryData = await galleryResponse.json();
-      console.log('Gallery data:', galleryData);
       
       if (!galleryData.event || !galleryData.event.slug) {
-        console.error('Gallery is not associated with an event');
         throw new Error('Gallery is not associated with an event');
       }
       
-      console.log('Verifying PIN for event:', galleryData.event.slug);
       const verifyUrl = `${API_BASE_URL}/api/gallery/events/${galleryData.event.slug}/verify-pin/`;
-      console.log('Verification URL:', verifyUrl);
       
       // Now verify the event PIN
-      console.log('Sending PIN verification request...');
       const response = await fetch(verifyUrl, {
         method: 'POST',
         headers: {
@@ -80,16 +71,10 @@ const GalleryDetail = () => {
         })
       });
       
-      console.log('Verification response status:', response.status);
-      console.log('Response headers:', Object.fromEntries([...response.headers]));
-      
-      console.log('Verification response status:', response.status);
       const responseData = await response.json().catch(e => ({}));
-      console.log('Verification response data:', responseData);
       
       if (response.ok) {
         if (responseData.success) {
-          console.log('PIN verification successful');
           // Store verification in session storage
           sessionStorage.setItem(`event_${galleryData.event.slug}_verified`, 'true');
           setRequiresPin(false);
@@ -98,16 +83,13 @@ const GalleryDetail = () => {
           queryClient.invalidateQueries(['gallery', slug]);
           return true;
         } else {
-          console.error('PIN verification failed:', responseData.error);
           toast.error(responseData.error || 'Invalid PIN. Please try again.');
         }
       } else {
-        console.error('Error response from server:', responseData);
         toast.error(responseData.error || `Failed to verify PIN (${response.status}). Please try again.`);
       }
       return false;
     } catch (error) {
-      console.error('Error in verifyGalleryPin:', error);
       toast.error(error.message || 'An error occurred while verifying the PIN. Please try again.');
       return false;
     } finally {
@@ -266,7 +248,6 @@ const GalleryDetail = () => {
           const blob = await response.blob();
           folder.file(`image-${index + 1}.jpg`, blob);
         } catch (error) {
-          console.error(`Error processing image ${index + 1}:`, error);
         }
       });
       
@@ -277,7 +258,6 @@ const GalleryDetail = () => {
       saveAs(content, `eventpix-${gallery.title}.zip`);
       toast.success('All images downloaded with watermarks');
     } catch (error) {
-      console.error('Error creating zip file:', error);
       toast.error('Failed to download images');
     } finally {
       setIsDownloading(false);
@@ -334,7 +314,6 @@ const GalleryDetail = () => {
         
         return data;
       } catch (err) {
-        console.error('Error fetching gallery:', err);
         throw new Error('Failed to fetch gallery');
       }
     },

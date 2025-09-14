@@ -1,56 +1,73 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { API_ENDPOINTS } from '../config';
-import api from '../services/api';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import authService from '../services/authService';
 
 const AuthContext = createContext(null);
 
-// Cache for the auth state
-let authPromise = null;
-let lastAuthCheck = 0;
-let isCheckingAuth = false;
-const AUTH_CACHE_TIME = 5 * 60 * 1000; // 5 minutes cache
-const AUTH_RETRY_DELAY = 1000; // 1 second delay between retries
-
-// Memoize the default context value to prevent unnecessary re-renders
+// Default context value
 const defaultContextValue = {
   user: null,
   isAuthenticated: false,
   isLoading: true,
-  login: async () => ({}),
+  error: null,
+  login: async () => {},
   logout: () => {},
-  register: async () => ({}),
+  register: async () => {},
   updateUser: () => {},
-  loginWithGoogle: async () => { 
-    console.error('loginWithGoogle called before initialization');
-    return { success: false, error: 'Auth context not initialized' };
-  }
+  loginWithGoogle: async () => {}
 };
 
 export const AuthProvider = ({ children }) => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const location = useLocation();
   
   const [state, setState] = useState({
-    user: null,
+    user: authService.getStoredUser(),
+    isAuthenticated: authService.isAuthenticated(),
     isLoading: true,
-    isAuthenticated: false,
     error: null
   });
-  
-  const { user, isLoading, isAuthenticated, error } = state;
-  
-  // Use the useQuery hook to fetch user data
-  const { data: userData, isLoading: isUserLoading } = useQuery({
-    enabled: !!queryClient,
+
+  // Debug log initial state
+  console.log('AuthProvider mounted', {
+    hasToken: !!localStorage.getItem('token'),
+    storedUser: authService.getStoredUser(),
+    isAuthenticated: authService.isAuthenticated()
+  });
+
+  // Fetch user data on mount and when authentication state changes
+  const { data: userData, isLoading: isUserLoading, refetch: refetchUser } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
+      console.log('1. [useQuery] Fetching user profile...');
       try {
-        const response = await api.get('/api/accounts/me/');
-        return response.data;
+        if (!authService.isAuthenticated()) {
+          console.log('2. [useQuery] Not authenticated, skipping profile fetch');
+          return null;
+        }
+        
+        console.log('2. [useQuery] Fetching user profile from API...');
+        const user = await authService.getProfile();
+        console.log('3. [useQuery] Fetched user profile:', user);
+        
+        if (!user) {
+          console.log('4. [useQuery] No user data received, clearing auth');
+          authService.logout();
+          return null;
+        }
+        
+        // Update local storage with fresh user data
+        localStorage.setItem('user', JSON.stringify(user));
+        console.log('5. [useQuery] Updated user data in localStorage');
+        
+        return user;
       } catch (error) {
-        if (error.response?.status !== 401) {
-          console.error('Error fetching user data:', error);
+        console.error('6. [useQuery] Error fetching user data:', error);
+        if (error.response?.status === 401) {
+          console.log('7. [useQuery] 401 Unauthorized, clearing auth');
+          authService.logout();
         }
         return null;
       }
@@ -58,513 +75,191 @@ export const AuthProvider = ({ children }) => {
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: 1,
     refetchOnWindowFocus: false,
-    enabled: !!queryClient.getQueryData, // Only enable the query if we have a valid queryClient
     onSuccess: (data) => {
+      console.log('8. [useQuery onSuccess] Updating auth state with user data:', !!data);
       setState(prev => ({
         ...prev,
         user: data,
         isAuthenticated: !!data,
-        isLoading: false
+        isLoading: false,
+        error: null
       }));
     },
-    onError: () => {
+    onError: (error) => {
+      console.error('9. [useQuery onError] Error in user query:', error);
       setState(prev => ({
         ...prev,
         user: null,
         isAuthenticated: false,
-        isLoading: false
+        isLoading: false,
+        error: error.message
       }));
     }
   });
-  
-  const authCheckRef = useRef({
-    hasChecked: false,
-    isChecking: false
-  });
-  
-  const navigate = useNavigate();
 
-  const clearAuth = useCallback(() => {
-    console.log('Clearing authentication state');
-    localStorage.removeItem('access');
-    localStorage.removeItem('refresh');
-    delete api.defaults.headers.common['Authorization'];
-    authPromise = null;
-    lastAuthCheck = 0;
-    authCheckRef.current = { hasChecked: false, isChecking: false };
+  // Handle successful login
+  const handleLoginSuccess = useCallback((userData) => {
+    console.log('1. [handleLoginSuccess] Starting with userData:', !!userData);
     
-    // Invalidate all queries and reset state
-    if (queryClient.clear) {
-      queryClient.clear();
+    if (!userData) {
+      console.error('2. [handleLoginSuccess] No userData provided');
+      return;
     }
+    
+    // Store user data in localStorage
+    console.log('2. [handleLoginSuccess] Storing user data in localStorage');
+    localStorage.setItem('user', JSON.stringify(userData));
+    
+    // Update state
+    console.log('3. [handleLoginSuccess] Updating auth state');
+    setState(prev => ({
+      ...prev,
+      user: userData,
+      isAuthenticated: true,
+      isLoading: false,
+      error: null
+    }));
+    
+    // Update React Query cache
+    console.log('4. [handleLoginSuccess] Updating React Query cache');
+    queryClient.setQueryData(['currentUser'], userData);
+    
+    // Get redirect path
+    const from = location.state?.from?.pathname || '/';
+    console.log('5. [handleLoginSuccess] Will redirect to:', from);
+    
+    // Force a re-render of protected routes
+    console.log('6. [handleLoginSuccess] Forcing re-render of protected routes');
+    queryClient.invalidateQueries(['currentUser']);
+    
+    // Redirect
+    console.log('7. [handleLoginSuccess] Navigating to:', from);
+    navigate(from, { 
+      replace: true,
+      state: { from: undefined } // Clear the from state to prevent loops
+    });
+  }, [navigate, location.state, queryClient]);
+
+  // Handle logout
+  const handleLogout = useCallback(() => {
+    authService.logout();
+    queryClient.clear();
     setState({
       user: null,
       isAuthenticated: false,
       isLoading: false,
       error: null
     });
-  }, [queryClient]);
+    navigate('/login');
+  }, [navigate, queryClient]);
 
-  const handleGoogleAuthSuccess = useCallback((data) => {
-    console.log('Google auth success data:', data);
-    if (data.access && data.user) {
-      localStorage.setItem('access', data.access);
-      if (data.refresh) {
-        localStorage.setItem('refresh', data.refresh);
-      }
-      
-      // Ensure user object has is_photographer property
-      const userWithRole = {
-        ...data.user,
-        is_photographer: data.user.is_photographer || false
-      };
-      
-      console.log('Setting user state with:', userWithRole);
-      
-      const userState = {
-        user: userWithRole,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null
-      };
-      
-      setState(userState);
-      return { 
-        success: true, 
-        token: data.access,
-        refreshToken: data.refresh,
-        isNewUser: data.is_new_user || false
-      };
-    }
-    throw new Error('Incomplete authentication data received from server');
-  }, []);
-
-  // Set up API defaults on mount
-  useEffect(() => {
-    const token = localStorage.getItem('access');
-    if (token) {
-      // Set auth header for all future requests
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      
-      // If we already have user data in the query cache, use it
-      const cachedUser = queryClient.getQueryData(['currentUser']);
-      if (cachedUser) {
-        setState(prev => ({
-          ...prev,
-          user: cachedUser,
-          isAuthenticated: true,
-          isLoading: false
-        }));
-        return;
-      }
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    }
-  }, []);
-
-  // Load user on mount and handle redirection
-  useEffect(() => {
-    let isMounted = true;
-    let timeoutId = null;
-
-    const loadUser = async () => {
-      if (!isMounted) return;
-      
-      try {
-        const token = localStorage.getItem('access');
-        if (token) {
-          const response = await api.get('/api/accounts/me/');
-          if (!isMounted) return;
-          
-          const userData = response.data;
-          setState(prev => ({
-            ...prev,
-            user: userData,
-            isAuthenticated: true,
-            isLoading: false
-          }));
-          
-          // Only handle redirection if we're on the login page
-          if (window.location.pathname === '/login') {
-            if (userData.is_photographer) {
-              navigate('/dashboard');
-            } else if (userData.is_staff || userData.is_superuser) {
-              navigate('/admin');
-            } else {
-              navigate('/my-gallery');
-            }
-          }
-        } else if (isMounted) {
-          setState(prev => ({ ...prev, user: null, isAuthenticated: false, isLoading: false }));
-        }
-      } catch (err) {
-        console.error('Failed to load user', err);
-        if (err.response?.status === 401) {
-          clearAuth();
-        }
-        if (isMounted) {
-          setState(prev => ({ ...prev, isLoading: false, error: 'Failed to load user' }));
-        }
-      }
-    };
-    
-    // Debounce the loadUser function to prevent rapid successive calls
-    const debouncedLoadUser = () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(loadUser, 100);
-    };
-    
-    // Initial load
-    debouncedLoadUser();
-    
-    // Set up a listener for storage events to handle login/logout from other tabs
-    const handleStorageChange = (e) => {
-      if (e.key === 'access') {
-        if (e.newValue) {
-          api.defaults.headers.common['Authorization'] = `Bearer ${e.newValue}`;
-          debouncedLoadUser();
-        } else {
-          delete api.defaults.headers.common['Authorization'];
-          setState(prev => ({ ...prev, user: null, isAuthenticated: false }));
-        }
-      }
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Cleanup function
-    return () => {
-      isMounted = false;
-      if (timeoutId) clearTimeout(timeoutId);
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  }, [clearAuth, navigate]);
-
-  // Login with email/password
-  const login = useCallback(async (email, password) => {
-    try {
-      setState(prev => ({ ...prev, isLoading: true, error: null }));
-      
-      // Get authentication tokens
-      const tokenResponse = await api.post('/api/accounts/token/', {
-        email,
-        password,
-      });
-      
-      const { access, refresh } = tokenResponse.data;
-      
-      // Store tokens
-      localStorage.setItem('access', access);
-      localStorage.setItem('refresh', refresh);
-      
-      // Set auth header
-      api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
-      
-      // Fetch user data
-      const userResponse = await api.get('api/accounts/me/');
-      const userData = userResponse.data;
-      
-      // Update user state
-      setState({
-        user: userData,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null
-      });
-      
-      // Redirect to gallery page after successful login
-      navigate('/my-gallery');
-      
-      return { success: true, user: userData };
-    } catch (err) {
-      console.error('Login failed', err);
-      const errorMessage = err.response?.data?.detail || 'Login failed';
-      setState(prev => ({ ...prev, isLoading: false, error: errorMessage }));
-      return { success: false, error: errorMessage };
-    }
-  }, []);
-
-  // Register
-  const register = useCallback(async (userData) => {
-    try {
-      setState(prev => ({ ...prev, isLoading: true, error: null }));
-      
-      // Get CSRF token
-      await api.get('/api/accounts/csrf/');
-      
-      // Prepare registration data
-      const requestData = {
-        email: userData.email,
-        full_name: userData.name,  
-        password: userData.password,
-        confirm_password: userData.password,  
-        is_photographer: userData.isPhotographer || false
-      };
-      
-      const response = await api.post('/api/accounts/register/', requestData);
-      
-      if (response.data && response.data.access) {
-        const { access, refresh } = response.data;
-        
-        localStorage.setItem('access', access);
-        localStorage.setItem('refresh', refresh);
-        
-        api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
-        
-        // Get user data
-        const userResponse = await api.get('/api/accounts/me/');
-        const userData = userResponse.data;
-        
-        // Update user state
-        setState({
-          user: userData,
-          isAuthenticated: true,
-          isLoading: false,
-          error: null
-        });
-        
-        return { 
-          success: true, 
-          user: userData,
-          message: 'Registration successful! Welcome to EventPhoto!'
-        };
-      }
-      
-      throw new Error('Registration successful but no access token received');
-    } catch (error) {
-      console.error('Registration error:', error);
-      
-      // Handle validation errors
-      if (error.response?.status === 400 && error.response.data) {
-        // Format validation errors into a more user-friendly format
-        const validationErrors = [];
-        const fieldErrors = {};
-        
-        // Handle field-specific errors
-        for (const [field, errors] of Object.entries(error.response.data)) {
-          if (Array.isArray(errors)) {
-            // Convert field names to be more user-friendly
-            const fieldName = field === 'non_field_errors' ? 'form' :
-                            field === 'confirm_password' ? 'password confirmation' :
-                            field.replace(/_/g, ' ');
-            
-            // Store field errors for form display
-            fieldErrors[field] = errors.join(' ');
-            
-            // Add each error message for toast
-            errors.forEach(errorMsg => {
-              validationErrors.push(
-                `${fieldName.charAt(0).toUpperCase() + fieldName.slice(1)}: ${errorMsg}`
-              );
-            });
-          } else if (typeof errors === 'string') {
-            validationErrors.push(errors);
-          }
-        }
-        
-        return { 
-          success: false, 
-          error: validationErrors.join('\n') || 'Please check your input and try again.',
-          fieldErrors,
-          isValidationError: true
-        };
-      }
-      
-      // Handle other types of errors
-      const errorMessage = error.response?.data?.detail || 
-                         error.message || 
-                         'Registration failed. Please try again.';
-      
-      return { 
-        success: false, 
-        error: errorMessage 
-      };
-    }
-  },  []);
-
-  // Get CSRF token from cookies or fetch a new one
-  const getCSRFToken = async () => {
-    // First try to get from cookies
-    const cookieValue = document.cookie
-      .split('; ')
-      .find(row => row.startsWith('csrftoken='))
-      ?.split('=')[1];
-      
-    if (cookieValue) {
-      return cookieValue;
-    }
-    
-    // If not in cookies, try to fetch a new one
-    try {
-      const response = await fetch(`${API_ENDPOINTS.API_BASE_URL}api/accounts/csrf/`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          'Accept': 'application/json',
-        }
-      });
-      
-      if (!response.ok) {
-        console.error('Failed to fetch CSRF token');
-        return '';
-      }
-      
-      return document.cookie
-        .split('; ')
-        .find(row => row.startsWith('csrftoken='))
-        ?.split('=')[1] || '';
-    } catch (error) {
-      console.error('Error fetching CSRF token:', error);
-      return '';
-    }
-  };
-
-  // Handle Google OAuth login/signup
-  const loginWithGoogle = useCallback(async (tokenResponse) => {
-    try {
-      console.log('Initiating Google login with token response:', tokenResponse);
-      setState(prev => ({ ...prev, isLoading: true, error: null }));
-
-      // If we have an authorization code (from the Google Sign-In button with useOneTap)
-      if (tokenResponse.code) {
-        console.log('Sending authorization code to backend for token exchange');
-
-        // Get CSRF token
-        const csrfToken = await getCSRFToken();
-        if (!csrfToken) {
-          console.warn('CSRF token not found. Authentication might fail.');
-        }
-
-        // Function to make the Google login request with authorization code
-        const makeGoogleCodeLoginRequest = async (token) => {
-          return await fetch(API_ENDPOINTS.GOOGLE_LOGIN, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'X-CSRFToken': token
-            },
-            body: JSON.stringify({
-              code: tokenResponse.code,
-              redirect_uri: window.location.origin
-            }),
-            credentials: 'include'
-          });
-        };
-
-        // First attempt with current CSRF token
-        let response = await makeGoogleCodeLoginRequest(csrfToken);
-
-        if (response.status === 403) {
-          console.log('CSRF validation failed, fetching new token...');
-          // If CSRF validation failed, get a new CSRF token and retry
-          const newCsrfToken = await getCSRFToken();
-          if (!newCsrfToken) {
-            throw new Error('Failed to get CSRF token for retry');
-          }
-
-          // Retry with new CSRF token
-          console.log('Retrying with new CSRF token...');
-          response = await makeGoogleCodeLoginRequest(newCsrfToken);
-
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            console.error('Google login API error (after CSRF retry):', errorData);
-            throw new Error(errorData.detail || 'Google authentication failed after CSRF retry');
-          }
-        }
-
-        // If we get here, the request was successful (either on first try or after retry)
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          console.error('Google login API error with authorization code:', errorData);
-          throw new Error(errorData.detail || 'Google authentication failed');
-        }
-
-        const data = await response.json();
-        console.log('Google login successful with authorization code');
-        return handleGoogleAuthSuccess(data);
-      }
-      
-      throw new Error('No valid authentication data received from Google');
-    } catch (error) {
-      console.error('Google login error:', error);
-      const errorMessage = error.response?.data?.detail || error.message || 'Google authentication failed. Please try again.';
-      const errorState = {
-        isAuthenticated: false,
-        user: null,
-        isLoading: false,
-        error: errorMessage
-      };
-      setState(errorState);
-      return { 
-        success: false, 
-        error: errorMessage,
-        state: errorState
-      };
-    }
-  }, [handleGoogleAuthSuccess]);
-
-  // Logout
-  const logout = useCallback(() => {
-    clearAuth();
-    navigate('/');
-  }, [clearAuth, navigate]);
-
-  // Update user data
-  const updateUser = useCallback((userData) => {
+  // Handle user update
+  const handleUpdateUser = useCallback((userData) => {
     setState(prev => ({
       ...prev,
       user: { ...prev.user, ...userData }
     }));
+    authService.updateUser(userData);
   }, []);
 
-  // Social login (for Google OAuth)
-  const socialLogin = useCallback(async (provider, accessToken) => {
+  // Login function
+  const login = useCallback(async (credentials) => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    
     try {
-      setState(prev => ({ ...prev, isLoading: true, error: null }));
-      
-      const response = await api.post(`/accounts/${provider}/`, {
-        access_token: accessToken,
-      });
-      
-      const { access, refresh, user: userData } = response.data;
-      
-      // Store tokens and set auth header
-      localStorage.setItem('access', access);
-      localStorage.setItem('refresh', refresh);
-      api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
-      
-      // Update user state
-      setState({
-        user: userData,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null
-      });
-      
+      const { user } = await authService.login(credentials);
+      handleLoginSuccess(user);
       return { success: true };
-    } catch (err) {
-      console.error('Social login failed', err);
-      const errorMessage = err.response?.data?.detail || 'Social login failed';
-      setState(prev => ({ ...prev, isLoading: false, error: errorMessage }));
-      return { success: false, error: errorMessage };
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: error.message || 'Login failed. Please try again.'
+      }));
+      return { success: false, error: error.message };
+    }
+  }, [handleLoginSuccess]);
+
+  // Register function
+  const register = useCallback(async (userData) => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    
+    try {
+      // Call your registration API here
+      // const response = await api.post('/auth/register/', userData);
+      // Then login the user
+      // const { user } = await authService.login({
+      //   email: userData.email,
+      //   password: userData.password
+      // });
+      // handleLoginSuccess(user);
+      // return { success: true };
+      
+      // For now, just simulate a successful registration
+      return { success: true };
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: error.message || 'Registration failed. Please try again.'
+      }));
+      return { success: false, error: error.message };
     }
   }, []);
 
-  // Provide the context value
+  // Google login function
+  const loginWithGoogle = useCallback(async (accessToken) => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    
+    try {
+      // Call your Google login API here
+      // const response = await api.post('/auth/google/', { access_token: accessToken });
+      // const { user, accessToken: token } = response.data;
+      // authService.setToken(token);
+      // handleLoginSuccess(user);
+      // return { success: true };
+      
+      // For now, just simulate a successful Google login
+      return { success: false, error: 'Google login not implemented' };
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: error.message || 'Google login failed. Please try again.'
+      }));
+      return { success: false, error: error.message };
+    }
+  }, []);
+
+  // Provide the auth context value
   const contextValue = useMemo(() => ({
-    ...state,
     user: state.user,
     isAuthenticated: state.isAuthenticated,
     isLoading: state.isLoading,
     error: state.error,
     login,
-    logout,
+    logout: handleLogout,
     register,
-    updateUser,
-    loginWithGoogle,
-    socialLogin
-  }), [state, login, logout, register, updateUser, loginWithGoogle, socialLogin]);
+    updateUser: handleUpdateUser,
+    loginWithGoogle
+  }), [
+    state.user,
+    state.isAuthenticated,
+    state.isLoading,
+    state.error,
+    login,
+    handleLogout,
+    register,
+    handleUpdateUser,
+    loginWithGoogle
+  ]);
+
+  // Redirect to login if not authenticated and not on a public page
+  useEffect(() => {
+    if (!state.isLoading && !state.isAuthenticated && !['/login', '/register', '/forgot-password'].includes(location.pathname)) {
+      navigate('/login', { state: { from: location } });
+    }
+  }, [state.isAuthenticated, state.isLoading, navigate, location]);
 
   return (
     <AuthContext.Provider value={contextValue}>
@@ -573,9 +268,10 @@ export const AuthProvider = ({ children }) => {
   );
 };
 
+// Custom hook to use the auth context
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;

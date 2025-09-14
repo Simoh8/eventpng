@@ -4,16 +4,14 @@ import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
+import { API_BASE_URL } from '../config';
 
 const GoogleLoginButton = ({ text = 'Continue with Google', isSignUp = false }) => {
   const { loginWithGoogle } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSuccess = async (credentialResponse) => {
-    console.log('Google OAuth success, credential response:', credentialResponse);
-    
     if (!credentialResponse.credential) {
-      console.error('No credential received from Google');
       toast.error('Authentication failed: No credential received');
       return;
     }
@@ -22,7 +20,7 @@ const GoogleLoginButton = ({ text = 'Continue with Google', isSignUp = false }) 
       setIsLoading(true);
       
       // Make the API call directly instead of using loginWithGoogle
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/accounts/google/`, {
+      const response = await fetch(`${API_BASE_URL}/api/accounts/google/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -39,10 +37,8 @@ const GoogleLoginButton = ({ text = 'Continue with Google', isSignUp = false }) 
       });
       
       const data = await response.json();
-      console.log('Google login response:', data);
       
       if (response.ok && data.access) {
-        console.log('Google login successful, response data:', data);
         
         // Store tokens
         localStorage.setItem('access', data.access);
@@ -63,12 +59,10 @@ const GoogleLoginButton = ({ text = 'Continue with Google', isSignUp = false }) 
         
         // Store user data if available
         if (data.user) {
-          console.log('User data from login:', data.user);
           localStorage.setItem('user', JSON.stringify(data.user));
           
           // Use the loginWithGoogle function from AuthContext to update the auth state
           if (loginWithGoogle) {
-            console.log('Calling loginWithGoogle with data:', data);
             await loginWithGoogle({
               access: data.access,
               refresh: data.refresh,
@@ -79,10 +73,8 @@ const GoogleLoginButton = ({ text = 'Continue with Google', isSignUp = false }) 
           
           // Use window.location.href for a full page reload to ensure auth state is properly set
           if (data.user.is_photographer) {
-            console.log('Redirecting to photographer dashboard');
             window.location.href = '/photographer-dashboard';
           } else {
-            console.log('Redirecting to user gallery');
             window.location.href = '/my-gallery';
           }
         } else {

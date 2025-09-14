@@ -58,11 +58,16 @@ const DashboardRedirect = () => {
 
 // Protected Route Component
 const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
+  console.log('1. [ProtectedRoute] Rendering with requiredRole:', requiredRole, 'allowedRoles:', allowedRoles);
+  
   const { isAuthenticated, user, isLoading } = useAuth();
   const location = useLocation();
   
+  console.log('2. [ProtectedRoute] Auth state - isAuthenticated:', isAuthenticated, 'isLoading:', isLoading, 'user:', user);
+  
   // Show loading state while checking auth
   if (isLoading) {
+    console.log('3. [ProtectedRoute] Loading auth state, showing spinner');
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
@@ -72,6 +77,8 @@ const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
   
   // Redirect to login if not authenticated
   if (!isAuthenticated) {
+    console.log('3. [ProtectedRoute] Not authenticated, redirecting to login');
+    console.log('4. [ProtectedRoute] Saving current location for redirect:', location.pathname);
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
   
@@ -79,13 +86,27 @@ const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
   const isPhotographer = userData?.is_photographer === true;
   const isStaff = userData?.is_staff || userData?.is_superuser;
   
+  console.log('3. [ProtectedRoute] User data:', {
+    userData,
+    isPhotographer,
+    isStaff,
+    requiredRole,
+    allowedRoles
+  });
+  
   // Check if user has the required role
   if (requiredRole) {
     const hasRequiredRole = 
       (requiredRole === 'staff' && isStaff) ||
       (requiredRole === 'photographer' && isPhotographer);
     
+    console.log('4. [ProtectedRoute] Checking required role:', {
+      requiredRole,
+      hasRequiredRole
+    });
+    
     if (!hasRequiredRole) {
+      console.log('5. [ProtectedRoute] Missing required role, redirecting to home');
       return <Navigate to="/" replace />;
     }
   }
@@ -95,12 +116,21 @@ const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
     const userRole = isStaff ? 'staff' : isPhotographer ? 'photographer' : 'customer';
     const isAllowed = allowedRoles.includes(userRole);
     
+    console.log('5. [ProtectedRoute] Checking allowed roles:', {
+      userRole,
+      allowedRoles,
+      isAllowed
+    });
+    
     if (!isAllowed) {
       // Redirect to appropriate dashboard based on role
       const redirectPath = isPhotographer ? '/photographer-dashboard' : isStaff ? '/admin/events' : '/my-gallery';
+      console.log('6. [ProtectedRoute] Role not allowed, redirecting to:', redirectPath);
       return <Navigate to={redirectPath} replace />;
     }
   }
+  
+  console.log('6. [ProtectedRoute] Access granted, rendering children');
   
   return children;
 };

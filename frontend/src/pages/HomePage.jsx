@@ -1,8 +1,11 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { makeRequests } from '../utils/apiUtils';
+import { API_BASE_URL } from '../config';
+import { makeRequest } from '../utils/apiUtils';
+import { API_ENDPOINTS } from '../config';
+import EventCard from '../components/EventCard';
 import { 
   MagnifyingGlassIcon as SearchIcon,
   FunnelIcon as FilterIcon,
@@ -22,7 +25,6 @@ import {
   CheckCircleIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthContext';
-import { API_ENDPOINTS } from '../config';
 
 // Default cover image if none is provided from the API
 const DEFAULT_COVER_IMAGE = 'https://images.unsplash.com/photo-1516450360452-1f389e6b5cef?auto=format&fit=crop&w=1470&q=80';
@@ -150,8 +152,10 @@ const HomePage = () => {
     totalGalleries: 0,
     totalPhotos: 0,
     totalEvents: 0,
+    totalPhotographers: 0,
     recentGalleries: []
   });
+  const [hasLoadedStats, setHasLoadedStats] = useState(false);
 
   // Handle event click - check if PIN is needed
   const handleEventClick = (event) => {
@@ -168,29 +172,54 @@ const HomePage = () => {
     e.preventDefault();
     setPinError('');
     
+    // Get CSRF token from cookies
+    const getCookie = (name) => {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === (name + '=')) {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+    };
+    
+    const csrftoken = getCookie('csrftoken');
+    
     try {
-      const response = await axios.post(
-        `${API_ENDPOINTS.EVENTS}${currentEvent.id}/verify-pin/`,
-        { pin },
-        {
+      const response = await makeRequest(() => 
+        axios({
+          method: 'post',
+          url: `/api/gallery/events/${currentEvent.slug || currentEvent.id}/verify-pin/`,
+          withCredentials: true,
           headers: {
             'Content-Type': 'application/json',
-            'Accept': 'application/json',
+            'X-CSRFToken': csrftoken,
+            'X-Requested-With': 'XMLHttpRequest'
           },
-          withCredentials: true
-        }
+          data: { pin }
+        })
       );
       
-      if (response.data.valid) {
-        navigate(`/events/${currentEvent.slug || currentEvent.id}`, {
-          state: { pin }
-        });
+      if (response.data.success) {
+        // Store verification in session storage
+        sessionStorage.setItem(`event_${currentEvent.slug || currentEvent.id}_verified`, 'true');
+        navigate(`/events/${currentEvent.slug || currentEvent.id}`);
+        setShowPinModal(false);
       } else {
-        setPinError('Invalid PIN. Please try again.');
+        setPinError(response.data.error || 'Invalid PIN. Please try again.');
       }
     } catch (err) {
       console.error('Error verifying PIN:', err);
-      setPinError('An error occurred. Please try again.');
+      const errorMessage = err.response?.data?.error || 
+                         (err.response?.status === 429 ? 'Too many attempts. Please wait a moment and try again.' : 
+                          err.response?.status === 403 ? 'Session expired. Please refresh the page and try again.' : 
+                          'Error verifying PIN. Please try again.');
+      setPinError(errorMessage);
     }
   };
 
@@ -199,28 +228,28 @@ const HomePage = () => {
   const CACHE_EXPIRY = 60 * 60 * 1000; // 1 hour in milliseconds
 
   // Get cached data if it exists and is not expired
-  const getCachedData = (key) => {
+  const getCachedData = useCallback((key) => {
     try {
       const cachedData = localStorage.getItem(key);
       if (!cachedData) return null;
       
-      const { data, timestamp } = JSON.parse(cachedData);
-      const isExpired = Date.now() - timestamp > CACHE_EXPIRY;
+      const parsedData = JSON.parse(cachedData);
+      const isExpired = Date.now() - parsedData.timestamp > CACHE_EXPIRY;
       
       if (isExpired) {
         localStorage.removeItem(key);
         return null;
       }
       
-      return data;
+      return parsedData.data;
     } catch (error) {
       console.error('Error reading from cache:', error);
       return null;
     }
-  };
+  }, []);
 
   // Save data to cache with timestamp
-  const saveToCache = (key, data) => {
+  const saveToCache = useCallback((key, data) => {
     try {
       const cacheData = {
         data,
@@ -230,101 +259,151 @@ const HomePage = () => {
     } catch (error) {
       console.error('Error saving to cache:', error);
     }
-  };
+  }, []);
 
   // Fetch events and statistics
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        // Try to get cached data first
-        const cachedData = getCachedData(EVENTS_CACHE_KEY);
-        
-        if (cachedData) {
-          const { events: cachedEvents, stats: cachedStats } = cachedData;
-          setEvents(cachedEvents);
-          setStats(cachedStats);
-          setLoading(false);
-          
-          // We still want to update in the background
-          fetchFreshData();
-          return;
-        }
-        
-        // If no cache, fetch fresh data
-        await fetchFreshData();
-      } catch (err) {
-        console.error('Error in fetchData:', err);
-        setError('Failed to load events. Other content may still be available.');
+  const fetchEvents = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      console.log('Fetching events and stats...');
+      
+      // Check cache first
+      const cachedData = getCachedData(EVENTS_CACHE_KEY);
+      if (cachedData && cachedData.events) {
+        setEvents(cachedData.events);
+        setStats(cachedData.stats || {});
         setLoading(false);
       }
-    };
-
-    const fetchFreshData = async () => {
-      try {
-        // Make requests with rate limiting
-        const [eventsRes, statsRes, recentRes] = await Promise.all([
-          axios.get(API_ENDPOINTS.PUBLIC_EVENTS).catch(err => ({ error: err })),
-          axios.get(API_ENDPOINTS.STATS).catch(err => ({ error: err })),
-          axios.get(API_ENDPOINTS.RECENT_GALLERIES).catch(err => ({ error: err }))
-        ]);
-
-        // Process stats and recent galleries even if events fail
-        const serverStats = !statsRes.error && statsRes.data ? statsRes.data : { total_galleries: 0, total_events: 0, total_photographers: 0 };
-        const recentGalleries = !recentRes.error && recentRes.data ? recentRes.data : [];
-
-        // Process events if available
-        let eventsData = [];
-        if (!eventsRes.error && eventsRes.data) {
+      
+      // Fetch fresh data with rate limiting
+      console.log('Making API requests to:', {
+        events: `${API_ENDPOINTS.PUBLIC_EVENTS}?limit=3&ordering=-start_date`,
+        stats: API_ENDPOINTS.STATS,
+        recent: API_ENDPOINTS.RECENT_GALLERIES
+      });
+      
+      const [eventsRes, statsRes, recentRes] = await Promise.all([
+        makeRequest(() => {
+          console.log('Fetching events from:', `${API_ENDPOINTS.PUBLIC_EVENTS}?limit=4&ordering=-start_date`);
+          return axios.get(`${API_ENDPOINTS.PUBLIC_EVENTS}?limit=4&ordering=-start_date`, {
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache',
+              'Expires': '0'
+            }
+          });
+        }).then(response => {
+          console.log('Events response:', response);
+          return response;
+        }).catch(err => {
+          console.error('Error fetching events:', err);
+          return { error: err };
+        }),
+        
+        makeRequest(() => {
+          console.log('Fetching stats from:', API_ENDPOINTS.STATS);
+          return axios.get(API_ENDPOINTS.STATS);
+        }).then(response => {
+          console.log('Stats response:', response);
+          return response;
+        }).catch(err => {
+          console.error('Error fetching stats:', err);
+          return { error: err };
+        }),
+        
+ 
+        makeRequest(() => {
+          console.log('Fetching recent galleries from:', API_ENDPOINTS.RECENT_GALLERIES);
+          return axios.get(API_ENDPOINTS.RECENT_GALLERIES);
+        }).then(response => {
+          console.log('Recent galleries response:', response);
+          return response;
+        }).catch(err => {
+          console.error('Error fetching recent galleries:', err);
+          return { error: err };
+        })
+      ]);
+      
+      // Process responses - handle both direct array and paginated response
+      let eventsData = [];
+      if (!eventsRes.error) {
+        if (Array.isArray(eventsRes.data)) {
           eventsData = eventsRes.data;
-          
-          // Calculate totals from events
-          const eventsStats = eventsData.reduce((acc, event) => ({
-            totalPhotos: acc.totalPhotos + (event.photo_count || 0),
-            totalGalleries: acc.totalGalleries + (event.gallery_count || 0),
-            totalPhotographers: acc.totalPhotographers + (event.photographer_count || 0)
-          }), { totalPhotos: 0, totalGalleries: 0, totalPhotographers: 0 });
-
-          // Update stats with events data
-          Object.assign(serverStats, {
-            total_galleries: eventsStats.totalGalleries || serverStats.total_galleries,
-            total_photos: eventsStats.totalPhotos || serverStats.total_photos,
-            total_photographers: eventsStats.totalPhotographers || serverStats.total_photographers,
-            total_events: eventsData.length || serverStats.total_events
-          });
+        } else if (eventsRes.data?.results) {
+          eventsData = eventsRes.data.results;
+        } else if (eventsRes.data) {
+          eventsData = [eventsRes.data];
         }
-
-        const statsData = {
-          totalGalleries: serverStats.total_galleries || 0,
-          totalPhotos: serverStats.total_photos || 0,
-          totalEvents: serverStats.total_events || 0,
-          totalPhotographers: serverStats.total_photographers || 0,
-          recentGalleries: recentGalleries
-        };
-
-        // Update state
-        setEvents(eventsData);
-        setStats(statsData);
-
-        // Save to cache if we got valid data
-        if (eventsData.length > 0) {
-          saveToCache(EVENTS_CACHE_KEY, {
-            events: eventsData,
-            stats: statsData
-          });
-        }
-      } catch (err) {
-        console.error('Error in fetchFreshData:', err);
-        setError('Unable to load events at this time.');
-      } finally {
-        setLoading(false);
       }
-    };
+      
+      // Process stats
+      const serverStats = !statsRes.error && statsRes.data 
+        ? statsRes.data 
+        : { total_galleries: 0, total_events: 0, total_photographers: 0 };
+        
+      const recentGalleries = !recentRes.error && recentRes.data 
+        ? Array.isArray(recentRes.data) ? recentRes.data : (recentRes.data.results || [])
+        : [];
 
-    fetchData();
-  }, []);
+      // Calculate additional stats from events if available
+      if (eventsData.length > 0) {
+        const eventsStats = eventsData.reduce((acc, event) => ({
+          totalPhotos: acc.totalPhotos + (event.photo_count || 0),
+          totalGalleries: acc.totalGalleries + (event.gallery_count || 0),
+          totalPhotographers: acc.totalPhotographers + (event.photographer_count || 0)
+        }), { totalPhotos: 0, totalGalleries: 0, totalPhotographers: 0 });
+
+        // Update stats with events data
+        Object.assign(serverStats, {
+          total_galleries: eventsStats.totalGalleries || serverStats.total_galleries,
+          total_photos: eventsStats.totalPhotos || serverStats.total_photos,
+          total_photographers: eventsStats.totalPhotographers || serverStats.total_photographers,
+          total_events: eventsData.length || serverStats.total_events
+        });
+      }
+      
+      // Update cache and state
+      const statsData = {
+        totalGalleries: serverStats.total_galleries || 0,
+        totalPhotos: serverStats.total_photos || 0,
+        totalEvents: serverStats.total_events || 0,
+        totalPhotographers: serverStats.total_photographers || 0,
+        recentGalleries: recentGalleries.slice(0, 3)
+      };
+
+      // Always update cache and state, even if there are no events
+      saveToCache(EVENTS_CACHE_KEY, {
+        events: eventsData,
+        stats: statsData,
+        recentGalleries: recentGalleries
+      });
+      
+      setEvents(eventsData);
+      setStats(statsData);
+      setHasLoadedStats(true);
+      
+      if (eventsData.length === 0 && !cachedData) {
+        setError('No events found. Please check back later.');
+      }
+      
+    } catch (err) {
+      console.error('Error fetching events:', err);
+      if (!events.length) {
+        setError('Failed to load events. ' + 
+          (err.response?.status === 429 ? 'Too many requests. Please wait a moment and try again.' : 
+           err.response?.data?.detail || 'Please try again later.')
+        );
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [getCachedData, saveToCache, events.length]);
+
+  // Initial data fetch
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
 
   // Event card skeleton loader
   const EventSkeleton = () => (
@@ -454,38 +533,53 @@ const HomePage = () => {
           </div>
           
           <div className="grid grid-cols-1 gap-5 mt-12 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard 
-              icon={PhotoIcon} 
-              title="Total Photos" 
-              value={stats.totalPhotos.toLocaleString()} 
-              color="blue"
-              isLoading={loading}
-              description="Across all events and galleries"
-            />
-            <StatCard 
-              icon={RectangleGroupIcon} 
-              title="Galleries" 
-              value={stats.totalGalleries.toLocaleString()}
-              color="green"
-              isLoading={loading}
-              description={`${stats.totalGalleries} across ${stats.totalEvents} events`}
-            />
-            <StatCard 
-              icon={UserGroupIcon} 
-              title="Photographers" 
-              value={stats.totalPhotographers?.toLocaleString() || '0'}
-              color="purple"
-              isLoading={loading}
-              description="Contributing to our collection"
-            />
-            <StatCard 
-              icon={CalendarIcon} 
-              title="Events" 
-              value={stats.totalEvents.toLocaleString()}
-              color="indigo"
-              isLoading={loading}
-              description="Available for you to explore"
-            />
+            {hasLoadedStats ? (
+              <>
+                <StatCard 
+                  icon={PhotoIcon} 
+                  title="Total Photos" 
+                  value={stats.totalPhotos.toLocaleString()} 
+                  color="blue"
+                  isLoading={loading}
+                  description="Across all events and galleries"
+                />
+                <StatCard 
+                  icon={RectangleGroupIcon} 
+                  title="Galleries" 
+                  value={stats.totalGalleries.toLocaleString()}
+                  color="green"
+                  isLoading={loading}
+                  description={`${stats.totalGalleries} across ${stats.totalEvents} events`}
+                />
+                <StatCard 
+                  icon={UserGroupIcon} 
+                  title="Photographers" 
+                  value={stats.totalPhotographers?.toLocaleString() || '0'}
+                  color="purple"
+                  isLoading={loading}
+                  description="Contributing to our collection"
+                />
+                <StatCard 
+                  icon={CalendarIcon} 
+                  title="Events" 
+                  value={stats.totalEvents.toLocaleString()}
+                  color="indigo"
+                  isLoading={loading}
+                  description="Available for you to explore"
+                />
+              </>
+            ) : (
+              // Show loading state for stats
+              Array(4).fill(0).map((_, index) => (
+                <div key={index} className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+                  <div className="animate-pulse">
+                    <div className="h-8 w-8 bg-gray-200 rounded-full mb-4"></div>
+                    <div className="h-6 bg-gray-200 rounded w-3/4 mb-2"></div>
+                    <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </section>
@@ -655,10 +749,10 @@ const HomePage = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">
-              Upcoming Events
+              Latest Events
             </h2>
             <p className="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
-              Browse and join our upcoming photography events
+              Discover our most recent photography events
             </p>
             {error && (
               <div className="mt-4 text-sm text-red-600 bg-red-50 p-3 rounded-md inline-block">
@@ -674,77 +768,53 @@ const HomePage = () => {
               ))}
             </div>
           ) : events.length > 0 ? (
-            <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
-              {events.map((event) => (
-                <motion.div
-                  key={event.id}
-                  className="bg-white rounded-lg shadow-lg overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1 cursor-pointer"
-                  whileHover={{ scale: 1.02 }}
-                  onClick={() => handleEventClick(event)}
-                >
-                  <div className="relative h-48 overflow-hidden">
-                    <img
-                      src={event.cover_image || DEFAULT_COVER_IMAGE}
-                      alt={event.name || 'Event'}
-                      className="w-full h-full object-cover"
+            <div className="space-y-8">
+              <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+                {events.slice(0, 4).map((event) => (
+                  <motion.div
+                    key={event.id}
+                    className="w-full"
+                    whileHover={{ scale: 1.02 }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <EventCard
+                      event={{
+                        ...event,
+                        title: event.name,
+                        cover_image: event.cover_image || DEFAULT_COVER_IMAGE,
+                        date: event.start_date,
+                        end_date: event.end_date,
+                        photo_count: event.photo_count,
+                        photographer_count: event.photographer_count,
+                        is_private: event.is_private
+                      }}
+                      onClick={handleEventClick}
+                      className="h-full"
                     />
-                    {event.is_private && (
-                      <div className="absolute top-2 right-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded-full flex items-center">
-                        <LockClosedIcon className="h-3 w-3 mr-1" />
-                        Private
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-5">
-                    <div className="flex justify-between items-start mb-3">
-                      <h3 className="text-xl font-bold text-gray-900 line-clamp-1 flex-1">
-                        {event.name || 'Untitled Event'}
-                      </h3>
-                    </div>
-                    <p className="text-gray-600 line-clamp-2 mb-4">
-                      {event.description || 'No description available.'}
-                    </p>
-                    <div className="flex items-center text-sm text-gray-500 mb-3">
-                      <CalendarIcon className="h-4 w-4 mr-2" />
-                      <span>{formatDate(event.start_date)}</span>
-                      {event.end_date && (
-                        <>
-                          <span className="mx-1">-</span>
-                          <span>{formatDate(event.end_date)}</span>
-                        </>
-                      )}
-                    </div>
-                    {event.location && (
-                      <div className="flex items-center text-sm text-gray-500 mb-4">
-                        <MapPinIcon className="h-4 w-4 mr-2" />
-                        <span>{event.location}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center">
-                        <UserGroupIcon className="h-4 w-4 text-gray-400 mr-1" />
-                        <span className="text-sm text-gray-500">
-                          {event.photographer_count || 0} photographers
-                        </span>
-                      </div>
-                      <div className="flex items-center">
-                        <PhotoIcon className="h-4 w-4 text-gray-400 mr-1" />
-                        <span className="text-sm text-gray-500">
-                          {event.photo_count || 0} photos
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
+                  </motion.div>
+                ))}
+              </div>
+              {events.length > 4 && (
+                <div className="text-center mt-8">
+                  <Link
+                    to="/events"
+                    className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    View All Events
+                    <ArrowRightIcon className="ml-2 -mr-1 h-5 w-5" />
+                  </Link>
+                </div>
+              )}
             </div>
           ) : error ? (
             <div className="text-center py-12">
-              <div className="inline-flex items-center px-4 py-2 rounded-md bg-gray-100 text-gray-700">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <div className="inline-flex items-center px-6 py-3 rounded-lg bg-gray-100 text-gray-700">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-3 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <span>Unable to load events. Please check your connection and try again later.</span>
+                <span className="text-lg">No recent events at the moment. Check back soon for updates!</span>
               </div>
             </div>
           ) : (

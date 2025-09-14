@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
 import { 
   MagnifyingGlassIcon as SearchIcon,
   FunnelIcon as FilterIcon,
@@ -71,7 +72,6 @@ const Events = () => {
       const response = await axios({
         method: 'post',
         url: `/api/gallery/events/${currentEvent.slug}/verify-pin/`,
-        baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000',
         withCredentials: true,
         headers: {
           'Content-Type': 'application/json',

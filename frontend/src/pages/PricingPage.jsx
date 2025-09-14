@@ -1,5 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { API_BASE_URL } from '../config';
 import axios from 'axios';
 import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
@@ -105,16 +107,8 @@ const ContactForm = ({ onClose }) => {
         subject: formData.subject?.trim() || 'Bulk Download Inquiry'
       };
       
-      // Log the formatted phone number for debugging
-      console.log('Form data prepared:', {
-        ...submissionData,
-        full_phone: phoneNumber // For logging only
-      });
-      
       // Use the API endpoint from config
-      const apiUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/contact/`;
-      
-      console.log('Sending POST request to:', apiUrl);
+      const apiUrl = `${API_BASE_URL}/api/contact/`;
       
       // Send the request without authentication
       const response = await axios({
@@ -129,8 +123,6 @@ const ContactForm = ({ onClose }) => {
         validateStatus: (status) => status < 500 // Don't throw for 4xx errors
       });
       
-      console.log('Response received:', response);
-
       if (response.status >= 200 && response.status < 300) {
         setStatus('success');
         // Reset form after successful submission
@@ -152,7 +144,6 @@ const ContactForm = ({ onClose }) => {
         let errorMessage = 'Failed to send message. Please check your input and try again.';
         
         if (response.data) {
-          console.error('API Error:', response.data);
           
           // Handle different error response formats
           if (typeof response.data === 'string') {
@@ -177,23 +168,19 @@ const ContactForm = ({ onClose }) => {
             }
           }
         } else {
-          console.error('No response data received');
         }
         
         setError(errorMessage);
         setStatus('error');
       }
     } catch (err) {
-      console.error('Error sending message:', err);
       
       let errorMessage = 'Failed to submit the form. ';
       
       if (err.response) {
         // The request was made and the server responded with a status code
         // that falls out of the range of 2xx
-        console.error('Response data:', err.response.data);
-        console.error('Response status:', err.response.status);
-        console.error('Response headers:', err.response.headers);
+        
         
         if (err.response.status === 400) {
           // Handle validation errors
@@ -235,11 +222,9 @@ const ContactForm = ({ onClose }) => {
         }
       } else if (err.request) {
         // The request was made but no response was received
-        console.error('No response received:', err.request);
         errorMessage = 'No response from server. Please check your internet connection and try again.';
       } else {
         // Something happened in setting up the request that triggered an Error
-        console.error('Error setting up request:', err.message);
         errorMessage = `Error: ${err.message}`;
       }
       

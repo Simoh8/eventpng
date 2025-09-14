@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE_URL } from '../config';
 
 const faqs = [
   {
@@ -55,7 +56,7 @@ const HelpAndSupportPage = () => {
     setSubmitSuccess(false);
     
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/contact/`, {
+      const response = await fetch(`${API_BASE_URL}/api/contact/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

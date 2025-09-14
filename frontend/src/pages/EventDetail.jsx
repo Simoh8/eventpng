@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   FaArrowLeft, 
   FaCheck, 
@@ -11,49 +12,76 @@ import {
   FaCompress, 
   FaSpinner, 
   FaLock,
-  FaChevronCircleLeft,
-  FaChevronCircleRight
 } from 'react-icons/fa';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
+import { makeRequest } from '../utils/apiUtils';
+import { API_BASE_URL, API_ENDPOINTS } from '../config';
 import EventPinModal from '../components/EventPinModal';
 
-// Helper function to get protected image URL
 const getProtectedImageUrl = (imageUrl, width = 800) => {
   if (!imageUrl) {
     return null;
   }
-  // If the URL is already absolute, return it as is
   if (imageUrl.startsWith('http')) {
     return imageUrl;
   }
-  // Otherwise, construct the full URL
-  const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-  const fullUrl = `${baseUrl}${imageUrl}${imageUrl.includes('?') ? '&' : '?'}w=${width}`;
+  const fullUrl = `${API_BASE_URL}${imageUrl}${imageUrl.includes('?') ? '&' : '?'}w=${width}`;
   return fullUrl;
 };
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 const fetchEvent = async (slug) => {
-  // First get the event ID from the slug
-  const eventsResponse = await axios.get(`${API_URL}/api/gallery/public/events/`);
-  const events = Array.isArray(eventsResponse.data) ? eventsResponse.data : eventsResponse.data.results || [];
-  const event = events.find(event => event.slug === slug);
-  
-  if (!event) {
-    throw new Error(`Event with slug '${slug}' not found`);
+  try {
+    // First try to get the event by slug with credentials
+    try {
+      // Check if we have a verified session for this event
+      const isVerified = sessionStorage.getItem(`event_${slug}_verified`) === 'true';
+      
+      const eventDetailResponse = await makeRequest(() => 
+        axios.get(`${API_BASE_URL}api/gallery/public/events/slug/${slug}/`, {
+          withCredentials: true
+        })
+      );
+      
+      if (eventDetailResponse.data) {
+        return processEventData(eventDetailResponse.data);
+      }
+    } catch (error) {
+      // If 404 and we have a numeric slug, try by ID
+      if (error.response?.status === 404 && !isNaN(slug)) {
+        console.log('Event not found by slug, trying by ID...');
+        try {
+          const eventDetailResponse = await makeRequest(() => 
+            axios.get(`${API_BASE_URL}api/gallery/public/events/${slug}/`, {
+              withCredentials: true
+            })
+          );
+          
+          if (eventDetailResponse.data) {
+            return processEventData(eventDetailResponse.data);
+          }
+        } catch (idError) {
+          console.error('Error fetching event by ID:', idError);
+          // Re-throw the slug error to be handled by the outer catch
+          throw error;
+        }
+      } else {
+        // Re-throw the error if it's not a 404 or slug is not numeric
+        throw error;
+      }
+    }
+    
+    throw new Error(`Event '${slug}' not found`);
+    
+  } catch (error) {
+    console.error('Error in fetchEvent:', error);
+    throw new Error(`Failed to load event: ${error.message}`);
   }
-  
-  const eventDetailResponse = await axios.get(`${API_URL}/api/gallery/public/events/${event.id}/`);
-  
-  if (!eventDetailResponse.data) {
-    throw new Error('Event details not found');
-  }
-  
-  const eventData = eventDetailResponse.data;
-  
+};
+
+const processEventData = (eventData) => {
   const allPhotos = [];
+  
   if (eventData.galleries && Array.isArray(eventData.galleries)) {
     eventData.galleries.forEach(gallery => {
       if (gallery.photos && Array.isArray(gallery.photos)) {
@@ -61,7 +89,8 @@ const fetchEvent = async (slug) => {
           allPhotos.push({
             ...photo,
             gallery_title: gallery.title,
-            gallery_id: gallery.id
+            gallery_id: gallery.id,
+            gallery_slug: gallery.slug
           });
         });
       }
@@ -73,32 +102,24 @@ const fetchEvent = async (slug) => {
     photos: {
       results: allPhotos,
       count: allPhotos.length,
-      next: null,  // Pagination would need to be handled differently if needed
+      next: null,
       previous: null
     }
   };
 };
 
 const EventDetail = () => {
-  // Router hooks
   const { slug } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   
-  // Fetch event details first
-  const { data: event, isLoading: isLoadingEvent, error: eventError } = useQuery({
-    queryKey: ['event', slug],
-    queryFn: () => fetchEvent(slug),
-    retry: false,
-    onSuccess: (data) => {
-      if (data.requires_pin && !data.is_verified) {
-        setRequiresPin(true);
-        setShowPinModal(true);
-      }
-    }
-  });
-  
   // State management
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorState, setErrorState] = useState(null);
+  const [requiresPin, setRequiresPin] = useState(false);
+  const [isVerificationChecked, setIsVerificationChecked] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
   const [selectedImages, setSelectedImages] = useState(new Set());
   const [images, setImages] = useState([]);
   const [page, setPage] = useState(1);
@@ -106,12 +127,45 @@ const EventDetail = () => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [galleryGroups, setGalleryGroups] = useState({});
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showPinModal, setShowPinModal] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [requiresPin, setRequiresPin] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorState, setErrorState] = useState(null);
   const [currentSlides, setCurrentSlides] = useState({});
+  
+  // Check if we need to show the PIN modal on initial load
+  useEffect(() => {
+    if (!slug) return;
+    
+    const isVerified = sessionStorage.getItem(`event_${slug}_verified`) === 'true' || 
+                     localStorage.getItem(`event_${slug}_verified`) === 'true';
+    
+    if (isVerified) {
+      setRequiresPin(false);
+      setIsVerificationChecked(true);
+    } else {
+      setRequiresPin(true);
+      setShowPinModal(true);
+      setIsVerificationChecked(true);
+    }
+  }, [slug]);
+
+  // Fetch event details when verification is checked and not requiring PIN
+  const { 
+    data: event, 
+    isLoading: isLoadingEvent, 
+    error: eventError, 
+    refetch 
+  } = useQuery({
+    queryKey: ['event', slug],
+    queryFn: () => fetchEvent(slug),
+    enabled: !!slug && isVerificationChecked && !requiresPin,
+    retry: false,
+    onError: (error) => {
+      setErrorState(error);
+    },
+    onSettled: () => {
+      setIsLoading(false);
+    }
+  });
+
+  // State management for images and gallery
   
   // Refs
   const lightboxRef = useRef();
@@ -180,13 +234,16 @@ const EventDetail = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [lightboxOpen, navigateImage, closeLightbox, toggleFullscreen]);
   
-  // Update loading and error states when query state changes
+  // Update error state when query state changes
   useEffect(() => {
-    setIsLoading(isLoadingEvent);
     if (eventError) {
       setErrorState(eventError);
+      // If we get a 404, it might be a private event that needs a PIN
+      if (eventError.response?.status === 404) {
+        setShowPinModal(true);
+      }
     }
-  }, [isLoadingEvent, eventError]);
+  }, [eventError]);
   
   // Lightbox component
   const renderLightbox = useCallback(() => {
@@ -329,8 +386,10 @@ const EventDetail = () => {
   
   // Event handlers
   const handlePinSuccess = useCallback(() => {
-    queryClient.invalidateQueries(['event', slug]);
+    setShowPinModal(false);
     setRequiresPin(false);
+    // Clear the query cache and refetch the event data
+    queryClient.invalidateQueries(['event', slug]);
   }, [queryClient, slug]);
   
   const openLightbox = useCallback((index) => {
@@ -394,53 +453,13 @@ const EventDetail = () => {
   
   // Update loading and error states when query state changes
   useEffect(() => {
-    setIsLoading(isLoadingEvent);
     if (eventError) {
       setErrorState(eventError);
     }
-  }, [isLoadingEvent, eventError]);
+  }, [eventError]);
 
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <FaSpinner className="animate-spin text-4xl text-blue-500 mx-auto mb-4" />
-          <p className="text-gray-600">Loading event...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state
-  if (errorState) {
-    return (
-      <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center text-gray-600 hover:text-gray-900 mb-6 transition-colors"
-          >
-            <FaArrowLeft className="mr-2" /> Back to Events
-          </button>
-          
-          <div className="bg-white rounded-lg shadow-lg p-6 text-center">
-            <h2 className="text-2xl font-bold text-red-500 mb-4">Error Loading Event</h2>
-            <p className="text-gray-600 mb-6">We couldn't load the event. Please try again later.</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Show lock icon and message for private events that require PIN
-  if (requiresPin && !event?.is_verified) {
+  // Show PIN modal if required
+  if (requiresPin) {
     return (
       <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
@@ -453,9 +472,9 @@ const EventDetail = () => {
           
           <div className="bg-white rounded-lg shadow-lg p-6 text-center">
             <div className="mb-4">
-              <FaLock size={48} className="text-muted mb-3" />
-              <h3>Private Event</h3>
-              <p className="text-muted">This is a private event. Please enter the PIN to continue.</p>
+              <FaLock size={48} className="text-yellow-500 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">Private Event</h2>
+              <p className="text-gray-600 mb-6">This is a private event. Please enter the PIN to continue.</p>
               <button 
                 className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
                 onClick={() => setShowPinModal(true)}
@@ -481,7 +500,7 @@ const EventDetail = () => {
   }
 
   // Loading state
-  if (isLoadingEvent) {
+  if (isLoadingEvent || isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
@@ -501,18 +520,53 @@ const EventDetail = () => {
     );
   }
 
-  if (eventError) {
+  // Error state
+  if (eventError || errorState) {
+    const error = eventError || errorState;
+    const isPrivateEventError = error?.response?.status === 404 || 
+                              error?.message?.includes('private') ||
+                              requiresPin;
+
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-red-500 mb-4">Error Loading Event</h2>
-          <p className="text-gray-600 mb-6">We couldn't load the event. Please try again later.</p>
+      <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
           <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+            onClick={() => navigate(-1)}
+            className="flex items-center text-gray-600 hover:text-gray-900 mb-6 transition-colors"
           >
-            Retry
+            <FaArrowLeft className="mr-2" /> Back to Events
           </button>
+          
+          <div className="bg-white rounded-lg shadow-lg p-6 text-center">
+            {isPrivateEventError ? (
+              <>
+                <div className="mb-4">
+                  <FaLock className="text-4xl text-yellow-500 mx-auto mb-4" />
+                  <h2 className="text-2xl font-bold text-gray-800 mb-2">Private Event</h2>
+                  <p className="text-gray-600 mb-6">This is a private event. Please enter the PIN to continue.</p>
+                  <button
+                    onClick={() => setShowPinModal(true)}
+                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                  >
+                    {isVerifying ? 'Verifying...' : 'Enter PIN'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="text-2xl font-bold text-red-500 mb-4">Error Loading Event</h2>
+                <p className="text-gray-600 mb-6">
+                  {error?.message || 'We couldn\'t load the event. Please try again later.'}
+                </p>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                >
+                  Retry
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -807,11 +861,11 @@ const EventDetail = () => {
       {renderLightbox()}
 
       {/* PIN Verification Modal */}
-      {showPinModal && event && (
+      {showPinModal && (
         <EventPinModal
           show={showPinModal}
           onHide={() => setShowPinModal(false)}
-          event={event}
+          event={event || { slug, name: 'This event' }}
           onSuccess={handlePinSuccess}
         />
       )}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal, Button, Form } from 'react-bootstrap';
 import axios from 'axios';
+import { API_ENDPOINTS } from '../config';
 
 const EventPinModal = ({ show, onHide, event, onSuccess }) => {
   const [pin, setPin] = useState('');
@@ -17,15 +18,47 @@ const EventPinModal = ({ show, onHide, event, onSuccess }) => {
     setIsLoading(true);
     setError('');
 
+    // Get CSRF token from cookies
+    const getCookie = (name) => {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === (name + '=')) {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+    };
+
+    const csrftoken = getCookie('csrftoken');
+
     try {
-      const response = await axios.post(`/api/events/${event.slug}/verify-pin/`, { pin });
+      const response = await axios({
+        method: 'post',
+        url: API_ENDPOINTS.VERIFY_EVENT_PIN(event.slug),
+        data: { pin },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrftoken,
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        withCredentials: true
+      });
+      
       if (response.data.success) {
+        // Store verification in session storage
+        sessionStorage.setItem(`event_${event.slug}_verified`, 'true');
         onSuccess();
         onHide();
       } else {
-        setError('Invalid PIN code. Please try again.');
+        setError(response.data.error || 'Invalid PIN code. Please try again.');
       }
     } catch (err) {
+      console.error('Error verifying PIN:', err);
       setError(err.response?.data?.error || 'An error occurred. Please try again.');
     } finally {
       setIsLoading(false);
