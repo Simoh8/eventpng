@@ -22,7 +22,8 @@ import {
   ShareIcon,
   DevicePhoneMobileIcon,
   SparklesIcon,
-  CheckCircleIcon
+  CheckCircleIcon,
+  UserCircleIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthContext';
 
@@ -78,59 +79,102 @@ const StatCard = ({ icon: Icon, title, value, color = 'blue', description = null
   );
 };
 
-// Recent gallery item component
+// Recent gallery item component with improved layout
 const RecentGalleryCard = ({ gallery }) => {
   const navigate = useNavigate();
+  
   const stats = [
-    { value: gallery.photo_count || 0, label: 'Photos' },
-    { value: gallery.gallery_count || 0, label: 'Galleries' },
-    { value: gallery.photographer_count || 0, label: 'Photographers' }
+    { 
+      value: gallery.photo_count || 0, 
+      label: 'Photos',
+      icon: PhotoIcon,
+      color: 'text-blue-600 bg-blue-50'
+    },
+    { 
+      value: gallery.gallery_count || 0, 
+      label: 'Galleries',
+      icon: RectangleGroupIcon,
+      color: 'text-purple-600 bg-purple-50'
+    },
+    { 
+      value: gallery.photographer_count || 0, 
+      label: 'Photographers',
+      icon: UserGroupIcon,
+      color: 'text-green-600 bg-green-50'
+    }
   ];
 
   const handleClick = () => {
-    // Navigate to gallery using slug if available, fallback to ID
     const gallerySlug = gallery.slug || gallery.id;
     navigate(`/gallery/${gallerySlug}`);
   };
 
+  // Format the date to be more readable
+  const formattedDate = gallery.created_at 
+    ? new Date(gallery.created_at).toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    : 'Date not available';
+
   return (
     <div 
-      className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow cursor-pointer"
+      className="group bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300 overflow-hidden cursor-pointer h-full flex flex-col"
       onClick={handleClick}
     >
-      <div className="flex items-start space-x-4">
-        <div className="flex-shrink-0">
-          {gallery.cover_image ? (
-            <img 
-              src={gallery.cover_image} 
-              alt={gallery.title}
-              className="h-20 w-20 rounded-md object-cover"
-            />
-          ) : (
-            <div className="h-20 w-20 rounded-md bg-gray-100 flex items-center justify-center text-gray-400">
-              <PhotoIcon className="h-8 w-8" />
-            </div>
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-900 truncate">{gallery.title}</p>
-          <p className="text-sm text-gray-500 truncate">
+      {/* Gallery Cover Image */}
+      <div className="h-40 bg-gray-100 relative overflow-hidden">
+        {gallery.cover_image ? (
+          <img 
+            src={gallery.cover_image} 
+            alt={gallery.title}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+            <PhotoIcon className="h-12 w-12 text-gray-400" />
+          </div>
+        )}
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
+          <h3 className="text-white font-semibold text-lg truncate">{gallery.title || 'Untitled Gallery'}</h3>
+          <p className="text-sm text-gray-200 truncate">
             {gallery.event?.title || 'No associated event'}
           </p>
-          
-          {/* Stats Row */}
-          <div className="mt-2 flex items-center space-x-4">
-            {stats.map((stat, idx) => (
-              <div key={idx} className="text-center">
-                <p className="text-xs font-medium text-gray-500">{stat.label}</p>
-                <p className="text-sm font-semibold text-gray-900">{stat.value}</p>
+        </div>
+      </div>
+      
+      {/* Gallery Details */}
+      <div className="p-4 flex-1 flex flex-col">
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          {stats.map((stat, idx) => (
+            <div 
+              key={idx} 
+              className={`p-2 rounded-lg text-center ${stat.color} transition-colors duration-200`}
+            >
+              <stat.icon className="h-5 w-5 mx-auto mb-1" />
+              <p className="text-xs font-medium">{stat.label}</p>
+              <p className="text-sm font-bold">{stat.value}</p>
+            </div>
+          ))}
+        </div>
+        
+        {/* Date and Author */}
+        <div className="mt-auto pt-3 border-t border-gray-100">
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <div className="flex items-center">
+              <ClockIcon className="h-3.5 w-3.5 mr-1" />
+              <span>{formattedDate}</span>
+            </div>
+            {gallery.photographer_name && (
+              <div className="flex items-center">
+                <UserCircleIcon className="h-3.5 w-3.5 mr-1" />
+                <span>{gallery.photographer_name}</span>
               </div>
-            ))}
-          </div>
-          
-          <div className="mt-2 flex items-center text-xs text-gray-500">
-            <ClockIcon className="h-3.5 w-3.5 mr-1" />
-            <span>{formatDate(gallery.created_at)}</span>
+            )}
           </div>
         </div>
       </div>
@@ -696,24 +740,39 @@ const HomePage = () => {
         </div>
       </section>
 
-      {/* Recent Galleries */}
+      {/* Recent Galleries Section */}
       {stats.recentGalleries.length > 0 && (
-        <section className="py-12 bg-gray-50">
+        <section className="py-16 bg-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
+              <span className="inline-block px-3 py-1 text-sm font-semibold text-blue-700 bg-blue-100 rounded-full mb-4">
+                Latest Updates
+              </span>
               <h2 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">
                 Recent Galleries
               </h2>
               <p className="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
-                Check out the latest photo galleries from our events
+                Explore the latest photo galleries from our events
               </p>
             </div>
             
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
               {stats.recentGalleries.map((gallery) => (
                 <RecentGalleryCard key={gallery.id} gallery={gallery} />
               ))}
             </div>
+            
+            {stats.recentGalleries.length >= 3 && (
+              <div className="mt-12 text-center">
+                <Link 
+                  to="/galleries" 
+                  className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+                >
+                  View All Galleries
+                  <ArrowRightIcon className="ml-2 -mr-1 h-5 w-5" />
+                </Link>
+              </div>
+            )}
           </div>
         </section>
       )}

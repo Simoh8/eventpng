@@ -67,22 +67,20 @@ const DashboardRedirect = () => {
 // Protected Route Component
 const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
   console.log('1. [ProtectedRoute] Rendering with requiredRole:', requiredRole, 'allowedRoles:', allowedRoles);
-  
+
   const { isAuthenticated, user, isLoading } = useAuth();
   const location = useLocation();
   const [authChecked, setAuthChecked] = useState(false);
   const token = localStorage.getItem('access');
-  
+
   console.log('2. [ProtectedRoute] Auth state - isAuthenticated:', isAuthenticated, 'isLoading:', isLoading, 'hasUser:', !!user, 'hasToken:', !!token);
-  
+
   // Handle initial authentication check
   useEffect(() => {
     if (!isLoading) {
-      // Add a small delay to ensure auth state is properly updated
       const timer = setTimeout(() => {
         setAuthChecked(true);
       }, 100);
-      
       return () => clearTimeout(timer);
     }
   }, [isLoading]);
@@ -96,27 +94,24 @@ const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
       </div>
     );
   }
-  
-  // If no required role and no allowed roles, allow access (public route)
+
+  // If no required role and no allowed roles → public route
   if (!requiredRole && (!allowedRoles || allowedRoles.length === 0)) {
     console.log('4. [ProtectedRoute] No role requirements, allowing access');
     return children;
   }
-  
-  // Check authentication state based on both context and token
+
+  // Check authentication only if route actually requires it
   const isUserAuthenticated = isAuthenticated || (token && token !== 'undefined');
-  
-  // If not authenticated, redirect to login
+
   if (!isUserAuthenticated) {
     console.log('5. [ProtectedRoute] Not authenticated, redirecting to login');
-    console.log('6. [ProtectedRoute] Saving current location for redirect:', location.pathname);
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
-  
+
   // If we have a token but not authenticated, try to refresh
   if (token && !isAuthenticated) {
     console.log('6. [ProtectedRoute] Token exists but not authenticated, forcing refresh');
-    // Force a hard refresh to reset the app state
     window.location.href = window.location.href;
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -124,57 +119,40 @@ const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
       </div>
     );
   }
-  
+
   const userData = user?.data || user || {};
   const isPhotographer = userData?.is_photographer === true;
   const isStaff = userData?.is_staff || userData?.is_superuser;
-  
-  console.log('3. [ProtectedRoute] User data:', {
-    userData,
-    isPhotographer,
-    isStaff,
-    requiredRole,
-    allowedRoles
-  });
-  
-  // Check if user has the required role
+
+  // Check required role
   if (requiredRole) {
-    const hasRequiredRole = 
+    const hasRequiredRole =
       (requiredRole === 'staff' && isStaff) ||
       (requiredRole === 'photographer' && isPhotographer);
-    
-    console.log('4. [ProtectedRoute] Checking required role:', {
-      requiredRole,
-      hasRequiredRole
-    });
-    
+
     if (!hasRequiredRole) {
-      console.log('5. [ProtectedRoute] Missing required role, redirecting to home');
+      console.log('7. [ProtectedRoute] Missing required role, redirecting to home');
       return <Navigate to="/" replace />;
     }
   }
-  
-  // Check if route is allowed for the user's role
+
+  // Check allowed roles
   if (allowedRoles.length > 0) {
     const userRole = isStaff ? 'staff' : isPhotographer ? 'photographer' : 'customer';
     const isAllowed = allowedRoles.includes(userRole);
-    
-    console.log('5. [ProtectedRoute] Checking allowed roles:', {
-      userRole,
-      allowedRoles,
-      isAllowed
-    });
-    
+
     if (!isAllowed) {
-      // Redirect to appropriate dashboard based on role
-      const redirectPath = isPhotographer ? '/photographer-dashboard' : isStaff ? '/admin/events' : '/my-gallery';
-      console.log('6. [ProtectedRoute] Role not allowed, redirecting to:', redirectPath);
+      const redirectPath = isPhotographer
+        ? '/photographer-dashboard'
+        : isStaff
+        ? '/admin/events'
+        : '/my-gallery';
+      console.log('8. [ProtectedRoute] Role not allowed, redirecting to:', redirectPath);
       return <Navigate to={redirectPath} replace />;
     }
   }
-  
-  console.log('6. [ProtectedRoute] Access granted, rendering children');
-  
+
+  console.log('9. [ProtectedRoute] Access granted, rendering children');
   return children;
 };
 
