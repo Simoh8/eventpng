@@ -26,18 +26,19 @@ export const AuthProvider = ({ children }) => {
   const [state, setState] = useState(() => {
     // Initialize state from localStorage if available
     const storedUser = authService.getStoredUser();
-    const isAuthenticated = authService.isAuthenticated();
+    const token = localStorage.getItem('access');
+    const isAuthenticated = token && storedUser; // Only consider authenticated if both token and user exist
     
     console.log('1. [AuthProvider] Initializing state', {
       hasStoredUser: !!storedUser,
-      isAuthenticated,
-      hasToken: !!localStorage.getItem('access')
+      hasToken: !!token,
+      isAuthenticated
     });
     
     return {
       user: storedUser,
       isAuthenticated,
-      isLoading: isAuthenticated, // Only show loading if we think we're authenticated
+      isLoading: false, // Don't start in loading state
       error: null
     };
   });
@@ -100,6 +101,14 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem('user', JSON.stringify(user));
         console.log('5. [useQuery] Updated user data in localStorage');
         
+        // Update the auth state with the new user data
+        setState(prev => ({
+          ...prev,
+          user,
+          isAuthenticated: true,
+          isLoading: false
+        }));
+        
         return user;
       } catch (error) {
         console.error('6. [useQuery] Error fetching user data:', error);
@@ -113,32 +122,49 @@ export const AuthProvider = ({ children }) => {
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: 1,
     refetchOnWindowFocus: false,
-    // Don't retry on 401 errors
     retry: (failureCount, error) => {
       if (error?.response?.status === 401) return false;
       return failureCount < 2; // Retry other errors up to 2 times
     },
     onSuccess: (data) => {
-      console.log('8. [useQuery onSuccess] Updating auth state with user data:', !!data);
-      setState({
+      if (!data) {
+        console.log('8. [useQuery onSuccess] No user data, logging out');
+        authService.logout();
+        setState(prev => ({
+          ...prev,
+          user: null,
+          isAuthenticated: false,
+          isLoading: false,
+          error: 'Session expired. Please log in again.'
+        }));
+        return;
+      }
+      
+      console.log('8. [useQuery onSuccess] User data loaded successfully');
+      setState(prev => ({
+        ...prev,
         user: data,
-        isAuthenticated: !!data,
+        isAuthenticated: true,
         isLoading: false,
         error: null
-      });
+      }));
     },
     onError: (error) => {
       console.error('9. [useQuery onError] Error in user query:', error);
-      // Only update state if we're not already in an error state
+      
+      // Clear auth state on 401
+      if (error?.response?.status === 401) {
+        authService.logout();
+      }
+      
       setState(prev => ({
         ...prev,
         user: null,
         isAuthenticated: false,
         isLoading: false,
-        error: error.message
+        error: error.response?.data?.message || 'Failed to load user data. Please try again.'
       }));
     },
-    // Add onSettled to ensure loading state is always updated
     onSettled: () => {
       console.log('10. [useQuery onSettled] Query completed');
       setState(prev => ({

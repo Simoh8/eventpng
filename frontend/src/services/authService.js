@@ -66,8 +66,27 @@ const getStoredUser = () => {
 
 // Check if user is authenticated
 const isAuthenticated = () => {
-  const token = localStorage.getItem('access');
-  return token && isTokenValid(token);
+  try {
+    const token = localStorage.getItem('access');
+    if (!token) {
+      console.log('[authService] No access token found');
+      return false;
+    }
+    
+    // Check if token is valid
+    const isValid = isTokenValid(token);
+    console.log('[authService] Token validation result:', isValid);
+    
+    // Additional check for user data in localStorage
+    const user = JSON.parse(localStorage.getItem('user') || 'null');
+    const hasUserData = !!user && typeof user === 'object' && 'id' in user;
+    console.log('[authService] Has user data:', hasUserData);
+    
+    return isValid && hasUserData;
+  } catch (error) {
+    console.error('[authService] Error checking authentication:', error);
+    return false;
+  }
 };
 
 // Auth service methods

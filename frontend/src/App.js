@@ -62,33 +62,21 @@ const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
   
   const { isAuthenticated, user, isLoading } = useAuth();
   const location = useLocation();
-  const [initialLoad, setInitialLoad] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
+  const token = localStorage.getItem('access');
   
-  console.log('2. [ProtectedRoute] Auth state - isAuthenticated:', isAuthenticated, 'isLoading:', isLoading, 'hasUser:', !!user);
+  console.log('2. [ProtectedRoute] Auth state - isAuthenticated:', isAuthenticated, 'isLoading:', isLoading, 'hasUser:', !!user, 'hasToken:', !!token);
   
-  // Handle initial load and authentication state changes
+  // Handle initial authentication check
   useEffect(() => {
     if (!isLoading) {
-      setInitialLoad(false);
+      setAuthChecked(true);
     }
   }, [isLoading]);
-  
-  // Show loading state while checking auth on initial load
-  if (isLoading && initialLoad) {
-    console.log('3. [ProtectedRoute] Initial loading state, showing spinner');
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
-      </div>
-    );
-  }
-  
-  // Check if we have a token but not authenticated (possible stale state)
-  const token = localStorage.getItem('access');
-  if (token && !isAuthenticated && !isLoading) {
-    console.log('4. [ProtectedRoute] Token exists but not authenticated, forcing refresh');
-    // Force a hard refresh to reset the app state
-    window.location.href = window.location.href;
+
+  // If still loading or checking auth, show loading state
+  if (isLoading || !authChecked) {
+    console.log('3. [ProtectedRoute] Checking authentication state...');
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
@@ -98,9 +86,21 @@ const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
   
   // If not authenticated and no token, redirect to login
   if (!isAuthenticated && !token) {
-    console.log('5. [ProtectedRoute] Not authenticated, redirecting to login');
-    console.log('6. [ProtectedRoute] Saving current location for redirect:', location.pathname);
+    console.log('4. [ProtectedRoute] Not authenticated, redirecting to login');
+    console.log('5. [ProtectedRoute] Saving current location for redirect:', location.pathname);
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+  
+  // If we have a token but not authenticated, try to refresh
+  if (token && !isAuthenticated) {
+    console.log('6. [ProtectedRoute] Token exists but not authenticated, forcing refresh');
+    // Force a hard refresh to reset the app state
+    window.location.href = window.location.href;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+      </div>
+    );
   }
   
   const userData = user?.data || user || {};
