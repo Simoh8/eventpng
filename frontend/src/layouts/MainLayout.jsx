@@ -11,6 +11,7 @@ import {
 import UserMenu from '../components/UserMenu';
 import { useAuth } from '../context/AuthContext';
 import BaseLayout from './BaseLayout';
+import Footer from '../components/Footer';
 
 export default function MainLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -102,7 +103,7 @@ export default function MainLayout() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
       <header className="bg-white shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -289,11 +290,14 @@ export default function MainLayout() {
       </Transition.Root>
 
       {/* Main content */}
-      <main className="py-10">
+      <main className="flex-grow py-10">
         <BaseLayout>
           <Outlet />
         </BaseLayout>
       </main>
+
+      {/* Footer */}
+      <Footer />
     </div>
   );
 }

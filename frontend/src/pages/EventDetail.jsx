@@ -14,7 +14,10 @@ import {
   FaLock,
   FaImages,
   FaCalendarAlt,
-  FaMapMarkerAlt
+  FaMapMarkerAlt,
+  FaHeart,
+  FaShare,
+  FaInfoCircle
 } from 'react-icons/fa';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
 import 'react-lazy-load-image-component/src/effects/opacity.css';
@@ -121,13 +124,10 @@ const fetchEvent = async (slug) => {
     // Check cache first
     const cachedEvent = getCachedEvent(slug);
     if (cachedEvent) {
-      console.log('Returning cached event:', slug);
       return cachedEvent;
     }
 
-    // First try to get the event by slug with credentials
     try {
-      // Check if we have a verified session for this event
       const isVerified = sessionStorage.getItem(`event_${slug}_verified`) === 'true';
       
       const eventDetailResponse = await makeRequest(() => 
@@ -328,7 +328,7 @@ const EventDetail = () => {
     return (
       <div 
         ref={lightboxRef}
-        className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4"
+        className="fixed inset-0 bg-black bg-opacity-95 z-50 flex items-center justify-center p-4"
         onClick={closeLightbox}
       >
         <button 
@@ -336,7 +336,7 @@ const EventDetail = () => {
             e.stopPropagation();
             closeLightbox();
           }}
-          className="absolute top-4 right-4 text-white text-2xl hover:text-gray-300 transition-colors"
+          className="absolute top-6 right-6 text-white text-2xl hover:text-gray-300 transition-colors z-10 bg-black/50 rounded-full p-2"
           aria-label="Close lightbox"
         >
           <FaTimes />
@@ -347,7 +347,7 @@ const EventDetail = () => {
               e.stopPropagation();
               navigateImage(-1);
             }}
-            className="absolute left-4 p-2 text-white text-2xl hover:bg-black/30 rounded-full transition-colors"
+            className="absolute left-6 p-3 text-white text-2xl hover:bg-black/30 rounded-full transition-all z-10 bg-black/50 backdrop-blur-sm"
             aria-label="Previous image"
           >
             <FaChevronLeft />
@@ -357,11 +357,11 @@ const EventDetail = () => {
               <LazyLoadImage 
                 src={images[currentImageIndex]?.url || ''} 
                 alt={`Event image ${currentImageIndex + 1}`}
-                className="max-h-[90vh] max-w-full object-contain"
+                className="max-h-[90vh] max-w-full object-contain rounded-lg shadow-xl"
                 onClick={(e) => e.stopPropagation()}
                 effect="opacity"
               />
-              <div className="text-white text-center mt-2">
+              <div className="text-white text-center mt-4 text-sm bg-black/50 backdrop-blur-sm rounded-full px-4 py-2 inline-block">
                 {currentImageIndex + 1} / {images.length}
               </div>
             </div>
@@ -371,7 +371,7 @@ const EventDetail = () => {
               e.stopPropagation();
               navigateImage(1);
             }}
-            className="absolute right-4 p-2 text-white text-2xl hover:bg-black/30 rounded-full transition-colors"
+            className="absolute right-6 p-3 text-white text-2xl hover:bg-black/30 rounded-full transition-all z-10 bg-black/50 backdrop-blur-sm"
             aria-label="Next image"
           >
             <FaChevronRight />
@@ -381,7 +381,7 @@ const EventDetail = () => {
               e.stopPropagation();
               toggleFullscreen();
             }}
-            className="absolute bottom-4 right-4 p-2 text-white text-xl hover:bg-black/30 rounded-full transition-colors"
+            className="absolute bottom-6 right-6 p-3 text-white text-xl hover:bg-black/30 rounded-full transition-all z-10 bg-black/50 backdrop-blur-sm"
             aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
           >
             {isFullscreen ? <FaCompress /> : <FaExpand />}
@@ -450,7 +450,7 @@ const EventDetail = () => {
         
         return newGroups;
       });
-    }, 3000); // Change image every 3 seconds
+    }, 5000); // Change image every 5 seconds
     
     return () => clearInterval(interval);
   }, [galleryGroups]);
@@ -465,6 +465,7 @@ const EventDetail = () => {
   const openLightbox = useCallback((index) => {
     setCurrentImageIndex(index);
     setLightboxOpen(true);
+    document.body.style.overflow = 'hidden';
   }, []);
   
   const handleGalleryClick = useCallback((gallery) => {
@@ -531,25 +532,25 @@ const EventDetail = () => {
   // Loading state
   if (isLoadingEvent || isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center text-gray-600 hover:text-gray-900 mb-6 transition-colors"
+            className="flex items-center text-blue-600 hover:text-blue-800 mb-6 transition-colors font-medium"
           >
             <FaArrowLeft className="mr-2" /> Back to Events
           </button>
           
-          <div className="flex items-center justify-center py-12">
-            <FaSpinner className="animate-spin text-blue-500 mr-3" />
-            <span className="text-lg">Loading event...</span>
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <FaSpinner className="animate-spin text-blue-500 text-4xl mx-auto mb-4" />
+              <span className="text-lg text-gray-600">Loading event details...</span>
+            </div>
           </div>
         </div>
       </div>
     );
   }
-
-
 
   if (eventError || errorState) {
     const error = eventError || errorState;
@@ -561,26 +562,37 @@ const EventDetail = () => {
   
     // Otherwise, show the normal error card
     return (
-      <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center text-gray-600 hover:text-gray-900 mb-6 transition-colors"
+            className="flex items-center text-blue-600 hover:text-blue-800 mb-6 transition-colors font-medium"
           >
             <FaArrowLeft className="mr-2" /> Back to Events
           </button>
   
-          <div className="bg-white rounded-lg shadow-lg p-6 text-center">
-            <h2 className="text-2xl font-bold text-red-500 mb-4">Error Loading Event</h2>
+          <div className="bg-white rounded-xl shadow-lg p-8 text-center max-w-2xl mx-auto">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FaTimes className="text-red-500 text-2xl" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">Error Loading Event</h2>
             <p className="text-gray-600 mb-6">
               {error?.message || 'We couldn\'t load the event. Please try again later.'}
             </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-            >
-              Retry
-            </button>
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={() => navigate(-1)}
+                className="px-5 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Go Back
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-5 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -591,7 +603,7 @@ const EventDetail = () => {
   // Ensure we have event data before rendering
   if (!event) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
         <div className="text-center">
           <FaSpinner className="animate-spin text-4xl text-blue-500 mx-auto mb-4" />
           <p className="text-gray-600">Loading event data...</p>
@@ -611,7 +623,7 @@ const EventDetail = () => {
   
   if (isPageLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
         <div className="text-center">
           <FaSpinner className="animate-spin text-4xl text-blue-500 mx-auto mb-4" />
           <p className="text-gray-600">Loading event...</p>
@@ -621,40 +633,75 @@ const EventDetail = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
         {/* Back button and title */}
-        <div className="mb-6">
+        <div className="mb-8">
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+            className="flex items-center text-blue-600 hover:text-blue-800 transition-colors font-medium mb-4"
           >
             <FaArrowLeft className="mr-2" /> Back to Events
           </button>
-          <h1 className="mt-4 text-3xl font-bold text-gray-900">{event.title}</h1>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <h1 className="text-4xl font-bold text-gray-900">{event.title}</h1>
+            <div className="flex items-center gap-3">
+              <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                <FaHeart className="text-gray-500" />
+                <span>Save</span>
+              </button>
+              <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                <FaShare className="text-gray-500" />
+                <span>Share</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Event details */}
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
-          <div className="px-4 py-5 sm:px-6">
-            <h2 className="text-lg leading-6 font-medium text-gray-900">Event Information</h2>
-            <p className="mt-1 max-w-2xl text-sm text-gray-500">Details about the event</p>
+        <div className="bg-white rounded-xl shadow-md overflow-hidden mb-10 border border-gray-200">
+          <div className="px-6 py-5 bg-gradient-to-r from-blue-50 to-indigo-50">
+            <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+              <FaInfoCircle className="text-blue-500" />
+              Event Information
+            </h2>
           </div>
-          <div className="border-t border-gray-200 px-4 py-5 sm:p-0">
-            <dl className="sm:divide-y sm:divide-gray-200">
+          <div className="px-6 py-5">
+            <dl className="space-y-4">
 
               {event.date && (
-                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Date</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                    {new Date(event.date).toLocaleDateString()}
+                <div className="flex flex-col sm:flex-row">
+                  <dt className="text-sm font-medium text-gray-500 flex items-center gap-2 sm:w-1/4">
+                    <FaCalendarAlt className="text-blue-400" />
+                    Date
+                  </dt>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:w-3/4">
+                    {new Date(event.date).toLocaleDateString('en-US', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </dd>
+                </div>
+              )}
+              {event.location && (
+                <div className="flex flex-col sm:flex-row">
+                  <dt className="text-sm font-medium text-gray-500 flex items-center gap-2 sm:w-1/4">
+                    <FaMapMarkerAlt className="text-red-400" />
+                    Location
+                  </dt>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:w-3/4">
+                    {event.location}
                   </dd>
                 </div>
               )}
               {event.description && (
-                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Description</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                <div className="flex flex-col sm:flex-row">
+                  <dt className="text-sm font-medium text-gray-500 sm:w-1/4">
+                    Description
+                  </dt>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:w-3/4">
                     {event.description}
                   </dd>
                 </div>
@@ -664,22 +711,25 @@ const EventDetail = () => {
         </div>
 
         {/* Galleries */}
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 sm:px-6">
-            <h2 className="text-lg leading-6 font-medium text-gray-900">Galleries</h2>
-            <p className="mt-1 max-w-2xl text-sm text-gray-500">Browse photos from the event</p>
+        <div className="bg-white rounded-xl shadow-md overflow-hidden mb-10 border border-gray-200">
+          <div className="px-6 py-5 bg-gradient-to-r from-blue-50 to-indigo-50">
+            <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+              <FaImages className="text-purple-500" />
+              Galleries
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">Browse photos from the event</p>
           </div>
-          <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
+          <div className="p-6">
             {Object.keys(galleryGroups).length > 0 ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {Object.values(galleryGroups).map((gallery) => (
                   <div
                     key={gallery.id}
-                    className="group relative bg-gray-100 rounded-lg overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
+                    className="group relative bg-white rounded-xl overflow-hidden cursor-pointer shadow-md hover:shadow-xl transition-all duration-300 border border-gray-200"
                     onClick={() => handleGalleryClick(gallery)}
                   >
                     {gallery.photos && gallery.photos.length > 0 ? (
-                      <div className="relative w-full h-48 overflow-hidden bg-black">
+                      <div className="relative w-full h-56 overflow-hidden bg-gray-900">
                         <div 
                           className="flex transition-transform duration-500 ease-in-out h-full"
                           style={{ 
@@ -700,7 +750,7 @@ const EventDetail = () => {
                                   <LazyLoadImage
                                     src={imageUrl}
                                     alt={`Slide ${index + 1}`}
-                                    className="max-w-full max-h-full object-contain"
+                                    className="max-w-full max-h-full object-cover transition-transform duration-500 group-hover:scale-105"
                                     effect="opacity"
                                     onError={(e) => {
                                       console.error('Error loading image:', e.target.src);
@@ -737,7 +787,7 @@ const EventDetail = () => {
                                   }
                                 }));
                               }}
-                              className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-70 transition-all z-10"
+                              className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black/60 text-white p-2 rounded-full hover:bg-black/80 transition-all z-10 backdrop-blur-sm"
                               aria-label="Previous image"
                             >
                               <FaChevronLeft />
@@ -755,7 +805,7 @@ const EventDetail = () => {
                                   }
                                 }));
                               }}
-                              className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-70 transition-all z-10"
+                              className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black/60 text-white p-2 rounded-full hover:bg-black/80 transition-all z-10 backdrop-blur-sm"
                               aria-label="Next image"
                             >
                               <FaChevronRight />
@@ -779,7 +829,7 @@ const EventDetail = () => {
                                   className={`w-2 h-2 rounded-full transition-all ${
                                     index === gallery.currentIndex 
                                       ? 'bg-white w-4' 
-                                      : 'bg-white bg-opacity-50 w-2'
+                                      : 'bg-white/60 w-2'
                                   }`}
                                   aria-label={`Go to slide ${index + 1}`}
                                 />
@@ -787,23 +837,32 @@ const EventDetail = () => {
                             </div>
                           </>
                         )}
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300"></div>
                       </div>
                     ) : (
-                      <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
+                      <div className="w-full h-56 bg-gray-200 flex items-center justify-center">
                         <span className="text-gray-400">No photos available</span>
                       </div>
                     )}
                     <div className="p-4">
-                      <h3 className="text-lg font-medium text-gray-900">{gallery.title}</h3>
-                      <p className="mt-1 text-sm text-gray-500">
-                        {gallery.photos?.length || 0} photos
-                      </p>
+                      <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">{gallery.title}</h3>
+                      <div className="flex items-center justify-between mt-2">
+                        <p className="text-sm text-gray-500">
+                          {gallery.photos?.length || 0} photos
+                        </p>
+                        <span className="text-xs font-medium px-2 py-1 bg-blue-100 text-blue-800 rounded-full">
+                          View Gallery
+                        </span>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
               <div className="text-center py-12">
+                <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FaImages className="text-gray-400 text-xl" />
+                </div>
                 <p className="text-gray-500">No galleries found for this event.</p>
               </div>
             )}
@@ -813,49 +872,49 @@ const EventDetail = () => {
         {/* All Photos Section */}
         {images.length > 0 && (
           <div className="mt-12">
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
               <h2 className="text-2xl font-bold text-gray-900">All Photos</h2>
               {selectedImages.size > 0 && (
-                <div className="space-x-2">
+                <div className="flex gap-2">
                   <button 
                     onClick={() => setSelectedImages(new Set())}
-                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     Cancel
                   </button>
                   <button 
                     onClick={handleAddToCart}
-                    className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 flex items-center"
+                    className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2 shadow-md hover:shadow-lg"
                   >
-                    <FaShoppingCart className="mr-2" />
+                    <FaShoppingCart />
                     Add to Cart ({selectedImages.size})
                   </button>
                 </div>
               )}
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
               {images.map((photo, index) => (
                 <div 
                   key={photo.id || index}
-                  className={`aspect-square bg-gray-100 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow relative ${
-                    selectedImages.has(photo.id) ? 'ring-2 ring-blue-500' : ''
+                  className={`aspect-square bg-gray-100 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 relative group ${
+                    selectedImages.has(photo.id) ? 'ring-2 ring-blue-500 ring-offset-2' : ''
                   }`}
                   onClick={() => openLightbox(index)}
                 >
                   <img 
                     src={getProtectedImageUrl(photo.image, 300)} 
                     alt={`Photo ${index + 1}`}
-                    className="w-full h-full object-cover hover:opacity-90 transition-opacity cursor-pointer"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
                     onError={(e) => {
                       e.target.onerror = null;
                       e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Found';
                     }}
                   />
                   <div 
-                    className="absolute top-2 right-2 p-1 bg-white rounded-full shadow-md"
+                    className="absolute top-2 right-2 p-1 bg-white/80 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm"
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleImageSelection(photo.id);
+                      toggleImageSelection(e, photo.id);
                     }}
                   >
                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
@@ -866,6 +925,7 @@ const EventDetail = () => {
                       {selectedImages.has(photo.id) && <FaCheck className="text-white text-xs" />}
                     </div>
                   </div>
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300"></div>
                 </div>
               ))}
             </div>
