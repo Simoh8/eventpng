@@ -610,6 +610,7 @@ def public_event_detail_page(request, slug):
         raise Http404("Event not found")
 
 
+
 class PublicEventBySlugView(generics.RetrieveAPIView):
     """View for retrieving a single public event by its slug with galleries and photos."""
     serializer_class = serializers.PublicEventDetailSerializer
@@ -620,17 +621,6 @@ class PublicEventBySlugView(generics.RetrieveAPIView):
     def get_queryset(self):
         """Return only public events with their public galleries and photos."""
         slug = self.kwargs.get('slug')
-        print(f"\n=== Debug: Looking for event with slug: {slug} ===")
-        
-        # Log session data for debugging
-        print(f"Session data: {dict(self.request.session)}")
-        print(f"Verified events in session: {self.request.session.get('verified_events', [])}")
-        
-        # Check if any event exists with this slug at all
-        all_events = Event.objects.filter(slug=slug)
-        print(f"Total events with this slug: {all_events.count()}")
-        for event in all_events:
-            print(f"  - ID: {event.id}, Name: {event.name}, Privacy: {event.privacy}, PIN: {event.pin}")
         
         # Get the filtered queryset - ensure we're only getting the specific event
         queryset = Event.objects.filter(slug=slug).filter(
@@ -645,25 +635,11 @@ class PublicEventBySlugView(generics.RetrieveAPIView):
             'galleries__photos'
         )
         
-        # Log the final SQL query
-        print("\nFinal SQL Query:")
-        print(str(queryset.query))
-        print()
-        
-        # Log the results
-        results = list(queryset)
-        print(f"Found {len(results)} matching events")
-        for event in results:
-            print(f"  - ID: {event.id}, Name: {event.name}, Privacy: {event.privacy}")
-            print(f"    Galleries: {[g.id for g in event.galleries.all()]}")
-        
-        if not results:
-            print("\nPossible reasons for not finding the event:")
-            print("1. No event exists with this slug")
-            print("2. Event is private and requires PIN verification")
-            print("3. Event exists but has no public galleries")
+        if not queryset.exists():
+            raise Http404("Event not found")
         
         return queryset
+
 
 
 class PublicEventDetailView(generics.RetrieveAPIView):

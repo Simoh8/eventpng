@@ -2,7 +2,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { API_BASE_URL } from '../config';
+import API from '../config'; // default import
+
 import { makeRequest } from '../utils/apiUtils';
 import { API_ENDPOINTS } from '../config';
 import EventCard from '../components/events/EventCard';
@@ -221,11 +222,12 @@ const HomePage = () => {
     
     const csrftoken = getCookie('csrftoken');
     
+
     try {
-      const response = await makeRequest(() => 
+      const response = await makeRequest(() =>
         axios({
           method: 'post',
-          url: `/api/gallery/events/${currentEvent.slug || currentEvent.id}/verify-pin/`,
+          url: API.VERIFY_EVENT_PIN(currentEvent.slug),  // ✅ use the reusable constant
           withCredentials: true,
           headers: {
             'Content-Type': 'application/json',
@@ -235,23 +237,30 @@ const HomePage = () => {
           data: { pin }
         })
       );
-      
+    
       if (response.data.success) {
         // Store verification in session storage
-        sessionStorage.setItem(`event_${currentEvent.slug || currentEvent.id}_verified`, 'true');
+        sessionStorage.setItem(
+          `event_${currentEvent.slug || currentEvent.id}_verified`,
+          'true'
+        );
         navigate(`/events/${currentEvent.slug || currentEvent.id}`);
         setShowPinModal(false);
       } else {
         setPinError(response.data.error || 'Invalid PIN. Please try again.');
       }
     } catch (err) {
-      console.error('Error verifying PIN:', err);
-      const errorMessage = err.response?.data?.error || 
-                         (err.response?.status === 429 ? 'Too many attempts. Please wait a moment and try again.' : 
-                          err.response?.status === 403 ? 'Session expired. Please refresh the page and try again.' : 
-                          'Error verifying PIN. Please try again.');
+      const errorMessage =
+        err.response?.data?.error ||
+        (err.response?.status === 429
+          ? 'Too many attempts. Please wait a moment and try again.'
+          : err.response?.status === 403
+          ? 'Session expired. Please refresh the page and try again.'
+          : 'Error verifying PIN. Please try again.');
       setPinError(errorMessage);
     }
+    
+    
   };
 
   // Cache key for events data

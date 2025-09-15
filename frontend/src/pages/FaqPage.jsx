@@ -101,15 +101,6 @@ const FaqPage = () => {
           ))}
         </div>
 
-        <div className="mt-12 bg-primary-50 rounded-lg p-8 text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Still have questions?</h2>
-          <p className="text-gray-600 mb-6">
-            Can't find the answer you're looking for? Our team is happy to help!
-          </p>
-          <button className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
-            Contact Support
-          </button>
-        </div>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 // API Configuration
 const baseUrl = (process.env.REACT_APP_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 // Remove any trailing /api from the base URL to prevent double /api/api/
-export const API_BASE_URL = baseUrl.endsWith('/api') ? baseUrl : `${baseUrl}`;
+export const API_BASE_URL = baseUrl.endsWith('/api') ? baseUrl + '/' : baseUrl + '/';
 
 // API Endpoints
 export const API_ENDPOINTS = {
@@ -24,8 +24,8 @@ export const API_ENDPOINTS = {
   RECENT_GALLERIES: `${API_BASE_URL}/api/gallery/recent/`,
   
   // Event endpoints
-  // EVENT_DETAIL: (slug) => `${API_BASE_URL}gallery/public/events/slug/${slug}/`,
-  VERIFY_EVENT_PIN: (slug) => `${API_BASE_URL}gallery/events/${slug}/verify-pin/`,
+  EVENT_DETAIL: (slug) => `${API_BASE_URL}/api/gallery/public/events/slug/${slug}/`,
+  VERIFY_EVENT_PIN: (slug) => `${API_BASE_URL}api/gallery/events/${slug}/verify-pin/`,
   
   // Google OAuth
   GOOGLE_AUTH: `${API_BASE_URL}accounts/google/`,

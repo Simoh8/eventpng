@@ -87,18 +87,13 @@ api.interceptors.response.use(
         processQueue(refreshError, null);
         authService.logout();
         
-        // // Redirect to login if we're not already there
-        // if (!window.location.pathname.includes('/login')) {
-        //   window.location.href = '/login';
-        // }
-        
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
       }
     }
     
-    // For other errors, just reject
+      // For other errors, just reject
     return Promise.reject(error);
   }
 );
@@ -106,7 +101,6 @@ api.interceptors.response.use(
 // Check if token is valid
 const isTokenValid = (token) => {
   if (!token || typeof token !== 'string') {
-    console.log('[authService] No token or invalid token format');
     return false;
   }
   
@@ -114,7 +108,6 @@ const isTokenValid = (token) => {
     // Split the token into parts
     const parts = token.split('.');
     if (parts.length !== 3) {
-      console.error('[authService] Invalid token format');
       return false;
     }
     
@@ -126,16 +119,12 @@ const isTokenValid = (token) => {
     const isExpired = payload.exp < currentTime;
     
     if (isExpired) {
-      console.log('[authService] Token has expired');
       return false;
     }
-    
-    // Additional validations can be added here (e.g., check issuer, audience, etc.)
-    
+        
     return true;
     
   } catch (error) {
-    console.error('[authService] Error validating token:', error);
     return false;
   }
 };
@@ -145,7 +134,6 @@ const getStoredUser = () => {
   try {
     const userStr = localStorage.getItem('user');
     if (!userStr) {
-      console.log('[authService] No user data found in localStorage');
       return null;
     }
     
@@ -153,21 +141,13 @@ const getStoredUser = () => {
     
     // Basic validation of user object
     if (!user || typeof user !== 'object' || !user.id) {
-      console.error('[authService] Invalid user data in localStorage');
       localStorage.removeItem('user');
       return null;
     }
-    
-    console.log('[authService] Retrieved user from localStorage:', { 
-      id: user.id, 
-      email: user.email || 'no-email',
-      name: user.name || 'no-name'
-    });
-    
+        
     return user;
     
   } catch (error) {
-    console.error('[authService] Error parsing user data:', error);
     // Clean up corrupted user data
     localStorage.removeItem('user');
     return null;
@@ -183,15 +163,14 @@ const isAuthenticated = () => {
   const tokenValid = isTokenValid(token);
   const hasUser = !!user;
   
-  console.log('[authService] Authentication check:', {
-    hasToken: !!token,
-    tokenValid,
-    hasUser
-  });
+  // console.log('[authService] Authentication check:', {
+  //   hasToken: !!token,
+  //   tokenValid,
+  //   hasUser
+  // });
   
   // If token is invalid but we have a user, clean up
   if (!tokenValid && hasUser) {
-    console.log('[authService] Token invalid but user data exists, cleaning up...');
     localStorage.removeItem('user');
   }
   
@@ -226,13 +205,11 @@ const authService = {
       // Clear any existing auth data
       this.logout();
       
-      console.log('[authService] Attempting to login with credentials:', { email: credentials.email });
       const response = await api.post('/api/accounts/token/', {
         email: credentials.email,
         password: credentials.password
       });
       
-      console.log('[authService] Login response received');
       const { access, refresh, user } = response.data;
       
       if (access && user) {
@@ -247,7 +224,6 @@ const authService = {
       
       throw new Error('Invalid response from server');
     } catch (error) {
-      console.error('Login error:', error);
       throw error;
     }
   },
@@ -311,15 +287,11 @@ const authService = {
       const { access, refresh: newRefreshToken } = response.data;
       
       if (!access) {
-        console.error('[authService] No access token in refresh response');
         throw new Error('No access token in refresh response');
       }
       
-      console.log('[authService] New access token received');
-      
       // Verify the new token is valid before saving
       if (!isTokenValid(access)) {
-        console.error('[authService] New token is invalid');
         throw new Error('New token is invalid');
       }
       
@@ -333,7 +305,6 @@ const authService = {
       // Update auth header for future requests
       this.setAuthHeader(access);
       
-      console.log('[authService] Token refresh successful');
       return { 
         access, 
         refresh: newRefreshToken || refreshToken 
@@ -383,11 +354,9 @@ const authService = {
   // Set authentication header
   setAuthHeader: function(token) {
     if (token && isTokenValid(token)) {
-      console.log('[authService] Setting auth header with valid token');
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       localStorage.setItem('access', token); // Ensure token is saved
     } else {
-      console.log('[authService] Removing invalid or expired auth header');
       delete api.defaults.headers.common['Authorization'];
       localStorage.removeItem('access');
     }

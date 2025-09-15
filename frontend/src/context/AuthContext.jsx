@@ -40,16 +40,15 @@ export const AuthProvider = ({ children }) => {
     })();
     const isAuthenticated = isTokenValid && storedUser;
     
-    console.log('1. [AuthProvider] Initializing state', {
-      hasStoredUser: !!storedUser,
-      hasToken: !!token,
-      isTokenValid,
-      isAuthenticated
-    });
+    // console.log('1. [AuthProvider] Initializing state', {
+    //   hasStoredUser: !!storedUser,
+    //   hasToken: !!token,
+    //   isTokenValid,
+    //   isAuthenticated
+    // });
     
     // If token is invalid but exists, clear it
     if (token && !isTokenValid) {
-      console.log('2. [AuthProvider] Invalid token found, clearing auth data');
       authService.logout();
       return {
         user: null,
@@ -70,23 +69,21 @@ export const AuthProvider = ({ children }) => {
   // Effect to handle component unmount
   useEffect(() => {
     return () => {
-      console.log('[AuthProvider] Cleaning up...');
       // Any cleanup if needed
     };
   }, []);
 
-  // Debug log initial state
-  console.log('AuthProvider mounted', {
-    hasToken: !!localStorage.getItem('access'),
-    storedUser: authService.getStoredUser(),
-    isAuthenticated: authService.isAuthenticated()
-  });
+  // // Debug log initial state
+  // console.log('AuthProvider mounted', {
+  //   hasToken: !!localStorage.getItem('access'),
+  //   storedUser: authService.getStoredUser(),
+  //   isAuthenticated: authService.isAuthenticated()
+  // });
 
   // Fetch user data on mount and when authentication state changes
   const { data: userData, isLoading: isUserLoading, refetch: refetchUser } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
-      console.log('1. [useQuery] Starting authentication check...');
       
       // Check if we have an access token
       const token = localStorage.getItem('access');
@@ -94,9 +91,7 @@ export const AuthProvider = ({ children }) => {
       
       // If no token, clear any existing auth state
       if (!token) {
-        console.log('2. [useQuery] No access token found, not authenticated');
         if (storedUser) {
-          console.log('2.1. [useQuery] Found stale user data, clearing...');
           authService.logout();
         }
         
@@ -115,22 +110,17 @@ export const AuthProvider = ({ children }) => {
           const payload = JSON.parse(atob(token.split('.')[1]));
           return payload.exp * 1000 > Date.now();
         } catch (error) {
-          console.error('Error validating token:', error);
           return false;
         }
       })();
       
       if (!isTokenValid) {
-        console.log('2. [useQuery] Token is invalid or expired, attempting to refresh...');
-        
         try {
           // Attempt to refresh the token
           const refreshToken = localStorage.getItem('refresh');
           if (refreshToken) {
-            console.log('2.1. [useQuery] Attempting to refresh token...');
             const newTokens = await authService.refreshToken();
             if (newTokens && newTokens.access) {
-              console.log('2.2. [useQuery] Token refresh successful');
               // Set the new token and try to get the profile again
               localStorage.setItem('access', newTokens.access);
               if (newTokens.refresh) {
@@ -154,8 +144,6 @@ export const AuthProvider = ({ children }) => {
           console.error('2.4. [useQuery] Token refresh failed:', refreshError);
         }
         
-        // If we get here, refresh failed or wasn't possible
-        console.log('2.5. [useQuery] Token refresh failed or not possible, logging out');
         authService.logout();
         setState(prev => ({
           ...prev,
@@ -171,7 +159,6 @@ export const AuthProvider = ({ children }) => {
       
       // If we have a valid user in localStorage and token is valid, use it
       if (storedUser) {
-        console.log('3. [useQuery] Using stored user data');
         setState(prev => ({
           ...prev,
           user: storedUser,
@@ -179,11 +166,8 @@ export const AuthProvider = ({ children }) => {
           isLoading: false
         }));
         
-        // Fetch fresh user data in the background
-        console.log('3.1. [useQuery] Fetching fresh user data in background...');
         authService.getProfile().then(freshUser => {
           if (freshUser) {
-            console.log('3.2. [useQuery] Fresh user data received');
             setState(prev => ({
               ...prev,
               user: freshUser,
@@ -197,14 +181,10 @@ export const AuthProvider = ({ children }) => {
         return storedUser;
       }
       
-      // If we get here, we have a valid token but no user data
-      console.log('4. [useQuery] No stored user, fetching from API...');
       try {
         const user = await authService.getProfile();
-        console.log('5. [useQuery] Fetched user profile:', user ? 'User data received' : 'No user data');
         
         if (!user) {
-          console.log('6. [useQuery] No user data received, clearing auth');
           authService.logout();
           setState(prev => ({
             ...prev,
@@ -217,7 +197,6 @@ export const AuthProvider = ({ children }) => {
         
         // Update local storage with fresh user data
         localStorage.setItem('user', JSON.stringify(user));
-        console.log('5. [useQuery] Updated user data in localStorage');
         
         // Update the auth state with the new user data
         setState(prev => ({
@@ -246,7 +225,6 @@ export const AuthProvider = ({ children }) => {
     },
     onSuccess: (data) => {
       if (!data) {
-        console.log('8. [useQuery onSuccess] No user data, logging out');
         authService.logout();
         setState(prev => ({
           ...prev,
@@ -258,7 +236,6 @@ export const AuthProvider = ({ children }) => {
         return;
       }
       
-      console.log('8. [useQuery onSuccess] User data loaded successfully');
       setState(prev => ({
         ...prev,
         user: data,
@@ -284,7 +261,6 @@ export const AuthProvider = ({ children }) => {
       }));
     },
     onSettled: () => {
-      console.log('10. [useQuery onSettled] Query completed');
       setState(prev => ({
         ...prev,
         isLoading: false
@@ -319,7 +295,6 @@ export const AuthProvider = ({ children }) => {
     const targetPath = location.state?.from?.pathname || redirectPath;
     
     // Update state
-    console.log('3. [handleLoginSuccess] Updating auth state, redirecting to:', targetPath);
     setState(prev => ({
       ...prev,
       user: userData,
@@ -329,17 +304,12 @@ export const AuthProvider = ({ children }) => {
     }));
     
     // Update React Query cache
-    console.log('4. [handleLoginSuccess] Updating React Query cache');
     queryClient.setQueryData(['currentUser'], userData);
     
-    console.log('5. [handleLoginSuccess] Will redirect to:', targetPath);
-    
     // Force a re-render of protected routes
-    console.log('6. [handleLoginSuccess] Forcing re-render of protected routes');
     queryClient.invalidateQueries(['currentUser']);
     
     // Redirect
-    console.log('7. [handleLoginSuccess] Navigating to:', targetPath);
     navigate(targetPath, { 
       replace: true,
       state: { from: undefined } // Clear the from state to prevent loops

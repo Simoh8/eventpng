@@ -12,11 +12,16 @@ import {
   FaCompress, 
   FaSpinner, 
   FaLock,
+  FaImages,
+  FaCalendarAlt,
+  FaMapMarkerAlt
 } from 'react-icons/fa';
+import { LazyLoadImage } from 'react-lazy-load-image-component';
+import 'react-lazy-load-image-component/src/effects/opacity.css';
 import axios from 'axios';
 import { makeRequest } from '../utils/apiUtils';
 import { API_BASE_URL, API_ENDPOINTS } from '../config';
-import EventPinModal from '../components/EventPinModal';
+import NotFoundPage from './NotFoundPage';
 
 // Cache configuration
 const CACHE_CONFIG = {
@@ -210,10 +215,6 @@ const EventDetail = () => {
   // State management
   const [isLoading, setIsLoading] = useState(false);
   const [errorState, setErrorState] = useState(null);
-  const [requiresPin, setRequiresPin] = useState(false);
-  const [isVerificationChecked, setIsVerificationChecked] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [showPinModal, setShowPinModal] = useState(false);
   const [selectedImages, setSelectedImages] = useState(new Set());
   const [images, setImages] = useState([]);
   const [page, setPage] = useState(1);
@@ -223,24 +224,7 @@ const EventDetail = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [currentSlides, setCurrentSlides] = useState({});
   
-  // Check if we need to show the PIN modal on initial load
-  useEffect(() => {
-    if (!slug) return;
-    
-    const isVerified = sessionStorage.getItem(`event_${slug}_verified`) === 'true' || 
-                     localStorage.getItem(`event_${slug}_verified`) === 'true';
-    
-    if (isVerified) {
-      setRequiresPin(false);
-      setIsVerificationChecked(true);
-    } else {
-      setRequiresPin(true);
-      setShowPinModal(true);
-      setIsVerificationChecked(true);
-    }
-  }, [slug]);
-
-  // Fetch event details when verification is checked and not requiring PIN
+  // Fetch event details
   const { 
     data: event, 
     isLoading: isLoadingEvent, 
@@ -249,7 +233,7 @@ const EventDetail = () => {
   } = useQuery({
     queryKey: ['event', slug],
     queryFn: () => fetchEvent(slug),
-    enabled: !!slug && isVerificationChecked && !requiresPin,
+    enabled: !!slug,
     retry: false,
     staleTime: 30 * 60 * 1000, // 30 minutes - consider data fresh for this long
     cacheTime: 60 * 60 * 1000, // 1 hour - keep in cache for this long
@@ -263,8 +247,6 @@ const EventDetail = () => {
     }
   });
 
-  // State management for images and gallery
-  
   // Refs
   const lightboxRef = useRef();
   const observer = useRef();
@@ -336,10 +318,6 @@ const EventDetail = () => {
   useEffect(() => {
     if (eventError) {
       setErrorState(eventError);
-      // If we get a 404, it might be a private event that needs a PIN
-      if (eventError.response?.status === 404) {
-        setShowPinModal(true);
-      }
     }
   }, [eventError]);
   
@@ -376,11 +354,12 @@ const EventDetail = () => {
           </button>
           <div className="flex-1 flex items-center justify-center h-full">
             <div className="max-h-full max-w-full">
-              <img 
+              <LazyLoadImage 
                 src={images[currentImageIndex]?.url || ''} 
                 alt={`Event image ${currentImageIndex + 1}`}
                 className="max-h-[90vh] max-w-full object-contain"
                 onClick={(e) => e.stopPropagation()}
+                effect="opacity"
               />
               <div className="text-white text-center mt-2">
                 {currentImageIndex + 1} / {images.length}
@@ -483,15 +462,6 @@ const EventDetail = () => {
   }, [event?.id]);
   
   // Event handlers
-  const handlePinSuccess = useCallback(() => {
-    setShowPinModal(false);
-    setRequiresPin(false);
-    // Clear the cache for this event to force a fresh fetch
-    clearCachedEvent(slug);
-    // Clear the query cache and refetch the event data
-    queryClient.invalidateQueries(['event', slug]);
-  }, [queryClient, slug]);
-  
   const openLightbox = useCallback((index) => {
     setCurrentImageIndex(index);
     setLightboxOpen(true);
@@ -558,47 +528,6 @@ const EventDetail = () => {
     }
   }, [eventError]);
 
-  // Show PIN modal if required
-  if (requiresPin) {
-    return (
-      <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center text-gray-600 hover:text-gray-900 mb-6 transition-colors"
-          >
-            <FaArrowLeft className="mr-2" /> Back to Events
-          </button>
-          
-          <div className="bg-white rounded-lg shadow-lg p-6 text-center">
-            <div className="mb-4">
-              <FaLock size={48} className="text-yellow-500 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">Private Event</h2>
-              <p className="text-gray-600 mb-6">This is a private event. Please enter the PIN to continue.</p>
-              <button 
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-                onClick={() => setShowPinModal(true)}
-                disabled={isVerifying}
-              >
-                {isVerifying ? 'Verifying...' : 'Enter PIN'}
-              </button>
-            </div>
-          </div>
-        </div>
-        
-        {/* PIN Verification Modal */}
-        {event && (
-          <EventPinModal
-            show={showPinModal}
-            onHide={() => setShowPinModal(false)}
-            event={event}
-            onSuccess={handlePinSuccess}
-          />
-        )}
-      </div>
-    );
-  }
-
   // Loading state
   if (isLoadingEvent || isLoading) {
     return (
@@ -620,13 +549,17 @@ const EventDetail = () => {
     );
   }
 
-  // Error state
+
+
   if (eventError || errorState) {
     const error = eventError || errorState;
-    const isPrivateEventError = error?.response?.status === 404 || 
-                              error?.message?.includes('private') ||
-                              requiresPin;
-
+  
+    // If the error indicates "not found", render the NotFoundPage
+    if (error.message?.includes("Request failed ") || error.response?.status === 404) {
+      return <NotFoundPage />;
+    }
+  
+    // Otherwise, show the normal error card
     return (
       <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
@@ -636,41 +569,24 @@ const EventDetail = () => {
           >
             <FaArrowLeft className="mr-2" /> Back to Events
           </button>
-          
+  
           <div className="bg-white rounded-lg shadow-lg p-6 text-center">
-            {isPrivateEventError ? (
-              <>
-                <div className="mb-4">
-                  <FaLock className="text-4xl text-yellow-500 mx-auto mb-4" />
-                  <h2 className="text-2xl font-bold text-gray-800 mb-2">Private Event</h2>
-                  <p className="text-gray-600 mb-6">This is a private event. Please enter the PIN to continue.</p>
-                  <button
-                    onClick={() => setShowPinModal(true)}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-                  >
-                    {isVerifying ? 'Verifying...' : 'Enter PIN'}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <h2 className="text-2xl font-bold text-red-500 mb-4">Error Loading Event</h2>
-                <p className="text-gray-600 mb-6">
-                  {error?.message || 'We couldn\'t load the event. Please try again later.'}
-                </p>
-                <button
-                  onClick={() => window.location.reload()}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-                >
-                  Retry
-                </button>
-              </>
-            )}
+            <h2 className="text-2xl font-bold text-red-500 mb-4">Error Loading Event</h2>
+            <p className="text-gray-600 mb-6">
+              {error?.message || 'We couldn\'t load the event. Please try again later.'}
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+            >
+              Retry
+            </button>
           </div>
         </div>
       </div>
     );
   }
+  
 
   // Ensure we have event data before rendering
   if (!event) {
@@ -763,9 +679,9 @@ const EventDetail = () => {
                     onClick={() => handleGalleryClick(gallery)}
                   >
                     {gallery.photos && gallery.photos.length > 0 ? (
-                      <div className="relative w-full h-48 overflow-hidden">
+                      <div className="relative w-full h-48 overflow-hidden bg-black">
                         <div 
-                          className="flex transition-transform duration-500 ease-in-out"
+                          className="flex transition-transform duration-500 ease-in-out h-full"
                           style={{ 
                             width: `${gallery.photos.length * 100}%`,
                             transform: `translateX(-${(gallery.currentIndex || 0) * (100 / gallery.photos.length)}%)` 
@@ -777,23 +693,23 @@ const EventDetail = () => {
                             return (
                               <div 
                                 key={index} 
-                                className="w-full flex-shrink-0"
+                                className="w-full flex-shrink-0 flex items-center justify-center"
                                 style={{ width: `${100 / gallery.photos.length}%` }}
                               >
                                 {imageUrl ? (
-                                  <img
+                                  <LazyLoadImage
                                     src={imageUrl}
                                     alt={`Slide ${index + 1}`}
-                                    className="w-full h-48 object-cover"
+                                    className="max-w-full max-h-full object-contain"
+                                    effect="opacity"
                                     onError={(e) => {
                                       console.error('Error loading image:', e.target.src);
                                       e.target.onerror = null;
                                       e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Found';
                                     }}
-                                    // onLoad={() => console.log('Image loaded successfully:', imageUrl)}
                                   />
                                 ) : (
-                                  <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
+                                  <div className="w-full h-full bg-gray-800 flex items-center justify-center">
                                     <span className="text-gray-400">No image available</span>
                                     <div className="hidden">
                                       Photo data: {JSON.stringify(photo)}
@@ -959,16 +875,6 @@ const EventDetail = () => {
 
       {/* Lightbox */}
       {renderLightbox()}
-
-      {/* PIN Verification Modal */}
-      {showPinModal && (
-        <EventPinModal
-          show={showPinModal}
-          onHide={() => setShowPinModal(false)}
-          event={event || { slug, name: 'This event' }}
-          onSuccess={handlePinSuccess}
-        />
-      )}
     </div>
   );
 };
