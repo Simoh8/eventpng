@@ -175,7 +175,9 @@ class Gallery(models.Model):
     )
     is_public = models.BooleanField(
         default=True,
-        help_text="If True, gallery is visible to everyone. If False, only accessible via direct link."
+        help_text="If True, gallery is visible to everyone. If False, only accessible via direct link.",
+        null=False,
+        blank=True
     )
     is_active = models.BooleanField(
         default=True,

@@ -18,13 +18,13 @@ export const API_ENDPOINTS = {
   
   // Gallery endpoints
   EVENTS: `${API_BASE_URL}/api/gallery/events/`,
-  PUBLIC_EVENTS: `${API_BASE_URL}/api/gallery/public/events/`,
+  PUBLIC_EVENTS: `${API_BASE_URL}api/gallery/public/events/`,
   STATS: `${API_BASE_URL}/api/gallery/stats/`,
   GALLERY_STATS: `${API_BASE_URL}/api/gallery/stats/`,
-  RECENT_GALLERIES: `${API_BASE_URL}/api/gallery/recent/`,
+  RECENT_GALLERIES: `${API_BASE_URL}api/gallery/recent/`,
   
   // Event endpoints
-  EVENT_DETAIL: (slug) => `${API_BASE_URL}/api/gallery/public/events/slug/${slug}/`,
+  EVENT_DETAIL: (slug) => `${API_BASE_URL}api/gallery/public/events/slug/${slug}/`,
   VERIFY_EVENT_PIN: (slug) => `${API_BASE_URL}api/gallery/events/${slug}/verify-pin/`,
   
   // Google OAuth

@@ -1,5 +1,5 @@
 import { useLocation, Link, useNavigate } from 'react-router-dom';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import LoginForm from '../components/auth/LoginForm';
@@ -7,37 +7,39 @@ import LoginForm from '../components/auth/LoginForm';
 export default function LoginPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, isLoading } = useAuth();
+  const [isProcessing, setIsProcessing] = useState(false);
   
   // Get the intended destination or default to '/'
   const from = location.state?.from?.pathname || '/';
   
-  console.log('LoginPage mounted', {
-    isAuthenticated,
-    user: user ? 'User data exists' : 'No user data',
-    from,
-    locationState: location.state
-  });
-  
   // If user is already authenticated, redirect them
   useEffect(() => {
-    console.log('useEffect - isAuthenticated changed:', isAuthenticated, 'from:', from);
+    // Only proceed if auth check is complete and we're not already processing
+    if (isLoading || isProcessing) return;
+    
     const token = localStorage.getItem('access');
     const isUserAuthenticated = isAuthenticated || (token && token !== 'undefined');
     
     if (isUserAuthenticated) {
+      setIsProcessing(true);
       console.log('User is authenticated, redirecting to:', from);
+      
       // Use a small timeout to ensure the auth state is fully updated
       const timer = setTimeout(() => {
         navigate(from, { 
           replace: true,
           state: { from: undefined } // Clear the from state to prevent loops
         });
+        setIsProcessing(false);
       }, 100);
       
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(timer);
+        setIsProcessing(false);
+      };
     }
-  }, [isAuthenticated, from, navigate]);
+  }, [isAuthenticated, from, navigate, isLoading, isProcessing]);
   
   const handleSuccess = useCallback(() => {
     console.log('handleSuccess called, will redirect to:', from);
@@ -54,6 +56,15 @@ export default function LoginPage() {
       });
     }, 500);
   }, [from, navigate]);
+
+  // Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">

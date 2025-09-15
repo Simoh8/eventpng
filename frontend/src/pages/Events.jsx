@@ -64,7 +64,7 @@ const Events = () => {
         search: debouncedSearch || undefined,
         category: selectedCategory !== 'All' ? selectedCategory : undefined,
       };
-      const response = await api.get('/api/gallery/public/events/', { params, signal, timeout: 10000 });
+      const response = await api.get('api/gallery/public/events/', { params, signal, timeout: 10000 });
       return response.data;
     },
     staleTime: 2 * 60 * 1000,

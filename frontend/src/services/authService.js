@@ -1,3 +1,4 @@
+
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
 
@@ -46,57 +47,33 @@ api.interceptors.request.use(
 
 // Add a response interceptor to handle token refresh
 api.interceptors.response.use(
-  (response) => response,
+  response => response,
   async (error) => {
-    const originalRequest = error.config;
-    
-    // If the error is 401 and we haven't already tried to refresh the token
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      // If we're already refreshing the token, add this request to the queue
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        })
-          .then((token) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
-            return api(originalRequest);
-          })
-          .catch((err) => {
-            return Promise.reject(err);
-          });
-      }
+    if (error.response?.status === 401) {
+      const originalRequest = error.config;
 
-      // Mark that we're refreshing the token
+      // Prevent infinite loops
+      if (originalRequest._retry) {
+        return Promise.reject(error);
+      }
       originalRequest._retry = true;
-      isRefreshing = true;
 
       try {
-        // Try to refresh the token
-        const { access } = await authService.refreshToken();
-        
-        // Update the authorization header
-        originalRequest.headers.Authorization = `Bearer ${access}`;
-        
-        // Process any queued requests
-        processQueue(null, access);
-        
-        // Retry the original request
-        return api(originalRequest);
+        const refreshed = await authService.refreshToken();
+        if (refreshed?.access) {
+          localStorage.setItem('access', refreshed.access);
+          api.defaults.headers.common['Authorization'] = `Bearer ${refreshed.access}`;
+          return api(originalRequest); // retry the failed request
+        }
       } catch (refreshError) {
-        // If refresh fails, clear auth data and reject all queued requests
-        processQueue(refreshError, null);
+        console.error('[Axios] Token refresh failed:', refreshError);
         authService.logout();
-        
-        return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
       }
     }
-    
-      // For other errors, just reject
     return Promise.reject(error);
   }
 );
+
 
 // Check if token is valid
 const isTokenValid = (token) => {
