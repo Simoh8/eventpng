@@ -5,7 +5,7 @@ import axios from 'axios';
 import { API_BASE_URL } from '../config';
 import { makeRequest } from '../utils/apiUtils';
 import { API_ENDPOINTS } from '../config';
-import EventCard from '../components/EventCard';
+import EventCard from '../components/events/EventCard';
 import { 
   MagnifyingGlassIcon as SearchIcon,
   FunnelIcon as FilterIcon,
