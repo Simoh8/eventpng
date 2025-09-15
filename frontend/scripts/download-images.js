@@ -6,7 +6,6 @@ const path = require('path');
 const imagesDir = path.join(__dirname, '../src/assets/images/sports-events');
 if (!fs.existsSync(imagesDir)) {
   fs.mkdirSync(imagesDir, { recursive: true });
-  console.log('Created directory:', imagesDir);
 }
 
 // Image URLs to download (sample images from Unsplash)
@@ -48,12 +47,10 @@ const downloadImage = (url, filename) => {
       
       file.on('finish', () => {
         file.close();
-        console.log(`Downloaded ${filename}`);
         resolve();
       });
     }).on('error', (err) => {
       fs.unlink(filePath, () => {}); // Delete the file if there's an error
-      console.error(`Error downloading ${filename}:`, err.message);
       reject(err);
     });
   });
@@ -61,13 +58,10 @@ const downloadImage = (url, filename) => {
 
 // Download all images
 const downloadAllImages = async () => {
-  console.log('Starting image downloads...');
-  
   try {
     for (const image of images) {
       await downloadImage(image.url, image.filename);
     }
-    console.log('All images downloaded successfully!');
   } catch (error) {
     console.error('Error downloading images:', error);
   }

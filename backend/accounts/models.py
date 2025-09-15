@@ -1,6 +1,8 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from django.dispatch import receiver
+from django.db.models.signals import post_save
 
 class UserManager(BaseUserManager):
     """Custom user model manager where email is the unique identifier."""
@@ -63,3 +65,55 @@ class CustomUser(AbstractUser):
     class Meta:
         verbose_name = _('user')
         verbose_name_plural = _('users')
+
+
+class NotificationPreference(models.Model):
+    """Model to store user notification preferences."""
+    user = models.OneToOneField(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='notification_preferences'
+    )
+    
+    # Email notifications
+    email_notifications = models.BooleanField(
+        _('email notifications'),
+        default=True,
+        help_text=_('Enable all email notifications')
+    )
+    
+    # Specific notification types
+    new_gallery_emails = models.BooleanField(
+        _('new gallery notifications'),
+        default=True,
+        help_text=_('Receive emails when new galleries are added')
+    )
+    
+    event_updates = models.BooleanField(
+        _('event updates'),
+        default=True,
+        help_text=_('Receive emails about event updates')
+    )
+    
+    marketing_emails = models.BooleanField(
+        _('marketing emails'),
+        default=True,
+        help_text=_('Receive promotional emails and offers')
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"Notification preferences for {self.user.email}"
+    
+    class Meta:
+        verbose_name = _('notification preference')
+        verbose_name_plural = _('notification preferences')
+
+
+@receiver(post_save, sender=CustomUser)
+def create_user_notification_preferences(sender, instance, created, **kwargs):
+    """Create notification preferences when a new user is created."""
+    if created:
+        NotificationPreference.objects.create(user=instance)

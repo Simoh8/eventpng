@@ -11,8 +11,6 @@ import { getProtectedImageUrl } from '../utils/imageUtils';
 // Fetch events for the current photographer
 const fetchEvents = async () => {
   const token = localStorage.getItem('access');
-  console.log('Fetching events from:', `${API_BASE_URL}/api/gallery/events/`);
-  console.log('Using token:', token ? 'Token exists' : 'No token found');
   
   try {
     const response = await fetch(`${API_BASE_URL}/api/gallery/events/`, {
@@ -22,23 +20,18 @@ const fetchEvents = async () => {
       },
     });
     
-    console.log('Response status:', response.status);
-    
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Error response text:', errorText);
       let errorData;
       try {
         errorData = JSON.parse(errorText);
       } catch (e) {
         errorData = { detail: errorText };
       }
-      console.error('Failed to fetch events:', errorData);
       throw new Error(errorData.detail || 'Failed to fetch events');
     }
     
     const data = await response.json();
-    console.log('Events data received:', data);
     
     // Handle both paginated and non-paginated responses
     if (data && data.results && Array.isArray(data.results)) {
@@ -54,7 +47,7 @@ const fetchEvents = async () => {
 };
 
 // Function to upload gallery
-const createGallery = async ({ eventId, photos, title, description }) => {
+const createGallery = async ({ eventId, photos, title, description }, { onProgress }) => {
   const token = localStorage.getItem('access');
   if (!token) {
     throw new Error('No authentication token found. Please log in again.');
@@ -70,37 +63,84 @@ const createGallery = async ({ eventId, photos, title, description }) => {
     formData.append('photos', photo);
   });
 
-  console.log('Creating gallery with data:', {
-    eventId,
-    title,
-    photoCount: photos.length,
-  });
+  // Start processing simulation
+  let processingProgress = 0;
+  const processingInterval = setInterval(() => {
+    processingProgress += 5;
+    if (processingProgress <= 100) {
+      onProgress?.(processingProgress, 'processing');
+    } else {
+      clearInterval(processingInterval);
+    }
+  }, 500);
 
-  const response = await fetch(`${API_BASE_URL}/api/gallery/galleries/create/`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
-    body: formData,
-  });
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/gallery/galleries/create/`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: formData,
+    });
 
-  const responseData = await response.json().catch(() => ({}));
-  
-  if (!response.ok) {
-    console.error('Failed to create gallery:', {
-      status: response.status,
-      statusText: response.statusText,
-      response: responseData,
+    const responseData = await response.json().catch(() => ({}));
+    
+    if (!response.ok) {
+      console.error('Failed to create gallery:', {
+        status: response.status,
+        statusText: response.statusText,
+        response: responseData,
+      });
+      
+      throw new Error(
+        responseData.detail || 
+        responseData.message || 
+        `Failed to create gallery: ${response.status} ${response.statusText}`
+      );
+    }
+
+    // Ensure progress reaches 100% before completing
+    if (processingProgress < 100) {
+      onProgress?.(100, 'processing');
+      // Wait a bit to show the completion
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    return responseData;
+  } catch (error) {
+    clearInterval(processingInterval);
+    throw error;
+  }
+};
+
+// Check if there's an ongoing gallery creation request
+const checkOngoingRequest = async () => {
+  const token = localStorage.getItem('access');
+  if (!token) return false;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/gallery/galleries/ongoing/`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
     });
     
-    throw new Error(
-      responseData.detail || 
-      responseData.message || 
-      `Failed to create gallery: ${response.status} ${response.statusText}`
-    );
+    if (response.status === 404) {
+      // If the endpoint doesn't exist, we can't check for ongoing requests
+      return false;
+    }
+    
+    if (!response.ok) {
+      return false;
+    }
+    
+    const data = await response.json();
+    return data.hasOngoingRequest || false;
+  } catch (error) {
+    console.error('Error checking ongoing requests:', error);
+    return false;
   }
-
-  return responseData;
 };
 
 export default function CreateGallery() {
@@ -112,7 +152,20 @@ export default function CreateGallery() {
   const [photos, setPhotos] = useState([]);
   const [previews, setPreviews] = useState([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [hasOngoingRequest, setHasOngoingRequest] = useState(false);
   
+  // Check for ongoing requests on component mount
+  useEffect(() => {
+    const checkOngoing = async () => {
+      const ongoing = await checkOngoingRequest();
+      setHasOngoingRequest(ongoing);
+    };
+    
+    checkOngoing();
+  }, []);
+
   // Fetch events for the current photographer
   const { 
     data: events = [], 
@@ -126,7 +179,7 @@ export default function CreateGallery() {
     retry: 1,
     refetchOnWindowFocus: false,
     onError: (error) => {
-      console.error('Error fetching events:', error);
+      // console.error('Error fetching events:', error);
     },
     select: (data) => {
       const results = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
@@ -155,7 +208,7 @@ export default function CreateGallery() {
   // Log events for debugging
   useEffect(() => {
     if (events.length > 0) {
-      console.log('Fetched events:', events);
+      refetchEvents();
     }
   }, [events]);
 
@@ -172,8 +225,20 @@ export default function CreateGallery() {
 
   // Create gallery mutation
   const createGalleryMutation = useMutation({
-    mutationFn: createGallery,
+    mutationFn: ({ eventId, photos, title, description }) => 
+      createGallery(
+        { eventId, photos, title, description }, 
+        { 
+          onProgress: (progress, status) => {
+            setProcessingProgress(progress);
+            setIsProcessing(status === 'processing');
+          }
+        }
+      ),
     onSuccess: (data) => {
+      setProcessingProgress(0);
+      setIsProcessing(false);
+      setHasOngoingRequest(false);
       toast.success('Gallery created successfully!', {
         position: 'top-center',
         duration: 4000,
@@ -181,6 +246,9 @@ export default function CreateGallery() {
       navigate('/dashboard');
     },
     onError: (error) => {
+      setProcessingProgress(0);
+      setIsProcessing(false);
+      setHasOngoingRequest(false);
       toast.error(error.message || 'Failed to create gallery. Please try again.', {
         position: 'top-center',
         duration: 4000,
@@ -243,6 +311,13 @@ export default function CreateGallery() {
       return;
     }
     
+    if (hasOngoingRequest) {
+      toast.error('You already have an ongoing gallery creation request');
+      return;
+    }
+    
+    setHasOngoingRequest(true);
+    setIsProcessing(true);
     createGalleryMutation.mutate({
       eventId: selectedEvent,
       photos,
@@ -250,6 +325,9 @@ export default function CreateGallery() {
       description,
     });
   };
+
+  // Determine if the create button should be disabled
+  const isCreateDisabled = !selectedEvent || photos.length === 0 || hasOngoingRequest;
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
@@ -263,6 +341,44 @@ export default function CreateGallery() {
           </div>
           
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            {/* Processing Progress Bar */}
+            {isProcessing && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">Creating your gallery...</span>
+                  <span className="text-indigo-600 font-medium">{Math.round(processingProgress)}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div 
+                    className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" 
+                    style={{ width: `${processingProgress}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Your gallery is being processed. This may take a few minutes depending on the number of photos.
+                </p>
+              </div>
+            )}
+
+            {/* Ongoing Request Warning */}
+            {hasOngoingRequest && !isProcessing && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">Processing gallery in background...</span>
+                  <span className="text-indigo-600 font-medium">Processing</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div 
+                    className="bg-indigo-400 h-2.5 rounded-full animate-pulse" 
+                    style={{ width: '100%' }}
+                  ></div>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Your gallery is being processed in the background. Please wait until this completes before creating a new gallery.
+                </p>
+              </div>
+            )}
+
             {/* Event Selection */}
             <div>
               <div className="flex items-center justify-between">
@@ -273,7 +389,7 @@ export default function CreateGallery() {
                   type="button"
                   onClick={() => refetchEvents()}
                   className="text-xs text-indigo-600 hover:text-indigo-800 whitespace-nowrap ml-2"
-                  disabled={isLoadingEvents}
+                  disabled={isLoadingEvents || hasOngoingRequest}
                 >
                   {isLoadingEvents ? 'Refreshing...' : 'Refresh events'}
                 </button>
@@ -291,6 +407,7 @@ export default function CreateGallery() {
                       <button 
                         onClick={() => refetchEvents()} 
                         className="ml-2 text-indigo-600 hover:text-indigo-800"
+                        disabled={hasOngoingRequest}
                       >
                         Try again
                       </button>
@@ -311,7 +428,10 @@ export default function CreateGallery() {
                     >
                       {({ open }) => (
                         <>
-                          <Listbox.Button className="relative w-full cursor-default rounded-md border border-gray-300 bg-white py-2 pl-3 pr-10 text-left shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:text-sm">
+                          <Listbox.Button 
+                            className="relative w-full cursor-default rounded-md border border-gray-300 bg-white py-2 pl-3 pr-10 text-left shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:text-sm"
+                            disabled={hasOngoingRequest}
+                          >
                             <span className="block truncate">
                               {selectedEvent 
                                 ? events.find(e => e.id.toString() === selectedEvent)?.name || 'Select an event'
@@ -366,7 +486,6 @@ export default function CreateGallery() {
                     
                     {selectedEvent && (() => {
                       const selected = events.find(e => e.id.toString() === selectedEvent.toString());
-                      console.log('Selected event:', selected); // Debug log
                       return selected ? (
                         <div className="mt-2 p-2 bg-blue-50 rounded-md">
                           <p className="text-sm font-medium text-blue-800">
@@ -405,6 +524,7 @@ export default function CreateGallery() {
                   onChange={(e) => setTitle(e.target.value)}
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                   placeholder="E.g., Summer Wedding 2023"
+                  disabled={hasOngoingRequest}
                 />
               </div>
             </div>
@@ -423,6 +543,7 @@ export default function CreateGallery() {
                   onChange={(e) => setDescription(e.target.value)}
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                   placeholder="Add a brief description of this gallery..."
+                  disabled={hasOngoingRequest}
                 />
               </div>
             </div>
@@ -432,13 +553,17 @@ export default function CreateGallery() {
               <label className="block text-sm font-medium text-gray-700">
                 Photos <span className="text-red-500">*</span>
               </label>
-              <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
+              <div className={`mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md ${
+                hasOngoingRequest ? 'opacity-50' : ''
+              }`}>
                 <div className="space-y-1 text-center">
                   <PhotoIcon className="mx-auto h-12 w-12 text-gray-400" />
                   <div className="flex text-sm text-gray-600">
                     <label
                       htmlFor="file-upload"
-                      className="relative cursor-pointer bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"
+                      className={`relative cursor-pointer bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500 ${
+                        hasOngoingRequest ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
                     >
                       <span>Upload files</span>
                       <input
@@ -449,6 +574,7 @@ export default function CreateGallery() {
                         multiple
                         accept="image/*"
                         onChange={handleFileChange}
+                        disabled={hasOngoingRequest}
                       />
                     </label>
                     <p className="pl-1">or drag and drop</p>
@@ -480,6 +606,7 @@ export default function CreateGallery() {
                           type="button"
                           onClick={() => handleRemoveFile(index)}
                           className="font-medium text-red-600 hover:text-red-500"
+                          disabled={hasOngoingRequest}
                         >
                           <XMarkIcon className="h-5 w-5" aria-hidden="true" />
                         </button>
@@ -497,14 +624,15 @@ export default function CreateGallery() {
                   type="button"
                   onClick={() => navigate(-1)}
                   className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  disabled={createGalleryMutation.isLoading}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={!selectedEvent || photos.length === 0 || createGalleryMutation.isLoading}
+                  disabled={isCreateDisabled || createGalleryMutation.isLoading}
                   className={`ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white ${
-                    !selectedEvent || photos.length === 0 || createGalleryMutation.isLoading
+                    isCreateDisabled || createGalleryMutation.isLoading
                       ? 'bg-indigo-300 cursor-not-allowed'
                       : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
                   }`}

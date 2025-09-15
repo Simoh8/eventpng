@@ -374,19 +374,19 @@ class GoogleLogin(APIView):
     throttle_scope = 'google_auth'
     
     def post(self, request, *args, **kwargs):
-        id_token = request.data.get('id_token')
+        credential = request.data.get('credential')
         access_token = request.data.get('access_token')
         
         # Log the login attempt
         logger.info("Google OAuth login attempt")
         
-        if not id_token and not access_token:
-            logger.warning("Google OAuth: Missing both ID token and access token")
+        if not credential and not access_token:
+            logger.warning("Google OAuth: Missing both credential and access token")
             return Response(
                 {
                     'status': 'error',
                     'code': 'missing_token',
-                    'message': 'ID token or access token is required'
+                    'message': 'Credential or access token is required'
                 }, 
                 status=status.HTTP_400_BAD_REQUEST
             )
@@ -394,12 +394,12 @@ class GoogleLogin(APIView):
         try:
             user_info = None
             
-            # Try to verify the ID token first
-            if id_token:
-                logger.debug("Attempting to verify Google ID token")
-                user_info = self.verify_google_token(id_token)
+            # Try to verify the credential first
+            if credential:
+                logger.debug("Attempting to verify Google ID token from credential")
+                user_info = self.verify_google_token(credential)
             
-            # Fall back to access token if ID token verification fails or not provided
+            # Fall back to access token if credential verification fails or not provided
             if not user_info and access_token:
                 logger.debug("Falling back to access token verification")
                 user_info = self.get_google_user_info(access_token)
@@ -462,42 +462,105 @@ class GoogleLogin(APIView):
             dict: The decoded token if verification is successful, None otherwise
         """
         try:
-            from google.oauth2 import id_token
-            from google.auth.transport import requests
-            
-            client_id = os.getenv('GOOGLE_OAUTH2_CLIENT_ID')
-            if not client_id:
-                logger.error("GOOGLE_OAUTH2_CLIENT_ID environment variable not set")
-                return None
-                
-            logger.debug(f"Verifying Google token with client ID: {client_id}")
-            
-            # Verify the token
-            idinfo = id_token.verify_oauth2_token(
-                token,
-                requests.Request(),
-                client_id
-            )
-            
-            # Verify the token's audience matches our client ID
-            if idinfo.get('aud') != client_id:
-                logger.warning(f"Token's audience doesn't match client ID. Expected: {client_id}, Got: {idinfo.get('aud')}")
-                return None
-                
-            # Check token expiration
+            import json
+            import base64
+            import requests
             from time import time
-            if idinfo.get('exp') and idinfo['exp'] < time():
-                logger.warning("Token has expired")
+            
+            logger.debug(f"Starting token verification. Token length: {len(token) if token else 0}")
+            
+            # First, try to verify locally
+            try:
+                from google.oauth2 import id_token
+                from google.auth.transport import requests as google_requests
+                
+                client_id = os.getenv('GOOGLE_OAUTH2_CLIENT_ID')
+                logger.debug(f"Loaded GOOGLE_OAUTH2_CLIENT_ID: {client_id}")
+                if not client_id:
+                    logger.error("GOOGLE_OAUTH2_CLIENT_ID environment variable not set")
+                    # Try to get from settings directly as fallback
+                    from django.conf import settings
+                    client_id = getattr(settings, 'GOOGLE_OAUTH2_CLIENT_ID', None)
+                    logger.debug(f"Tried getting client_id from settings: {client_id}")
+                    if not client_id:
+                        return None
+                
+                logger.debug(f"Attempting to verify token with client_id: {client_id}")
+                
+                # Try to decode the token to see its structure
+                try:
+                    # The token is in JWT format: header.payload.signature
+                    parts = token.split('.')
+                    if len(parts) != 3:
+                        logger.error(f"Invalid token format. Expected 3 parts, got {len(parts)}")
+                        return None
+                        
+                    # Decode the payload
+                    payload = parts[1]
+                    # Add padding if needed
+                    payload += '=' * (-len(payload) % 4)
+                    decoded_payload = base64.urlsafe_b64decode(payload).decode('utf-8')
+                    payload_data = json.loads(decoded_payload)
+                    
+                    logger.debug(f"Token payload: {json.dumps(payload_data, indent=2)}")
+                    
+                    # Check token expiration
+                    exp = payload_data.get('exp')
+                    if exp and exp < time():
+                        logger.error(f"Token has expired. Expiration time: {exp}, Current time: {time()}")
+                        return None
+                        
+                    # Check audience
+                    aud = payload_data.get('aud')
+                    if isinstance(aud, list):
+                        if client_id not in aud:
+                            logger.error(f"Client ID {client_id} not in audience list: {aud}")
+                            return None
+                    elif aud != client_id:
+                        logger.error(f"Audience mismatch. Expected: {client_id}, Got: {aud}")
+                        return None
+                        
+                except Exception as e:
+                    logger.error(f"Error decoding token payload: {str(e)}")
+                    return None
+                
+                # Now verify the token with Google's library
+                logger.debug("Verifying token with google-auth library...")
+                idinfo = id_token.verify_oauth2_token(
+                    token,
+                    google_requests.Request(),
+                    client_id
+                )
+                
+                logger.info(f"Successfully verified Google token for user: {idinfo.get('email')}")
+                return idinfo
+                
+            except Exception as e:
+                logger.warning(f"Local token verification failed, trying Google's tokeninfo endpoint. Error: {str(e)}")
+            
+            # Fall back to Google's tokeninfo endpoint
+            try:
+                response = requests.get(
+                    'https://oauth2.googleapis.com/tokeninfo',
+                    params={'id_token': token}
+                )
+                response.raise_for_status()
+                idinfo = response.json()
+                
+                # Verify the client ID
+                if idinfo.get('aud') != os.getenv('GOOGLE_OAUTH2_CLIENT_ID'):
+                    logger.warning(f"Token's audience doesn't match client ID via tokeninfo")
+                    return None
+                    
+                logger.info(f"Successfully verified Google token via tokeninfo for user: {idinfo.get('email')}")
+                return idinfo
+                
+            except Exception as e:
+                logger.error(f"Token verification via tokeninfo failed: {str(e)}")
                 return None
                 
-            logger.info(f"Successfully verified Google token for user: {idinfo.get('email')}")
-            return idinfo
-            
-        except ValueError as e:
-            logger.error(f"Invalid token: {str(e)}")
-            return None
         except Exception as e:
-            logger.exception("Error verifying Google token")
+            logger.exception("Unexpected error in verify_google_token")
             return None
             
     def _get_unique_username(self, base_username):

@@ -35,7 +35,6 @@ export const makeRequest = async (requestFn, retries = MAX_RETRIES) => {
       const retryAfter = error.response.headers['retry-after'] || 1;
       const delay = parseInt(retryAfter, 10) * 1000 || 1000;
       
-      console.log(`Rate limited. Retrying in ${delay}ms... (${retries} retries left)`);
       await new Promise(resolve => setTimeout(resolve, delay));
       return makeRequest(requestFn, retries - 1);
     }

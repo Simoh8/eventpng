@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
+import { ArrowRightOnRectangleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
 const stats = [
   { name: 'Total Galleries', value: '12', change: '+2', changeType: 'positive' },
@@ -18,13 +18,42 @@ const recentActivity = [
 ];
 
 export default function DashboardPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoading: isAuthLoading, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(true);
+  
+  useEffect(() => {
+    // If auth check is complete
+    if (!isAuthLoading) {
+      if (!isAuthenticated) {
+        navigate('/login', { replace: true });
+      } else {
+        setIsLoading(false);
+      }
+    }
+  }, [isAuthLoading, isAuthenticated, navigate]);
   
   const handleLogout = () => {
     logout();
     navigate('/');
   };
+  
+  // Show loading spinner while checking auth state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <ArrowPathIcon className="mx-auto h-12 w-12 text-gray-400 animate-spin" />
+          <p className="mt-2 text-gray-600">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Redirect to login if not authenticated
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
   return (
     <div className="py-6">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">

@@ -24,6 +24,9 @@ REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.coreapi.AutoSchema',
 }
 
+
+
+
 # JWT Settings
 REST_USE_JWT = True
 JWT_AUTH_COOKIE = 'access'
@@ -59,8 +62,8 @@ SOCIALACCOUNT_PROVIDERS = {
             'access_type': 'online',
         },
         'APP': {
-            'client_id': os.getenv('GOOGLE_CLIENT_ID', ''),
-            'secret': os.getenv('GOOGLE_CLIENT_SECRET', ''),
+            'client_id': os.getenv('GOOGLE_OAUTH2_CLIENT_ID', ''),
+            'secret': os.getenv('GOOGLE_OAUTH2_CLIENT_SECRET', ''),
             'key': ''
         }
     },

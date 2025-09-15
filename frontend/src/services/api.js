@@ -1,19 +1,14 @@
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
 
-// Ensure the API base URL ends with /api
-const API_BASE_URL = process.env.REACT_APP_API_URL 
-  ? process.env.REACT_APP_API_URL.endsWith('/') 
-    ? process.env.REACT_APP_API_URL.slice(0, -1) // Remove trailing slash
-    : process.env.REACT_APP_API_URL
-  : 'http://localhost:8000';
-
+// Create axios instance with default config
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_BASE_URL.endsWith('/') ? API_BASE_URL : `${API_BASE_URL}/`,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
-  withCredentials: true,
 });
 
 // Request interceptor to add auth token to requests
@@ -21,7 +16,7 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('access');
     if (token) {
-      config.headers['Authorization'] = `Bearer ${token}`;
+      config.headers.Authorization = `Bearer ${token}`;
     }
     
     // Add CSRF token for non-GET requests
@@ -51,7 +46,7 @@ function getCSRFToken() {
   
   // If not in cookies, try to fetch a new one
   try {
-    return fetch(`${API_BASE_URL}api/accounts/csrf/`, {
+    return fetch(`${API_BASE_URL}accounts/csrf/`, {
       method: 'GET',
       credentials: 'include',
       headers: {
@@ -78,48 +73,6 @@ function getCSRFToken() {
   }
 }
 
-// Response interceptor to handle 401 errors
-try {
-  api.interceptors.response.use(
-    (response) => response,
-    async (error) => {
-      const originalRequest = error.config;
-      
-      // If error is 401 and we haven't tried to refresh yet
-      if (error.response?.status === 401 && !originalRequest._retry) {
-        originalRequest._retry = true;
-        
-        try {
-          const refreshToken = localStorage.getItem('refresh');
-          if (refreshToken) {
-            const response = await axios.post(
-              `${API_BASE_URL}/api/accounts/token/refresh/`,
-              { refresh: refreshToken }
-            );
-            
-            const { access } = response.data;
-            localStorage.setItem('access', access);
-            api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
-            originalRequest.headers['Authorization'] = `Bearer ${access}`;
-            
-            return api(originalRequest);
-          }
-        } catch (error) {
-          console.error('Failed to refresh token:', error);
-          // Clear auth data and redirect to login
-          localStorage.removeItem('access');
-          localStorage.removeItem('refresh');
-          window.location.href = '/login';
-        }
-      }
-      
-      return Promise.reject(error);
-    }
-  );
-} catch (e) {
-  console.error('Error setting up response interceptor:', e);
-}
-
 // Response interceptor to handle errors and token refresh
 api.interceptors.response.use(
   (response) => response,
@@ -131,25 +84,35 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       
       try {
-        const refreshToken = localStorage.getItem('refresh_token');
+        const refreshToken = localStorage.getItem('refresh');
         if (refreshToken) {
           const response = await axios.post(
-            `${API_BASE_URL}/accounts/token/refresh/`,
+            `${API_BASE_URL}accounts/token/refresh/`,
             { refresh: refreshToken },
-            { withCredentials: true }
+            { 
+              withCredentials: true,
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            }
           );
           
           const { access } = response.data;
-          localStorage.setItem('access_token', access);
-          
-          // Retry the original request with the new token
-          originalRequest.headers['Authorization'] = `Bearer ${access}`;
-          return api(originalRequest);
+          if (access) {
+            localStorage.setItem('access', access);
+            api.defaults.headers.common['Authorization'] = `Bearer ${access}`;
+            originalRequest.headers['Authorization'] = `Bearer ${access}`;
+            
+            // Retry the original request with the new token
+            return api(originalRequest);
+          }
         }
       } catch (error) {
-        // If refresh fails, clear tokens and redirect to login
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+        console.error('Failed to refresh token:', error);
+        // Clear auth data and redirect to login
+        localStorage.removeItem('access');
+        localStorage.removeItem('refresh');
+        localStorage.removeItem('user');
         window.location.href = '/login';
       }
     }

@@ -1,0 +1,24 @@
+Hello {{ user.first_name|default:'there' }},
+
+We're excited to let you know that a new gallery has been added to the event "{{ event.name }}":
+
+{{ gallery.title }}
+{{ '=' * 50 }}  <!-- Fixed length separator -->
+
+{% if gallery.description %}
+{{ gallery.description }}
+
+{% endif %}
+Event: {{ event.name }}
+
+{% if event.location %}Location: {{ event.location }}
+{% endif %}
+{% if event.date %}Date: {{ event.date|date:"F j, Y" }}
+{% endif %}
+
+View the gallery here: {{ site_url }}/events/{{ event.slug }}
+
+Happy browsing!
+
+Best regards,
+{{ site_name }} Team

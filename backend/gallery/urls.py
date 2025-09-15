@@ -46,3 +46,5 @@ urlpatterns = [
         path('recent/', RecentGalleriesView.as_view(), name='recent-galleries'),
     ])),
 ]
+
+

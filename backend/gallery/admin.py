@@ -147,15 +147,22 @@ class EventAdmin(admin.ModelAdmin):
     )
     
     def cover_preview(self, obj):
-        primary_cover = obj.primary_cover
-        if primary_cover and primary_cover.image:
-            return format_html(
-                '<a href="{1}" target="_blank">'
-                '<img src="{0}" style="max-height: 200px; max-width: 300px; object-fit: contain;" />'
-                '</a>',
-                primary_cover.image.url,
-                reverse('admin:gallery_eventcoverimage_change', args=[primary_cover.id])
-            )
+        try:
+            primary_cover = obj.covers.filter(is_primary=True).first()
+            if not primary_cover:
+                primary_cover = obj.covers.first()
+                
+            if primary_cover and hasattr(primary_cover, 'image') and primary_cover.image:
+                return format_html(
+                    '<a href="{1}" target="_blank">'
+                    '<img src="{0}" style="max-height: 200px; max-width: 300px; object-fit: contain;" />'
+                    '</a>',
+                    primary_cover.image.url,
+                    reverse('admin:gallery_eventcoverimage_change', args=[primary_cover.id])
+                )
+        except Exception as e:
+            print(f"Error generating cover preview: {e}")
+            
         return "No cover image set"
     cover_preview.short_description = 'Cover Preview'
     

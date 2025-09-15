@@ -75,19 +75,32 @@ class PublicEventDetailSerializer(serializers.ModelSerializer):
 
 
 class PublicEventSerializer(serializers.ModelSerializer):
-    """Serializer for public event listing (shows all events but marks private ones)."""
+    """Serializer for public event listing (shows all events but marks private ones).
+    
+    For private events, includes a flag indicating if the current user has verified access.
+    """
     created_by = serializers.SerializerMethodField()
     is_private = serializers.SerializerMethodField()
     cover_image = serializers.SerializerMethodField()
+    is_verified = serializers.SerializerMethodField()
     
     class Meta:
         model = Event
         fields = [
             'id', 'name', 'slug', 'description', 'date', 'location',
-            'privacy', 'is_private', 'created_by', 'created_at', 'updated_at',
-            'cover_image'
+            'privacy', 'is_private', 'is_verified', 'created_by', 
+            'created_at', 'updated_at', 'cover_image', 'requires_pin'
         ]
-        read_only_fields = ['id', 'slug', 'created_at', 'updated_at', 'cover_image']
+        read_only_fields = ['id', 'slug', 'created_at', 'updated_at', 'cover_image', 'is_verified']
+        
+    def get_is_verified(self, obj):
+        """Check if the current user has verified access to this private event."""
+        if obj.privacy != 'private':
+            return None
+            
+        # Get verified events from context (set in the view)
+        verified_events = self.context.get('request').session.get('verified_events', [])
+        return str(obj.id) in verified_events
     
     def get_created_by(self, obj):
         # Return a simplified user object or None if not available

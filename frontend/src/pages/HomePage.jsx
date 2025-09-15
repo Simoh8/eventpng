@@ -1,13 +1,16 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { makeRequests } from '../utils/apiUtils';
+import API from '../config'; // default import
+
+import { makeRequest } from '../utils/apiUtils';
+import { API_ENDPOINTS } from '../config';
+import EventCard from '../components/events/EventCard';
 import { 
   MagnifyingGlassIcon as SearchIcon,
   FunnelIcon as FilterIcon,
   CalendarIcon,
-  MapPinIcon,
   LockClosedIcon,
   ArrowRightIcon,
   PhotoIcon,
@@ -19,25 +22,13 @@ import {
   ShareIcon,
   DevicePhoneMobileIcon,
   SparklesIcon,
-  CheckCircleIcon
+  CheckCircleIcon,
+  UserCircleIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthContext';
-import { API_ENDPOINTS } from '../config';
 
 // Default cover image if none is provided from the API
 const DEFAULT_COVER_IMAGE = 'https://images.unsplash.com/photo-1516450360452-1f389e6b5cef?auto=format&fit=crop&w=1470&q=80';
-
-const formatDate = (dateString) => {
-  if (!dateString) return '';
-  const options = { 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  };
-  return new Date(dateString).toLocaleDateString('en-US', options);
-};
 
 // Stats card component with loading state
 const StatCard = ({ icon: Icon, title, value, color = 'blue', description = null, isLoading = false }) => {
@@ -76,59 +67,102 @@ const StatCard = ({ icon: Icon, title, value, color = 'blue', description = null
   );
 };
 
-// Recent gallery item component
+// Recent gallery item component with improved layout
 const RecentGalleryCard = ({ gallery }) => {
   const navigate = useNavigate();
+  
   const stats = [
-    { value: gallery.photo_count || 0, label: 'Photos' },
-    { value: gallery.gallery_count || 0, label: 'Galleries' },
-    { value: gallery.photographer_count || 0, label: 'Photographers' }
+    { 
+      value: gallery.photo_count || 0, 
+      label: 'Photos',
+      icon: PhotoIcon,
+      color: 'text-blue-600 bg-blue-50'
+    },
+    { 
+      value: gallery.gallery_count || 0, 
+      label: 'Galleries',
+      icon: RectangleGroupIcon,
+      color: 'text-purple-600 bg-purple-50'
+    },
+    { 
+      value: gallery.photographer_count || 0, 
+      label: 'Photographers',
+      icon: UserGroupIcon,
+      color: 'text-green-600 bg-green-50'
+    }
   ];
 
   const handleClick = () => {
-    // Navigate to gallery using slug if available, fallback to ID
     const gallerySlug = gallery.slug || gallery.id;
     navigate(`/gallery/${gallerySlug}`);
   };
 
+  // Format the date to be more readable
+  const formattedDate = gallery.created_at 
+    ? new Date(gallery.created_at).toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    : 'Date not available';
+
   return (
     <div 
-      className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow cursor-pointer"
+      className="group bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300 overflow-hidden cursor-pointer h-full flex flex-col"
       onClick={handleClick}
     >
-      <div className="flex items-start space-x-4">
-        <div className="flex-shrink-0">
-          {gallery.cover_image ? (
-            <img 
-              src={gallery.cover_image} 
-              alt={gallery.title}
-              className="h-20 w-20 rounded-md object-cover"
-            />
-          ) : (
-            <div className="h-20 w-20 rounded-md bg-gray-100 flex items-center justify-center text-gray-400">
-              <PhotoIcon className="h-8 w-8" />
-            </div>
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-900 truncate">{gallery.title}</p>
-          <p className="text-sm text-gray-500 truncate">
+      {/* Gallery Cover Image */}
+      <div className="h-40 bg-gray-100 relative overflow-hidden">
+        {gallery.cover_image ? (
+          <img 
+            src={gallery.cover_image} 
+            alt={gallery.title}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+            <PhotoIcon className="h-12 w-12 text-gray-400" />
+          </div>
+        )}
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
+          <h3 className="text-white font-semibold text-lg truncate">{gallery.title || 'Untitled Gallery'}</h3>
+          <p className="text-sm text-gray-200 truncate">
             {gallery.event?.title || 'No associated event'}
           </p>
-          
-          {/* Stats Row */}
-          <div className="mt-2 flex items-center space-x-4">
-            {stats.map((stat, idx) => (
-              <div key={idx} className="text-center">
-                <p className="text-xs font-medium text-gray-500">{stat.label}</p>
-                <p className="text-sm font-semibold text-gray-900">{stat.value}</p>
+        </div>
+      </div>
+      
+      {/* Gallery Details */}
+      <div className="p-4 flex-1 flex flex-col">
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          {stats.map((stat, idx) => (
+            <div 
+              key={idx} 
+              className={`p-2 rounded-lg text-center ${stat.color} transition-colors duration-200`}
+            >
+              <stat.icon className="h-5 w-5 mx-auto mb-1" />
+              <p className="text-xs font-medium">{stat.label}</p>
+              <p className="text-sm font-bold">{stat.value}</p>
+            </div>
+          ))}
+        </div>
+        
+        {/* Date and Author */}
+        <div className="mt-auto pt-3 border-t border-gray-100">
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <div className="flex items-center">
+              <ClockIcon className="h-3.5 w-3.5 mr-1" />
+              <span>{formattedDate}</span>
+            </div>
+            {gallery.photographer_name && (
+              <div className="flex items-center">
+                <UserCircleIcon className="h-3.5 w-3.5 mr-1" />
+                <span>{gallery.photographer_name}</span>
               </div>
-            ))}
-          </div>
-          
-          <div className="mt-2 flex items-center text-xs text-gray-500">
-            <ClockIcon className="h-3.5 w-3.5 mr-1" />
-            <span>{formatDate(gallery.created_at)}</span>
+            )}
           </div>
         </div>
       </div>
@@ -150,8 +184,10 @@ const HomePage = () => {
     totalGalleries: 0,
     totalPhotos: 0,
     totalEvents: 0,
+    totalPhotographers: 0,
     recentGalleries: []
   });
+  const [hasLoadedStats, setHasLoadedStats] = useState(false);
 
   // Handle event click - check if PIN is needed
   const handleEventClick = (event) => {
@@ -168,30 +204,63 @@ const HomePage = () => {
     e.preventDefault();
     setPinError('');
     
+    // Get CSRF token from cookies
+    const getCookie = (name) => {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === (name + '=')) {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+    };
+    
+    const csrftoken = getCookie('csrftoken');
+    
+
     try {
-      const response = await axios.post(
-        `${API_ENDPOINTS.EVENTS}${currentEvent.id}/verify-pin/`,
-        { pin },
-        {
+      const response = await makeRequest(() =>
+        axios({
+          method: 'post',
+          url: API.VERIFY_EVENT_PIN(currentEvent.slug),  // ✅ use the reusable constant
+          withCredentials: true,
           headers: {
             'Content-Type': 'application/json',
-            'Accept': 'application/json',
+            'X-CSRFToken': csrftoken,
+            'X-Requested-With': 'XMLHttpRequest'
           },
-          withCredentials: true
-        }
+          data: { pin }
+        })
       );
-      
-      if (response.data.valid) {
-        navigate(`/events/${currentEvent.slug || currentEvent.id}`, {
-          state: { pin }
-        });
+    
+      if (response.data.success) {
+        // Store verification in session storage
+        sessionStorage.setItem(
+          `event_${currentEvent.slug || currentEvent.id}_verified`,
+          'true'
+        );
+        navigate(`/events/${currentEvent.slug || currentEvent.id}`);
+        setShowPinModal(false);
       } else {
-        setPinError('Invalid PIN. Please try again.');
+        setPinError(response.data.error || 'Invalid PIN. Please try again.');
       }
     } catch (err) {
-      console.error('Error verifying PIN:', err);
-      setPinError('An error occurred. Please try again.');
+      const errorMessage =
+        err.response?.data?.error ||
+        (err.response?.status === 429
+          ? 'Too many attempts. Please wait a moment and try again.'
+          : err.response?.status === 403
+          ? 'Session expired. Please refresh the page and try again.'
+          : 'Error verifying PIN. Please try again.');
+      setPinError(errorMessage);
     }
+    
+    
   };
 
   // Cache key for events data
@@ -199,28 +268,28 @@ const HomePage = () => {
   const CACHE_EXPIRY = 60 * 60 * 1000; // 1 hour in milliseconds
 
   // Get cached data if it exists and is not expired
-  const getCachedData = (key) => {
+  const getCachedData = useCallback((key) => {
     try {
       const cachedData = localStorage.getItem(key);
       if (!cachedData) return null;
       
-      const { data, timestamp } = JSON.parse(cachedData);
-      const isExpired = Date.now() - timestamp > CACHE_EXPIRY;
+      const parsedData = JSON.parse(cachedData);
+      const isExpired = Date.now() - parsedData.timestamp > CACHE_EXPIRY;
       
       if (isExpired) {
         localStorage.removeItem(key);
         return null;
       }
       
-      return data;
+      return parsedData.data;
     } catch (error) {
       console.error('Error reading from cache:', error);
       return null;
     }
-  };
+  }, []);
 
   // Save data to cache with timestamp
-  const saveToCache = (key, data) => {
+  const saveToCache = useCallback((key, data) => {
     try {
       const cacheData = {
         data,
@@ -230,119 +299,227 @@ const HomePage = () => {
     } catch (error) {
       console.error('Error saving to cache:', error);
     }
-  };
+  }, []);
 
   // Fetch events and statistics
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        
-        // Try to get cached data first
-        const cachedData = getCachedData(EVENTS_CACHE_KEY);
-        
-        if (cachedData) {
-          const { events: cachedEvents, stats: cachedStats } = cachedData;
-          setEvents(cachedEvents);
-          setStats(cachedStats);
-          setLoading(false);
-          
-          // We still want to update in the background
-          fetchFreshData();
-          return;
-        }
-        
-        // If no cache, fetch fresh data
-        await fetchFreshData();
-      } catch (err) {
-        console.error('Error in fetchData:', err);
-        setError('Failed to load data. Please try again later.');
+  const fetchEvents = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      console.log('Fetching events and stats...');
+      
+      // Check cache first
+      const cachedData = getCachedData(EVENTS_CACHE_KEY);
+      if (cachedData && cachedData.events) {
+        setEvents(cachedData.events);
+        setStats(cachedData.stats || {});
         setLoading(false);
       }
-    };
+      
+      // Fetch fresh data with rate limiting
+      console.log('Making API requests to:', {
+        events: `${API_ENDPOINTS.PUBLIC_EVENTS}?limit=3&ordering=-start_date`,
+        stats: API_ENDPOINTS.STATS,
+        recent: API_ENDPOINTS.RECENT_GALLERIES
+      });
+      
+      const [eventsRes, statsRes, recentRes] = await Promise.all([
+        makeRequest(() => {
+          console.log('Fetching events from:', `${API_ENDPOINTS.PUBLIC_EVENTS}?limit=4&ordering=-start_date`);
+          return axios.get(`${API_ENDPOINTS.PUBLIC_EVENTS}?limit=4&ordering=-start_date`, {
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache',
+              'Expires': '0'
+            }
+          });
+        }).then(response => {
+          console.log('Events response:', response);
+          return response;
+        }).catch(err => {
+          console.error('Error fetching events:', err);
+          return { error: err };
+        }),
+        
+        makeRequest(() => {
+          console.log('Fetching stats from:', API_ENDPOINTS.STATS);
+          return axios.get(API_ENDPOINTS.STATS);
+        }).then(response => {
+          console.log('Stats response:', response);
+          return response;
+        }).catch(err => {
+          console.error('Error fetching stats:', err);
+          return { error: err };
+        }),
+        
+ 
+        makeRequest(() => {
+          console.log('Fetching recent galleries from:', API_ENDPOINTS.RECENT_GALLERIES);
+          return axios.get(API_ENDPOINTS.RECENT_GALLERIES);
+        }).then(response => {
+          console.log('Recent galleries response:', response);
+          return response;
+        }).catch(err => {
+          console.error('Error fetching recent galleries:', err);
+          return { error: err };
+        })
+      ]);
+      
+      // Process responses - handle both direct array and paginated response
+      let eventsData = [];
+      if (!eventsRes.error) {
+        if (Array.isArray(eventsRes.data)) {
+          eventsData = eventsRes.data;
+        } else if (eventsRes.data?.results) {
+          eventsData = eventsRes.data.results;
+        } else if (eventsRes.data) {
+          eventsData = [eventsRes.data];
+        }
+      }
+      
+      // Process stats
+      const serverStats = !statsRes.error && statsRes.data 
+        ? statsRes.data 
+        : { total_galleries: 0, total_events: 0, total_photographers: 0 };
+        
+      const recentGalleries = !recentRes.error && recentRes.data 
+        ? Array.isArray(recentRes.data) ? recentRes.data : (recentRes.data.results || [])
+        : [];
 
-    const fetchFreshData = async () => {
-      try {
-        // Make requests with rate limiting
-        const [eventsRes, statsRes, recentRes] = await makeRequests([
-          () => axios.get(API_ENDPOINTS.PUBLIC_EVENTS),
-          () => axios.get(API_ENDPOINTS.STATS),
-          () => axios.get(API_ENDPOINTS.RECENT_GALLERIES)
-        ]);
-
-        // Check for errors in responses
-        if (eventsRes.error) throw eventsRes.error;
-        if (statsRes.error) console.warn('Failed to load stats:', statsRes.error);
-        if (recentRes.error) console.warn('Failed to load recent galleries:', recentRes.error);
-
-        const eventsData = eventsRes.data || [];
-        const serverStats = statsRes.data || { total_galleries: 0, total_events: 0, total_photographers: 0 };
-        const recentGalleries = recentRes.data || [];
-
-        // Calculate totals from events if available
+      // Calculate additional stats from events if available
+      if (eventsData.length > 0) {
         const eventsStats = eventsData.reduce((acc, event) => ({
           totalPhotos: acc.totalPhotos + (event.photo_count || 0),
           totalGalleries: acc.totalGalleries + (event.gallery_count || 0),
           totalPhotographers: acc.totalPhotographers + (event.photographer_count || 0)
         }), { totalPhotos: 0, totalGalleries: 0, totalPhotographers: 0 });
 
-        const statsData = {
-          totalGalleries: eventsStats.totalGalleries || serverStats.total_galleries || 0,
-          totalPhotos: eventsStats.totalPhotos || serverStats.total_photos || 0,
-          totalEvents: eventsData.length || serverStats.total_events || 0,
-          totalPhotographers: eventsStats.totalPhotographers || serverStats.total_photographers || 0,
-          recentGalleries: recentGalleries
-        };
-
-        // Update state
-        setEvents(eventsData);
-        setStats(statsData);
-
-        // Save to cache
-        saveToCache(EVENTS_CACHE_KEY, {
-          events: eventsData,
-          stats: statsData
+        // Update stats with events data
+        Object.assign(serverStats, {
+          total_galleries: eventsStats.totalGalleries || serverStats.total_galleries,
+          total_photos: eventsStats.totalPhotos || serverStats.total_photos,
+          total_photographers: eventsStats.totalPhotographers || serverStats.total_photographers,
+          total_events: eventsData.length || serverStats.total_events
         });
-      } catch (err) {
-        console.error('Error fetching fresh data:', err);
-        throw err; // Let the outer catch handle it
-      } finally {
-        setLoading(false);
       }
-    };
+      
+      // Update cache and state
+      const statsData = {
+        totalGalleries: serverStats.total_galleries || 0,
+        totalPhotos: serverStats.total_photos || 0,
+        totalEvents: serverStats.total_events || 0,
+        totalPhotographers: serverStats.total_photographers || 0,
+        recentGalleries: recentGalleries.slice(0, 3)
+      };
 
-    fetchData();
-  }, []);
+      // Always update cache and state, even if there are no events
+      saveToCache(EVENTS_CACHE_KEY, {
+        events: eventsData,
+        stats: statsData,
+        recentGalleries: recentGalleries
+      });
+      
+      setEvents(eventsData);
+      setStats(statsData);
+      setHasLoadedStats(true);
+      
+      if (eventsData.length === 0 && !cachedData) {
+        setError('No events found. Please check back later.');
+      }
+      
+    } catch (err) {
+      console.error('Error fetching events:', err);
+      if (!events.length) {
+        setError('Failed to load events. ' + 
+          (err.response?.status === 429 ? 'Too many requests. Please wait a moment and try again.' : 
+           err.response?.data?.detail || 'Please try again later.')
+        );
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [getCachedData, saveToCache, events.length]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading events...</p>
+  // Initial data fetch
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
+
+  // Event card skeleton loader
+  const EventSkeleton = () => (
+    <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+      <div className="h-48 bg-gray-200 animate-pulse"></div>
+      <div className="p-5">
+        <div className="h-6 bg-gray-200 rounded w-3/4 mb-4 animate-pulse"></div>
+        <div className="space-y-2">
+          <div className="h-4 bg-gray-200 rounded w-full"></div>
+          <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+        </div>
+        <div className="mt-4 flex items-center">
+          <div className="h-4 w-4 bg-gray-200 rounded-full mr-2"></div>
+          <div className="h-4 bg-gray-200 rounded w-32"></div>
+        </div>
+        <div className="mt-4 flex justify-between">
+          <div className="h-4 bg-gray-200 rounded w-16"></div>
+          <div className="h-4 bg-gray-200 rounded w-16"></div>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
 
-  if (error) {
+  // Show loading state for initial load
+  if (loading && events.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center p-6 max-w-md mx-auto bg-white rounded-lg shadow-md">
-          <div className="text-red-500 mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
+      <div className="min-h-screen bg-gray-50">
+        {/* Hero Section */}
+        <section className="relative bg-gradient-to-r from-blue-600 to-indigo-700 text-white py-20 overflow-hidden">
+          <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <div className="h-16 bg-blue-500 rounded w-3/4 mx-auto mb-6 animate-pulse"></div>
+            <div className="h-6 bg-blue-400 rounded w-1/2 mx-auto mb-8 animate-pulse"></div>
+            <div className="flex flex-col sm:flex-row justify-center gap-4">
+              <div className="h-12 bg-yellow-400 rounded-md w-48 mx-auto"></div>
+              <div className="h-12 bg-indigo-700 rounded-md w-48 mx-auto"></div>
+            </div>
           </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Something went wrong</h3>
-          <p className="text-gray-600 mb-4">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-          >
-            Try Again
-          </button>
-        </div>
+        </section>
+
+        {/* Loading content */}
+        <section className="py-12 bg-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-12">
+              <div className="h-10 bg-gray-200 rounded w-1/3 mx-auto mb-4 animate-pulse"></div>
+              <div className="h-6 bg-gray-200 rounded w-1/2 mx-auto"></div>
+            </div>
+            <div className="grid grid-cols-1 gap-5 mt-12 sm:grid-cols-2 lg:grid-cols-4">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                  <div className="flex items-start">
+                    <div className="p-3 rounded-lg bg-gray-200"></div>
+                    <div className="ml-4 flex-1">
+                      <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
+                      <div className="h-8 bg-gray-200 rounded w-3/4"></div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Loading events section */}
+        <section className="py-16 bg-gray-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-12">
+              <div className="h-10 bg-gray-200 rounded w-1/4 mx-auto mb-4"></div>
+              <div className="h-6 bg-gray-200 rounded w-1/3 mx-auto"></div>
+            </div>
+            <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3].map((i) => (
+                <EventSkeleton key={i} />
+              ))}
+            </div>
+          </div>
+        </section>
       </div>
     );
   }
@@ -396,38 +573,53 @@ const HomePage = () => {
           </div>
           
           <div className="grid grid-cols-1 gap-5 mt-12 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard 
-              icon={PhotoIcon} 
-              title="Total Photos" 
-              value={stats.totalPhotos.toLocaleString()} 
-              color="blue"
-              isLoading={loading}
-              description="Across all events and galleries"
-            />
-            <StatCard 
-              icon={RectangleGroupIcon} 
-              title="Galleries" 
-              value={stats.totalGalleries.toLocaleString()}
-              color="green"
-              isLoading={loading}
-              description={`${stats.totalGalleries} across ${stats.totalEvents} events`}
-            />
-            <StatCard 
-              icon={UserGroupIcon} 
-              title="Photographers" 
-              value={stats.totalPhotographers?.toLocaleString() || '0'}
-              color="purple"
-              isLoading={loading}
-              description="Contributing to our collection"
-            />
-            <StatCard 
-              icon={CalendarIcon} 
-              title="Events" 
-              value={stats.totalEvents.toLocaleString()}
-              color="indigo"
-              isLoading={loading}
-              description="Available for you to explore"
-            />
+            {hasLoadedStats ? (
+              <>
+                <StatCard 
+                  icon={PhotoIcon} 
+                  title="Total Photos" 
+                  value={stats.totalPhotos.toLocaleString()} 
+                  color="blue"
+                  isLoading={loading}
+                  description="Across all events and galleries"
+                />
+                <StatCard 
+                  icon={RectangleGroupIcon} 
+                  title="Galleries" 
+                  value={stats.totalGalleries.toLocaleString()}
+                  color="green"
+                  isLoading={loading}
+                  description={`${stats.totalGalleries} across ${stats.totalEvents} events`}
+                />
+                <StatCard 
+                  icon={UserGroupIcon} 
+                  title="Photographers" 
+                  value={stats.totalPhotographers?.toLocaleString() || '0'}
+                  color="purple"
+                  isLoading={loading}
+                  description="Contributing to our collection"
+                />
+                <StatCard 
+                  icon={CalendarIcon} 
+                  title="Events" 
+                  value={stats.totalEvents.toLocaleString()}
+                  color="indigo"
+                  isLoading={loading}
+                  description="Available for you to explore"
+                />
+              </>
+            ) : (
+              // Show loading state for stats
+              Array(4).fill(0).map((_, index) => (
+                <div key={index} className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+                  <div className="animate-pulse">
+                    <div className="h-8 w-8 bg-gray-200 rounded-full mb-4"></div>
+                    <div className="h-6 bg-gray-200 rounded w-3/4 mb-2"></div>
+                    <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </section>
@@ -544,24 +736,39 @@ const HomePage = () => {
         </div>
       </section>
 
-      {/* Recent Galleries */}
+      {/* Recent Galleries Section */}
       {stats.recentGalleries.length > 0 && (
-        <section className="py-12 bg-gray-50">
+        <section className="py-16 bg-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
+              <span className="inline-block px-3 py-1 text-sm font-semibold text-blue-700 bg-blue-100 rounded-full mb-4">
+                Latest Updates
+              </span>
               <h2 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">
                 Recent Galleries
               </h2>
               <p className="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
-                Check out the latest photo galleries from our events
+                Explore the latest photo galleries from our events
               </p>
             </div>
             
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
               {stats.recentGalleries.map((gallery) => (
                 <RecentGalleryCard key={gallery.id} gallery={gallery} />
               ))}
             </div>
+            
+            {stats.recentGalleries.length >= 3 && (
+              <div className="mt-12 text-center">
+                <Link 
+                  to="/galleries" 
+                  className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+                >
+                  View All Galleries
+                  <ArrowRightIcon className="ml-2 -mr-1 h-5 w-5" />
+                </Link>
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -597,77 +804,73 @@ const HomePage = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">
-              Upcoming Events
+              Latest Events
             </h2>
             <p className="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
-              Browse and join our upcoming photography events
+              Discover our most recent photography events
             </p>
+            {error && (
+              <div className="mt-4 text-sm text-red-600 bg-red-50 p-3 rounded-md inline-block">
+                {error}
+              </div>
+            )}
           </div>
           
-          {events.length > 0 ? (
+          {loading ? (
             <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
-              {events.map((event) => (
-                <motion.div
-                  key={event.id}
-                  className="bg-white rounded-lg shadow-lg overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1 cursor-pointer"
-                  whileHover={{ scale: 1.02 }}
-                  onClick={() => handleEventClick(event)}
-                >
-                  <div className="relative h-48 overflow-hidden">
-                    <img
-                      src={event.cover_image || DEFAULT_COVER_IMAGE}
-                      alt={event.name || 'Event'}
-                      className="w-full h-full object-cover"
-                    />
-                    {event.is_private && (
-                      <div className="absolute top-2 right-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded-full flex items-center">
-                        <LockClosedIcon className="h-3 w-3 mr-1" />
-                        Private
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-5">
-                    <div className="flex justify-between items-start mb-3">
-                      <h3 className="text-xl font-bold text-gray-900 line-clamp-1 flex-1">
-                        {event.name || 'Untitled Event'}
-                      </h3>
-                    </div>
-                    <p className="text-gray-600 line-clamp-2 mb-4">
-                      {event.description || 'No description available.'}
-                    </p>
-                    <div className="flex items-center text-sm text-gray-500 mb-3">
-                      <CalendarIcon className="h-4 w-4 mr-2" />
-                      <span>{formatDate(event.start_date)}</span>
-                      {event.end_date && (
-                        <>
-                          <span className="mx-1">-</span>
-                          <span>{formatDate(event.end_date)}</span>
-                        </>
-                      )}
-                    </div>
-                    {event.location && (
-                      <div className="flex items-center text-sm text-gray-500 mb-4">
-                        <MapPinIcon className="h-4 w-4 mr-2" />
-                        <span>{event.location}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center">
-                        <UserGroupIcon className="h-4 w-4 text-gray-400 mr-1" />
-                        <span className="text-sm text-gray-500">
-                          {event.photographer_count || 0} photographers
-                        </span>
-                      </div>
-                      <div className="flex items-center">
-                        <PhotoIcon className="h-4 w-4 text-gray-400 mr-1" />
-                        <span className="text-sm text-gray-500">
-                          {event.photo_count || 0} photos
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
+              {[1, 2, 3].map((i) => (
+                <EventSkeleton key={i} />
               ))}
+            </div>
+          ) : events.length > 0 ? (
+            <div className="space-y-8">
+              <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+                {events.slice(0, 4).map((event) => (
+                  <motion.div
+                    key={event.id}
+                    className="w-full"
+                    whileHover={{ scale: 1.02 }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <EventCard
+                      event={{
+                        ...event,
+                        title: event.name,
+                        cover_image: event.cover_image || DEFAULT_COVER_IMAGE,
+                        date: event.start_date,
+                        end_date: event.end_date,
+                        photo_count: event.photo_count,
+                        photographer_count: event.photographer_count,
+                        is_private: event.is_private
+                      }}
+                      onClick={handleEventClick}
+                      className="h-full"
+                    />
+                  </motion.div>
+                ))}
+              </div>
+              {events.length > 4 && (
+                <div className="text-center mt-8">
+                  <Link
+                    to="/events"
+                    className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    View All Events
+                    <ArrowRightIcon className="ml-2 -mr-1 h-5 w-5" />
+                  </Link>
+                </div>
+              )}
+            </div>
+          ) : error ? (
+            <div className="text-center py-12">
+              <div className="inline-flex items-center px-6 py-3 rounded-lg bg-gray-100 text-gray-700">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-3 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span className="text-lg">No recent events at the moment. Check back soon for updates!</span>
+              </div>
             </div>
           ) : (
             <div className="text-center py-12">

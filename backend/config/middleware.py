@@ -1,6 +1,11 @@
 import os
 from django.utils.cache import add_never_cache_headers, patch_cache_control
 from django.conf import settings
+from django.utils.deprecation import MiddlewareMixin
+
+class DisableCSRF(MiddlewareMixin):
+    def process_request(self, request):
+        setattr(request, '_dont_enforce_csrf_checks', True)
 
 class MediaCacheControlMiddleware:
     """

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toaster } from 'react-hot-toast';
 import { GoogleOAuthProvider } from '@react-oauth/google';
@@ -30,8 +30,8 @@ import NotFoundPage from './pages/NotFoundPage';
 // Dashboard Redirect Component
 const DashboardRedirect = () => {
   const { user, isAuthenticated, isLoading } = useAuth();
+  const token = localStorage.getItem('access');
   
-
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -40,76 +40,105 @@ const DashboardRedirect = () => {
     );
   }
   
-  // If not authenticated, redirect to login
-  if (!isAuthenticated) {
+  // If not authenticated and no token, redirect to login
+  if (!isAuthenticated && !token) {
     return <Navigate to="/login" replace />;
   }
   
   // Handle nested user data structure (user.data)
   const userData = user?.data || user || {};
   
-  // Check if user is a photographer
+  // Check if user is a photographer or staff
   const isPhotographer = userData?.is_photographer === true;
+  const isStaff = userData?.is_staff || userData?.is_superuser;
   
-  const redirectPath = isPhotographer ? '/photographer-dashboard' : '/my-gallery';
+  // Determine redirect path based on user role
+  let redirectPath = '/my-gallery'; // Default for customers
+  
+  if (isStaff) {
+    redirectPath = '/admin/events';
+  } else if (isPhotographer) {
+    redirectPath = '/photographer-dashboard';
+  }
   
   return <Navigate to={redirectPath} replace />;
 };
+
+
 
 // Protected Route Component
 const ProtectedRoute = ({ children, requiredRole, allowedRoles = [] }) => {
   const { isAuthenticated, user, isLoading } = useAuth();
   const location = useLocation();
-  
-  // Show loading state while checking auth
-  if (isLoading) {
+  const [authChecked, setAuthChecked] = useState(false);
+  const token = localStorage.getItem('access');
+
+  useEffect(() => {
+    if (!isLoading) {
+      setAuthChecked(true);
+    }
+  }, [isLoading]);
+
+  // Show loader while checking auth
+  if (isLoading || !authChecked) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
       </div>
     );
   }
-  
-  // Redirect to login if not authenticated
-  if (!isAuthenticated) {
+
+  // ✅ If no requiredRole or allowedRoles → this is a public route
+  if (!requiredRole && (!allowedRoles || allowedRoles.length === 0)) {
+    return children;
+  }
+
+  // 🔒 Protected routes: check auth
+  const isUserAuthenticated = isAuthenticated || (token && token !== 'undefined');
+  if (!isUserAuthenticated) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
-  
+
+  // Role checks
   const userData = user?.data || user || {};
   const isPhotographer = userData?.is_photographer === true;
   const isStaff = userData?.is_staff || userData?.is_superuser;
-  
-  // Check if user has the required role
+
   if (requiredRole) {
-    const hasRequiredRole = 
+    const hasRequiredRole =
       (requiredRole === 'staff' && isStaff) ||
       (requiredRole === 'photographer' && isPhotographer);
-    
+
     if (!hasRequiredRole) {
       return <Navigate to="/" replace />;
     }
   }
-  
-  // Check if route is allowed for the user's role
+
   if (allowedRoles.length > 0) {
     const userRole = isStaff ? 'staff' : isPhotographer ? 'photographer' : 'customer';
     const isAllowed = allowedRoles.includes(userRole);
-    
+
     if (!isAllowed) {
-      // Redirect to appropriate dashboard based on role
-      const redirectPath = isPhotographer ? '/photographer-dashboard' : isStaff ? '/admin/events' : '/my-gallery';
+      const redirectPath = isPhotographer
+        ? '/photographer-dashboard'
+        : isStaff
+        ? '/admin/events'
+        : '/my-gallery';
       return <Navigate to={redirectPath} replace />;
     }
   }
-  
+
   return children;
 };
+
 
 
 function AppContent() {
   return (
     <Routes>
+      {/* ================= ROUTES WITH NAVBAR (MainLayout) ================= */}
       <Route path="/" element={<MainLayout />}>
+        {/* --- Public --- */}
         <Route index element={<HomePage />} />
         <Route path="events" element={<Events />} />
         <Route path="events/:slug" element={<EventDetail />} />
@@ -117,135 +146,132 @@ function AppContent() {
         <Route path="pricing" element={<PricingPage />} />
         <Route path="faq" element={<FaqPage />} />
         <Route path="terms" element={<TermsAndPrivacy />} />
-        <Route path="login" element={<LoginPage />} />
-        <Route path="register" element={<RegisterPage />} />
-        
-        {/* Photographer Routes */}
-        <Route 
-          path="photographer-dashboard" 
-          element={
-            <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
-              <PhotographerDashboard />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="dashboard" 
-          element={
-            <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
-              <PhotographerDashboard />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="galleries/new" 
-          element={
-            <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
-              <CreateGallery />
-            </ProtectedRoute>
-          } 
-        />
 
-        {/* Customer Routes */}
-        <Route 
-          path="my-gallery" 
+        {/* --- Customer --- */}
+        <Route
+          path="my-gallery"
           element={
             <ProtectedRoute allowedRoles={['customer']}>
               <CustomerDashboard />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="my-photos" 
+        <Route
+          path="my-photos"
           element={
             <ProtectedRoute allowedRoles={['customer']}>
               <MyPhotosPage />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="orders" 
+        <Route
+          path="orders"
           element={
             <ProtectedRoute allowedRoles={['customer']}>
               <MyOrdersPage />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="saved" 
+        <Route
+          path="saved"
           element={
             <ProtectedRoute allowedRoles={['customer']}>
               <SavedPhotosPage />
             </ProtectedRoute>
-          } 
+          }
         />
 
-        {/* Shared Routes */}
-        <Route 
-          path="settings" 
+        {/* --- Photographer --- */}
+        <Route
+          path="photographer-dashboard"
+          element={
+            <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
+              <PhotographerDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="dashboard"
+          element={
+            <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
+              <PhotographerDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="galleries/new"
+          element={
+            <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
+              <CreateGallery />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* --- Shared protected --- */}
+        <Route
+          path="settings"
           element={
             <ProtectedRoute allowedRoles={['customer', 'photographer', 'staff']}>
               <AccountSettingsPage />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="support" 
+        <Route
+          path="support"
           element={
             <ProtectedRoute allowedRoles={['customer', 'photographer', 'staff']}>
               <HelpAndSupportPage />
             </ProtectedRoute>
-          } 
+          }
         />
 
-        {/* Admin Routes */}
-        <Route 
-          path="admin/events" 
+        {/* --- Admin --- */}
+        <Route
+          path="admin/events"
           element={
             <ProtectedRoute requiredRole="staff" allowedRoles={['staff']}>
               <AdminEvents />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="admin/events/new" 
+        <Route
+          path="admin/events/new"
           element={
             <ProtectedRoute requiredRole="staff" allowedRoles={['staff']}>
               <EventForm />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="admin/events/:id/edit" 
+        <Route
+          path="admin/events/:id/edit"
           element={
             <ProtectedRoute requiredRole="staff" allowedRoles={['staff']}>
               <EventForm />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="admin/events/:id/edit" 
-          element={
-            <ProtectedRoute requiredRole="staff">
-              <EventForm />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="old-dashboard" 
+
+        {/* --- Legacy redirect --- */}
+        <Route
+          path="old-dashboard"
           element={
             <ProtectedRoute>
               <DashboardRedirect />
             </ProtectedRoute>
-          } 
+          }
         />
-        
-        {/* 404 - Catch all unmatched routes */}
+
+        {/* --- 404 --- */}
         <Route path="*" element={<NotFoundPage />} />
       </Route>
+
+      {/* ================= AUTH ROUTES (no navbar) ================= */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
     </Routes>
   );
 }
+
 
 function App() {
   const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID || '796270989266-7vtm7rl1bedsm1e664oe6b9fn45ht0s5.apps.googleusercontent.com';
