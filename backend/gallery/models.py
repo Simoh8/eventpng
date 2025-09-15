@@ -174,7 +174,7 @@ class Gallery(models.Model):
         limit_choices_to={'is_photographer': True}
     )
     is_public = models.BooleanField(
-        default=False,
+        default=True,
         help_text="If True, gallery is visible to everyone. If False, only accessible via direct link."
     )
     is_active = models.BooleanField(
