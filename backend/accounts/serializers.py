@@ -2,7 +2,12 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model, authenticate
 from django.utils.translation import gettext_lazy as _
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from django.contrib.auth import get_user_model
+from django.contrib.auth.forms import PasswordResetForm, SetPasswordForm
+from django.conf import settings
+from django.utils.http import urlsafe_base64_decode as uid_decoder
+from django.utils.encoding import force_str
+from django.contrib.auth.tokens import default_token_generator
+from rest_framework.exceptions import ValidationError
 
 User = get_user_model()
 
@@ -66,13 +71,6 @@ class UserCreateSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(required=True, allow_blank=False)
     full_name = serializers.CharField(required=True, allow_blank=False)
     
-    class Meta:
-        model = User
-        fields = ('email', 'password', 'confirm_password', 'full_name', 'phone_number')
-        extra_kwargs = {
-            'email': {'required': True, 'allow_blank': False},
-            'full_name': {'required': True, 'allow_blank': False},
-        }
     is_photographer = serializers.BooleanField(
         required=False,
         default=False,
@@ -81,11 +79,12 @@ class UserCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ('email', 'full_name', 'password', 'confirm_password', 'is_photographer')
+        fields = ('email', 'full_name', 'password', 'confirm_password', 'phone_number', 'is_photographer')
         extra_kwargs = {
             'password': {'write_only': True, 'min_length': 8},
-            'email': {'required': True},
-            'full_name': {'required': True}
+            'email': {'required': True, 'allow_blank': False},
+            'full_name': {'required': True, 'allow_blank': False},
+            'phone_number': {'required': False, 'allow_blank': True}
         }
     
     def validate_password(self, value):
@@ -135,6 +134,65 @@ class UserCreateSerializer(serializers.ModelSerializer):
         )
         
         return user
+
+class EmailSerializer(serializers.Serializer):
+    """
+    Serializer for requesting a password reset e-mail.
+    """
+    email = serializers.EmailField()
+    
+    class Meta:
+        fields = ('email',)
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """
+    Serializer for confirming a password reset attempt.
+    """
+    new_password1 = serializers.CharField(max_length=128)
+    new_password2 = serializers.CharField(max_length=128)
+    uid = serializers.CharField()
+    token = serializers.CharField()
+
+    set_password_form_class = SetPasswordForm
+    set_password_form = None
+    user = None
+    _errors = {}
+
+    def validate(self, attrs):
+        try:
+            # Decode the uid to get the user
+            try:
+                uid = force_str(uid_decoder(attrs['uid']))
+                self.user = User._default_manager.get(pk=uid)
+            except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+                raise ValidationError({'uid': ['Invalid user id or user doesn\'t exist.']})
+
+            # Construct SetPasswordForm instance
+            self.set_password_form = self.set_password_form_class(
+                user=self.user, 
+                data={
+                    'new_password1': attrs['new_password1'],
+                    'new_password2': attrs['new_password2'],
+                }
+            )
+
+            # Validate the form
+            if not self.set_password_form.is_valid():
+                raise serializers.ValidationError(self.set_password_form.errors)
+
+            # Check the token
+            if not default_token_generator.check_token(self.user, attrs['token']):
+                raise ValidationError({'token': ['Invalid token or token has expired.']})
+
+        except ValidationError as e:
+            raise e
+        except Exception as e:
+            raise ValidationError(str(e))
+
+        return attrs
+
+    def save(self):
+        return self.set_password_form.save()
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """Custom token serializer to include additional user data in the response."""

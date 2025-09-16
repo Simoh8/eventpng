@@ -1,7 +1,10 @@
 from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
-from .views import GoogleAuthConfigView, GoogleLogin, CSRFTokenView, EnvTestView
+from .views import (
+    GoogleAuthConfigView, GoogleLogin, CSRFTokenView, EnvTestView,
+    PasswordResetRequestView, PasswordResetConfirmView
+)
 from .api_views import AccountSettingsView
 
 app_name = 'accounts'
@@ -27,6 +30,10 @@ urlpatterns = [
     
     # Environment test endpoint
     path('env-test/', EnvTestView.as_view(), name='env_test'),
+    
+    # Password reset endpoints
+    path('auth/password/reset/', PasswordResetRequestView.as_view(), name='password_reset'),
+    path('auth/password/reset/confirm/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
     
     # Add auth/me/ endpoint for frontend compatibility
     path('auth/me/', views.CurrentUserView.as_view(), name='auth_me'),

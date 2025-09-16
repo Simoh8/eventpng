@@ -180,12 +180,12 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
                 Password
               </label>
-              <Link 
-                to="/forgot-password" 
-                className="text-sm font-medium text-blue-600 hover:text-blue-500"
-              >
-                Forgot password?
-              </Link>
+               <Link 
+                  to="/forgot-password" 
+                  className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors duration-200"
+                >
+                  Forgot password?
+                </Link>
             </div>
             <div className="mt-1 relative">
               <input
@@ -213,6 +213,15 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
               {errors.password && (
                 <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
               )}
+              
+              <div className="mt-2 text-right">
+                {/* <Link 
+                  to="/forgot-password" 
+                  className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors duration-200"
+                >
+                  Forgot password?
+                </Link> */}
+              </div>
             </div>
           </div>
           

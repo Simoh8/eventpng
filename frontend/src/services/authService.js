@@ -356,6 +356,29 @@ const authService = {
     return '';
   },
   
+  // Password reset
+  forgotPassword: async (email) => {
+    try {
+      const response = await api.post('/api/accounts/auth/password/reset/', { email });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error.message;
+    }
+  },
+
+  resetPassword: async (uid, token, newPassword) => {
+    try {
+      const response = await api.post('/api/accounts/auth/password/reset/confirm/', {
+        uid,
+        token,
+        new_password: newPassword,
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error.message;
+    }
+  },
+
   // Check if user is authenticated
   isAuthenticated: isAuthenticated,
   

@@ -17,12 +17,19 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from django.middleware.csrf import get_token
 from django.http import JsonResponse, HttpResponse
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.template.loader import render_to_string
+from django.core.mail import send_mail
+from django.urls import reverse
+from django.conf import settings
+from rest_framework.exceptions import ValidationError
 
 # Import serializers
 from . import serializers as account_serializers
 from rest_framework import permissions
-
-from . import serializers
+from .serializers import EmailSerializer, PasswordResetConfirmSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +55,8 @@ class RegisterView(generics.CreateAPIView):
     """
     Register a new user and return JWT tokens.
     """
-    serializer_class = serializers.UserCreateSerializer
+    from .serializers import UserCreateSerializer
+    serializer_class = UserCreateSerializer
     authentication_classes = []  # Disable authentication
     permission_classes = [permissions.AllowAny]
     throttle_scope = 'register'
@@ -156,7 +164,8 @@ class RegisterView(generics.CreateAPIView):
 
 class UserCreateView(generics.CreateAPIView):
     """View for creating a new user."""
-    serializer_class = serializers.UserCreateSerializer
+    from .serializers import UserCreateSerializer
+    serializer_class = UserCreateSerializer
     permission_classes = [permissions.AllowAny]
 
 class UserDetailView(generics.RetrieveUpdateAPIView):
@@ -164,7 +173,8 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
     View for retrieving and updating user details.
     Supports GET (retrieve), PUT (full update), and PATCH (partial update) methods.
     """
-    serializer_class = serializers.UserSerializer
+    from .serializers import UserSerializer
+    serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
     http_method_names = ['get', 'put', 'patch', 'head', 'options']
     
@@ -206,7 +216,8 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
 
 class ChangePasswordView(generics.UpdateAPIView):
     """View for changing user password."""
-    serializer_class = serializers.ChangePasswordSerializer
+    from .serializers import ChangePasswordSerializer
+    serializer_class = ChangePasswordSerializer
     permission_classes = [permissions.IsAuthenticated]
     
     def get_object(self):
@@ -234,7 +245,8 @@ class ChangePasswordView(generics.UpdateAPIView):
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     """Custom token obtain view to include user data in the response."""
-    serializer_class = serializers.CustomTokenObtainPairSerializer
+    from .serializers import CustomTokenObtainPairSerializer
+    serializer_class = CustomTokenObtainPairSerializer
 
 class CurrentUserView(APIView):
     """
@@ -363,6 +375,112 @@ class EnvTestView(APIView):
                 }
             }
         })
+
+
+class PasswordResetRequestView(APIView):
+    """
+    API View for requesting a password reset email.
+    """
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request, *args, **kwargs):
+        serializer = EmailSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {'status': 'error', 'errors': serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        email = serializer.validated_data['email']
+        
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # Return an error response if the email doesn't exist
+            return Response(
+                {
+                    'status': 'error', 
+                    'message': 'The email address you entered does not exist in our system. Please check the email and try again, or sign up for a new account.'
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Generate token and uid for password reset
+        token = default_token_generator.make_token(user)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        
+        # Build reset URL
+        reset_url = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
+        
+        # Email subject and message
+        subject = "Password Reset Request"
+        context = {
+            'user': user,
+            'reset_url': reset_url,
+            'protocol': 'https' if request.is_secure() else 'http',
+            'domain': request.get_host(),
+            'site_name': 'EventPNG',
+        }
+        
+        # Render email template
+        message = render_to_string('emails/password_reset_email.html', context)
+        
+        try:
+            # Send email
+            send_mail(
+                subject=subject,
+                message='',  # Empty message since we're using html_message
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                html_message=message,
+                fail_silently=False,
+            )
+            
+            return Response(
+                {'status': 'success', 'message': 'Password reset email has been sent.'},
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            logger.error(f"Error sending password reset email: {str(e)}")
+            return Response(
+                {'status': 'error', 'message': 'Failed to send password reset email.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class PasswordResetConfirmView(APIView):
+    """
+    API View for confirming a password reset.
+    """
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request, *args, **kwargs):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            return Response(
+                {'status': 'error', 'errors': serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            serializer.save()
+            return Response(
+                {'status': 'success', 'message': 'Password has been reset successfully.'},
+                status=status.HTTP_200_OK
+            )
+        except ValidationError as e:
+            return Response(
+                {'status': 'error', 'errors': e.detail},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error resetting password: {str(e)}")
+            return Response(
+                {'status': 'error', 'message': 'Failed to reset password.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class GoogleLogin(APIView):
