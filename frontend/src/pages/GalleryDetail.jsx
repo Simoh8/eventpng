@@ -18,7 +18,31 @@ const GalleryDetail = () => {
   const [showPinModal, setShowPinModal] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [requiresPin, setRequiresPin] = useState(false);
+  const [selectedPhotos, setSelectedPhotos] = useState(new Set());
   const galleryRef = useRef(null);
+  
+  // Toggle photo selection
+  const togglePhotoSelection = (photoId) => {
+    const newSelected = new Set(selectedPhotos);
+    if (newSelected.has(photoId)) {
+      newSelected.delete(photoId);
+    } else {
+      newSelected.add(photoId);
+    }
+    setSelectedPhotos(newSelected);
+  };
+  
+  // Select all photos
+  const selectAllPhotos = () => {
+    if (gallery?.photos) {
+      if (selectedPhotos.size === gallery.photos.length) {
+        setSelectedPhotos(new Set()); // Deselect all
+      } else {
+        const allIds = new Set(gallery.photos.map(photo => photo.id));
+        setSelectedPhotos(allIds);
+      }
+    }
+  };
   
   // Check if gallery is private and requires PIN
   const checkGalleryAccess = (galleryData) => {
@@ -190,6 +214,41 @@ const GalleryDetail = () => {
     });
   };
   
+  // Navigate to next/previous photo in fullscreen view
+  const navigatePhoto = (direction) => {
+    if (!selectedPhoto || !gallery?.photos) return;
+    
+    const currentIndex = gallery.photos.findIndex(photo => photo.id === selectedPhoto.id);
+    if (currentIndex === -1) return;
+    
+    let newIndex;
+    if (direction === 'next') {
+      newIndex = (currentIndex + 1) % gallery.photos.length;
+    } else {
+      newIndex = (currentIndex - 1 + gallery.photos.length) % gallery.photos.length;
+    }
+    
+    setSelectedPhoto(gallery.photos[newIndex]);
+  };
+  
+  // Handle keyboard navigation in fullscreen
+  useEffect(() => {
+    if (!isFullscreen) return;
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        handleCloseFullscreen();
+      } else if (e.key === 'ArrowLeft') {
+        navigatePhoto('prev');
+      } else if (e.key === 'ArrowRight') {
+        navigatePhoto('next');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen, selectedPhoto]);
+  
   // Download single image with watermark
   const downloadImage = async (photo) => {
     if (isDownloading) return;
@@ -215,8 +274,58 @@ const GalleryDetail = () => {
       document.body.removeChild(link);
       toast.success('Image downloaded with watermark');
     } catch (error) {
-      // console.error('Error downloading image:', error);
       toast.error('Failed to download image');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+  
+  // Download selected images
+  const downloadSelectedImages = async () => {
+    if (selectedPhotos.size === 0) {
+      toast.error('Please select at least one image to download');
+      return;
+    }
+    
+    // Check if user is authenticated
+    const token = localStorage.getItem('access');
+    if (!token) {
+      navigate('/login', { state: { from: window.location.pathname } });
+      toast.info('Please log in to download images');
+      return;
+    }
+    
+    try {
+      setIsDownloading(true);
+      const zip = new JSZip();
+      const folder = zip.folder(`eventpix-${gallery.title}-selected`);
+      
+      // Get selected photos
+      const selectedPhotoObjects = gallery.photos.filter(photo => selectedPhotos.has(photo.id));
+      
+      // Process each selected image
+      const imagePromises = selectedPhotoObjects.map(async (photo, index) => {
+        try {
+          const watermarkedImage = await addWatermark(photo.image);
+          const response = await fetch(watermarkedImage);
+          const blob = await response.blob();
+          folder.file(`image-${index + 1}.jpg`, blob);
+        } catch (error) {
+          console.error(`Error processing image ${photo.id}:`, error);
+        }
+      });
+      
+      await Promise.all(imagePromises);
+      
+      // Generate and download the zip file
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, `eventpix-${gallery.title}-selected.zip`);
+      toast.success(`Downloaded ${selectedPhotos.size} images with watermarks`);
+      
+      // Clear selection after download
+      setSelectedPhotos(new Set());
+    } catch (error) {
+      toast.error('Failed to download selected images');
     } finally {
       setIsDownloading(false);
     }
@@ -248,6 +357,7 @@ const GalleryDetail = () => {
           const blob = await response.blob();
           folder.file(`image-${index + 1}.jpg`, blob);
         } catch (error) {
+          console.error(`Error processing image ${photo.id}:`, error);
         }
       });
       
@@ -322,11 +432,8 @@ const GalleryDetail = () => {
     },
   });
 
-  // Handle photo click - disabled in favor of download
+  // Handle photo click - opens enlarged view
   const handlePhotoClick = (photo) => {
-    // Instead of opening in fullscreen, trigger download
-    downloadImage(photo);
-    // Uncomment below to re-enable fullscreen view
     setSelectedPhoto(photo);
     setIsFullscreen(true);
   };
@@ -337,24 +444,13 @@ const GalleryDetail = () => {
     setSelectedPhoto(null);
   };
 
-  // Handle keyboard navigation in fullscreen
-  useEffect(() => {
-    if (!isFullscreen) return;
-
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        handleCloseFullscreen();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullscreen]);
-
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50">
+        <div className="flex flex-col items-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-purple-600 mb-4"></div>
+          <p className="text-gray-600 font-medium">Loading gallery...</p>
+        </div>
       </div>
     );
   }
@@ -362,16 +458,16 @@ const GalleryDetail = () => {
   // Show PIN verification modal for private galleries
   if (gallery?.requires_pin) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+        <div className="bg-white rounded-xl shadow-xl p-8 max-w-md w-full border border-gray-100">
           <div className="text-center mb-6">
-            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100">
-              <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-blue-100 mb-4">
+              <svg className="h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
             </div>
-            <h2 className="mt-3 text-xl font-semibold text-gray-900">Private Gallery</h2>
-            <p className="mt-2 text-sm text-gray-500">Please enter the PIN to access this gallery</p>
+            <h2 className="mt-3 text-2xl font-bold text-gray-900">Private Gallery</h2>
+            <p className="mt-2 text-gray-500">Please enter the PIN to access this gallery</p>
           </div>
           
           <form onSubmit={async (e) => {
@@ -383,7 +479,7 @@ const GalleryDetail = () => {
               toast.error('Invalid PIN. Please try again.');
             }
           }}>
-            <div className="mb-4">
+            <div className="mb-5">
               <input
                 type="password"
                 name="pin"
@@ -391,22 +487,30 @@ const GalleryDetail = () => {
                 maxLength="6"
                 pattern="\d{6}"
                 placeholder="Enter 6-digit PIN"
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               />
             </div>
             <button
               type="submit"
               disabled={isVerifying}
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-base font-medium text-white bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:-translate-y-0.5"
             >
-              {isVerifying ? 'Verifying...' : 'Access Gallery'}
+              {isVerifying ? (
+                <span className="flex items-center">
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Verifying...
+                </span>
+              ) : 'Access Gallery'}
             </button>
           </form>
           
-          <div className="mt-4 text-center">
+          <div className="mt-5 text-center">
             <button
               onClick={() => navigate(-1)}
-              className="text-sm text-blue-600 hover:text-blue-800"
+              className="text-blue-600 hover:text-blue-800 font-medium transition-colors"
             >
               Go back to events
             </button>
@@ -418,13 +522,18 @@ const GalleryDetail = () => {
 
   if (error || !gallery) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50">
+        <div className="text-center bg-white p-8 rounded-xl shadow-md max-w-md w-full mx-4">
+          <div className="mb-5">
+            <svg className="mx-auto h-16 w-16 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
           <h2 className="text-2xl font-bold text-gray-800 mb-2">Gallery Not Found</h2>
-          <p className="text-gray-600 mb-4">The gallery you're looking for doesn't exist or is not available.</p>
+          <p className="text-gray-600 mb-6">The gallery you're looking for doesn't exist or is not available.</p>
           <button
             onClick={() => navigate(-1)}
-            className="px-4 py-2 bg-primary-500 text-white rounded hover:bg-primary-600 transition-colors"
+            className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
           >
             Go Back
           </button>
@@ -434,32 +543,32 @@ const GalleryDetail = () => {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-50">
       <div className="container mx-auto px-4 py-8">
         {/* Back button */}
         <button 
           onClick={() => navigate(-1)}
-          className="mb-4 flex items-center text-primary-500 hover:text-primary-700"
+          className="mb-6 flex items-center text-blue-600 hover:text-blue-800 font-medium transition-colors group"
         >
-          <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <svg className="w-5 h-5 mr-2 transition-transform group-hover:-translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
           Back to event
         </button>
         
         {/* Gallery Header */}
-        <div className="mb-8 bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+        <div className="mb-8 bg-white p-6 rounded-xl shadow-md border border-gray-100">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">{gallery.title}</h1>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">{gallery.title}</h1>
               {gallery.event && (
-                <p className="text-gray-600 mt-1">
-                  From event: <span className="font-medium">{gallery.event.title}</span>
+                <p className="text-gray-600">
+                  From event: <span className="font-medium text-blue-700">{gallery.event.title}</span>
                 </p>
               )}
             </div>
             
-            <div className="bg-primary-50 text-primary-800 px-4 py-2 rounded-md">
+            <div className="bg-gradient-to-r from-blue-100 to-purple-100 text-blue-800 px-5 py-3 rounded-xl border border-blue-200">
               <div className="text-sm font-medium">Total Photos</div>
               <div className="text-2xl font-bold">{gallery.photos?.length || 0}</div>
             </div>
@@ -467,10 +576,10 @@ const GalleryDetail = () => {
           
           {gallery.photographer && (
             <div className="flex items-center text-gray-600 mb-3">
-              {/* <svg className="w-5 h-5 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg> */}
-              {/* <span>Photographer: {gallery.photographer.first_name || gallery.photographer.username}</span> */}
+              </svg>
+              <span>Photographer: {gallery.photographer.first_name || gallery.photographer.username}</span>
             </div>
           )}
           
@@ -503,74 +612,115 @@ const GalleryDetail = () => {
           )}
           
           {gallery.description && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-md">
-              <h3 className="text-sm font-medium text-gray-500 mb-2">Gallery Description</h3>
+            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+              <h3 className="text-sm font-medium text-blue-700 mb-2">Gallery Description</h3>
               <p className="text-gray-700">{gallery.description}</p>
             </div>
           )}
         </div>
 
-        {/* Photos Grid with Download Buttons */}
+        {/* Selection and Download Controls */}
+        <div className="mb-6 flex flex-wrap justify-between items-center gap-3">
+          <h2 className="text-xl font-semibold text-gray-800">Gallery Photos</h2>
+          
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-600">
+              {selectedPhotos.size} {selectedPhotos.size === 1 ? 'image' : 'images'} selected
+            </span>
+            <button
+              onClick={selectAllPhotos}
+              className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              {selectedPhotos.size === gallery.photos?.length ? 'Deselect All' : 'Select All'}
+            </button>
+            <button
+              onClick={downloadSelectedImages}
+              disabled={isDownloading || selectedPhotos.size === 0}
+              className="px-4 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-all transform hover:-translate-y-0.5 disabled:opacity-50 flex items-center gap-2 shadow-md text-sm"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download Selected
+            </button>
+            <button
+              onClick={downloadAllImages}
+              disabled={isDownloading}
+              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all transform hover:-translate-y-0.5 disabled:opacity-50 flex items-center gap-2 shadow-md text-sm"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download All
+            </button>
+          </div>
+        </div>
+
+        {/* Photos Grid */}
         {gallery.photos && gallery.photos.length > 0 ? (
-          <>
-            <div className="mb-4">
-              <button
-                onClick={downloadAllImages}
-                disabled={isDownloading}
-                className="px-4 py-2 bg-primary-500 text-white rounded hover:bg-primary-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {gallery.photos.map((photo) => (
+              <div 
+                key={photo.id} 
+                className={`group relative aspect-square bg-gray-100 rounded-xl overflow-hidden cursor-pointer transition-all duration-300 transform hover:scale-[1.02] shadow-md ${
+                  selectedPhotos.has(photo.id) ? 'ring-2 ring-blue-500 ring-offset-2' : ''
+                }`}
+                onClick={() => handlePhotoClick(photo)}
               >
-                {isDownloading ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Downloading...
-                  </>
-                ) : (
-                  'Download All Images'
-                )}
-              </button>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {gallery.photos.map((photo) => (
-                <div 
-                  key={photo.id} 
-                  className="group relative aspect-square bg-gray-100 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
-                >
-                  <div className="relative w-full h-full">
-                    <img
-                      src={photo.image}
-                      alt={photo.caption || 'Gallery photo'}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Available';
-                      }}
-                      onClick={() => handlePhotoClick(photo)}
-                    />
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          downloadImage(photo);
-                        }}
-                        className="bg-white bg-opacity-90 rounded-full p-2 text-gray-800 hover:bg-opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0"
-                        title="Download Image"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                <div className="relative w-full h-full">
+                  <img
+                    src={photo.image}
+                    alt={photo.caption || 'Gallery photo'}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Available';
+                    }}
+                  />
+                  
+                  {/* Selection checkbox - always visible */}
+                  <div 
+                    className="absolute top-2 left-2 z-10"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      togglePhotoSelection(photo.id);
+                    }}
+                  >
+                    <div className={`w-6 h-6 flex items-center justify-center rounded-full ${
+                      selectedPhotos.has(photo.id) ? 'bg-blue-600' : 'bg-white bg-opacity-80'
+                    }`}>
+                      {selectedPhotos.has(photo.id) && (
+                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                         </svg>
-                      </button>
+                      )}
                     </div>
                   </div>
+                  
+                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        downloadImage(photo);
+                      }}
+                      className="bg-white bg-opacity-90 rounded-full p-3 text-gray-800 hover:bg-opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0 shadow-lg hover:shadow-xl"
+                      title="Download Image"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
-              ))}
-            </div>
-          </>
+              </div>
+            ))}
+          </div>
         ) : (
-          <div className="text-center py-12">
-            <p className="text-gray-500">No photos in this gallery yet.</p>
+          <div className="text-center py-12 bg-white rounded-xl shadow-sm border border-gray-100">
+            <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <p className="text-gray-500 text-lg">No photos in this gallery yet.</p>
           </div>
         )}
       </div>
@@ -578,31 +728,92 @@ const GalleryDetail = () => {
       {/* Fullscreen Photo View */}
       {isFullscreen && selectedPhoto && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black bg-opacity-95 z-50 flex items-center justify-center p-4"
           onClick={handleCloseFullscreen}
         >
-          <div className="relative max-w-4xl w-full max-h-[90vh] flex items-center justify-center">
+          <div className="relative max-w-5xl w-full max-h-[90vh] flex items-center justify-center">
             <button 
               onClick={(e) => {
                 e.stopPropagation();
                 handleCloseFullscreen();
               }}
-              className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
+              className="absolute top-4 right-4 text-white hover:text-gray-300 z-10 bg-gray-900 bg-opacity-50 rounded-full p-2 transition-colors"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
             
+            {/* Navigation arrows */}
+            {gallery.photos.length > 1 && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigatePhoto('prev');
+                  }}
+                  className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white hover:text-gray-300 z-10 bg-gray-900 bg-opacity-50 rounded-full p-3 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigatePhoto('next');
+                  }}
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white hover:text-gray-300 z-10 bg-gray-900 bg-opacity-50 rounded-full p-3 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </>
+            )}
+            
             <div className="relative max-w-full max-h-full">
               <img
                 src={selectedPhoto.image}
                 alt={selectedPhoto.caption || 'Selected photo'}
-                className="max-w-full max-h-[80vh] object-contain"
+                className="max-w-full max-h-[80vh] object-contain rounded-sm"
               />
               
+              {/* Selection checkbox in fullscreen view */}
+              <div 
+                className="absolute top-4 left-4 z-10"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  togglePhotoSelection(selectedPhoto.id);
+                }}
+              >
+                <div className={`w-8 h-8 flex items-center justify-center rounded-full ${
+                  selectedPhotos.has(selectedPhoto.id) ? 'bg-blue-600' : 'bg-white bg-opacity-80'
+                }`}>
+                  {selectedPhotos.has(selectedPhoto.id) && (
+                    <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+              </div>
+              
+              {/* Download button in fullscreen view */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  downloadImage(selectedPhoto);
+                }}
+                className="absolute top-4 right-16 text-white hover:text-gray-300 z-10 bg-gray-900 bg-opacity-50 rounded-full p-2 transition-colors"
+                title="Download Image"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              </button>
+              
               {selectedPhoto.caption && (
-                <div className="mt-4 text-white text-center">
+                <div className="mt-4 text-white text-center text-lg font-medium">
                   {selectedPhoto.caption}
                 </div>
               )}

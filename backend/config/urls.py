@@ -26,7 +26,20 @@ from gallery.admin import admin_site as gallery_admin_site
 # Unregister the default admin site
 admin.site = gallery_admin_site
 
+# Add REST framework authentication URLs
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
+
 urlpatterns = [
+    # API Endpoints
+    path('api/photographer/dashboard/', include('photographer_dashboard.urls')),
+    
+    # JWT Authentication
+    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    
     # Admin
     path('admin/', admin.site.urls),
     

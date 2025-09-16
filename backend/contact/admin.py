@@ -99,7 +99,7 @@ class ContactSubmissionAdmin(admin.ModelAdmin):
         count = ContactSubmission.objects.filter(status='new').count()
         return JsonResponse({'count': count})
 
-admin.site.register(ContactSubmission, ContactSubmissionAdmin)
+# admin.site.register(ContactSubmission, ContactSubmissionAdmin)
 
 # Also register with the custom admin site if it exists
 try:
