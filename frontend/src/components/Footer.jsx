@@ -17,7 +17,7 @@ const Footer = () => {
             <p className="text-gray-400 mb-4">
               Capturing your special moments with professional photography services for all types of events.
             </p>
-            <div className="flex space-x-4">
+            {/* <div className="flex space-x-4">
               <a href="#" className="text-gray-400 hover:text-blue-400 transition-colors duration-200">
                 <FaFacebook className="w-5 h-5" />
               </a>
@@ -27,7 +27,7 @@ const Footer = () => {
               <a href="#" className="text-gray-400 hover:text-pink-400 transition-colors duration-200">
                 <FaInstagram className="w-5 h-5" />
               </a>
-            </div>
+            </div> */}
           </div>
 
           {/* Quick Links */}
