@@ -14,6 +14,8 @@ import FaqPage from './pages/FaqPage';
 import TermsAndPrivacy from './pages/TermsAndPrivacy';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import ForgotPassword from './pages/auth/ForgotPassword';
+import ResetPassword from './pages/auth/ResetPassword';
 import CustomerDashboard from './pages/CustomerDashboard';
 import PhotographerDashboard from './pages/PhotographerDashboard';
 import CreateGallery from './pages/CreateGallery';
@@ -270,6 +272,8 @@ function AppContent() {
       {/* ================= AUTH ROUTES (no navbar) ================= */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password/:uid/:token" element={<ResetPassword />} />
     </Routes>
   );
 }
