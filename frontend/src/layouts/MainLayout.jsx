@@ -48,6 +48,7 @@ export default function MainLayout() {
       // Public navigation
       { name: 'Pricing', href: '/pricing' },
       { name: 'FAQ', href: '/faq' },
+      { name: 'Contact', href: '/contact' },
       { name: 'Terms', href: '/terms' },
     ]),
   ];

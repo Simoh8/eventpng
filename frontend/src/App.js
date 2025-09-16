@@ -24,6 +24,7 @@ import MyOrdersPage from './pages/MyOrdersPage';
 import SavedPhotosPage from './pages/SavedPhotosPage';
 import AccountSettingsPage from './pages/AccountSettingsPage';
 import HelpAndSupportPage from './pages/HelpAndSupportPage';
+import ContactPage from './pages/ContactPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 
@@ -145,6 +146,7 @@ function AppContent() {
         <Route path="gallery/:id" element={<GalleryDetail />} />
         <Route path="pricing" element={<PricingPage />} />
         <Route path="faq" element={<FaqPage />} />
+        <Route path="contact" element={<ContactPage />} />
         <Route path="terms" element={<TermsAndPrivacy />} />
 
         {/* --- Customer --- */}
