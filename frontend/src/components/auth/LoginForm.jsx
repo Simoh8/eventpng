@@ -6,17 +6,13 @@ import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import * as yup from 'yup';
 import authService from '../../services/authService';
 import FormInput from '../forms/FormInput';
-
+import { FaEye, FaEyeSlash } from 'react-icons/fa'; // Import eye icons
 
 const handleGoogleLogin = async (response, onSuccess, setError) => {
   try {
-    console.log('Google OAuth response received');
-
     if (!response.credential) {
       throw new Error('No credential received from Google');
     }
-
-    console.log('Initiating Google authentication with backend...');
 
     // Clear any existing auth data before Google login
     localStorage.removeItem('access');
@@ -26,12 +22,8 @@ const handleGoogleLogin = async (response, onSuccess, setError) => {
     // Send the credential to the backend
     const result = await authService.googleAuth(response.credential);
 
-    console.log('Google authentication result:', result);
-
     // ✅ Fix: check SimpleJWT-style tokens
     if (result && result.access) {
-      console.log('Authentication successful, storing user data');
-
       localStorage.setItem('access', result.access);
       if (result.refresh) {
         localStorage.setItem('refresh', result.refresh);
@@ -59,7 +51,6 @@ const handleGoogleLogin = async (response, onSuccess, setError) => {
   }
 };
 
-
 // Define validation schema using Yup
 const loginSchema = yup.object().shape({
   email: yup
@@ -75,6 +66,7 @@ const loginSchema = yup.object().shape({
 const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false); // State for password visibility
   const navigate = useNavigate();
 
   const {
@@ -84,6 +76,10 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
   } = useForm({
     resolver: yupResolver(loginSchema),
   });
+
+  const togglePasswordVisibility = () => {
+    setShowPassword(!showPassword);
+  };
 
   const onSubmit = async (formData) => {
     setError('');
@@ -167,7 +163,7 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
                 id="email"
                 type="email"
                 autoComplete="email"
-                placeholder="your@email.com"
+                placeholder="eventpng@gmail.com"
                 className={`appearance-none block w-full px-3 py-2 border ${
                   errors.email ? 'border-red-300' : 'border-gray-300'
                 } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
@@ -191,17 +187,29 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
                 Forgot password?
               </Link>
             </div>
-            <div className="mt-1">
+            <div className="mt-1 relative">
               <input
                 id="password"
-                type="password"
+                type={showPassword ? "text" : "password"} // Toggle between text and password
                 autoComplete="current-password"
                 placeholder="••••••••"
-                className={`appearance-none block w-full px-3 py-2 border ${
+                className={`appearance-none block w-full px-3 py-2 pr-10 border ${
                   errors.password ? 'border-red-300' : 'border-gray-300'
                 } rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
                 {...register('password')}
               />
+              {/* Password toggle button */}
+              <button
+                type="button"
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-500"
+                onClick={togglePasswordVisibility}
+              >
+                {showPassword ? (
+                  <FaEyeSlash className="h-5 w-5" />
+                ) : (
+                  <FaEye className="h-5 w-5" />
+                )}
+              </button>
               {errors.password && (
                 <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
               )}
