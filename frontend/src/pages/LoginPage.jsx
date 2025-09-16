@@ -69,14 +69,15 @@ export default function LoginPage() {
       {/* Home Button with simplified Tailwind animations */}
       <Link
         to="/"
-        className="animate-pulse fixed top-6 left-6 z-50 flex items-center gap-2 bg-white text-blue-600 hover:text-blue-700 font-medium py-3 px-5 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 border-2 border-blue-200 hover:border-blue-400 hover:scale-105"
+        className="animate-pulse fixed top-4 left-4 sm:top-6 sm:left-6 z-50 flex items-center gap-2 bg-white text-blue-600 hover:text-blue-700 font-medium py-2 px-4 sm:py-3 sm:px-5 rounded-lg sm:rounded-xl shadow-md sm:shadow-lg hover:shadow-xl transition-all duration-300 border-2 border-blue-200 hover:border-blue-400 hover:scale-105"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        <FaHome className={`w-5 h-5 transition-all duration-300 ${isHovered ? 'animate-bounce' : ''}`} />
-        <span className="transition-all duration-300">{isHovered ? 'Return Home' : 'Back to Home'}</span>
+        <FaHome className={`w-4 h-4 sm:w-5 sm:h-5 transition-all duration-300 ${isHovered ? 'animate-bounce' : ''}`} />
+        <span className="hidden sm:inline transition-all duration-300">{isHovered ? 'Return Home' : 'Back to Home'}</span>
+        <span className="sm:hidden transition-all duration-300">Home</span>
         
-        {/* Simple shimmer effect on hover */}
+        {/* Shimmer effect on hover */}
         <div className="absolute inset-0 -z-10 overflow-hidden">
           <div className={`absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent transform -skew-x-12 transition-all duration-1000 ${
             isHovered ? 'translate-x-full' : '-translate-x-full'

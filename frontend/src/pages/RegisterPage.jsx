@@ -183,15 +183,17 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 py-12 px-4 sm:px-6 lg:px-8">      {/* Home Button */}
-      <Link
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 py-12 px-4 sm:px-6 lg:px-8">     
+     {/* Home Button */}
+     <Link
         to="/"
-        className="fixed top-6 left-6 z-50 flex items-center gap-2 bg-white text-indigo-600 hover:text-indigo-700 font-medium py-3 px-5 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 border-2 border-indigo-200 hover:border-indigo-400 hover:scale-105"
+        className="animate-pulse fixed top-4 left-4 sm:top-6 sm:left-6 z-50 flex items-center gap-2 bg-white text-blue-600 hover:text-blue-700 font-medium py-2 px-4 sm:py-3 sm:px-5 rounded-lg sm:rounded-xl shadow-md sm:shadow-lg hover:shadow-xl transition-all duration-300 border-2 border-blue-200 hover:border-blue-400 hover:scale-105"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        <FaHome className={`w-5 h-5 transition-all duration-300 ${isHovered ? 'animate-bounce' : ''}`} />
-        <span className="transition-all duration-300">{isHovered ? 'Return Home' : 'Back to Home'}</span>
+        <FaHome className={`w-4 h-4 sm:w-5 sm:h-5 transition-all duration-300 ${isHovered ? 'animate-bounce' : ''}`} />
+        <span className="hidden sm:inline transition-all duration-300">{isHovered ? 'Return Home' : 'Back to Home'}</span>
+        <span className="sm:hidden transition-all duration-300">Home</span>
         
         {/* Shimmer effect on hover */}
         <div className="absolute inset-0 -z-10 overflow-hidden">
@@ -210,14 +212,14 @@ export default function RegisterPage() {
         </p>
         <p className="mt-2 text-center text-sm text-gray-500">
           Already have an account?{' '}
-          <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500 transition-colors duration-300">
+          <Link to="/login" className="font-medium text-blue-600 hover:text-blue-700 transition-colors duration-300">
             Sign in here
           </Link>
         </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-6 shadow-xl sm:rounded-2xl sm:px-10 border border-indigo-100">
+        <div className="bg-white py-8 px-6 shadow-xl sm:rounded-2xl sm:px-10 border border-blue-100">
           <Formik
             initialValues={{
               name: '',
@@ -255,7 +257,7 @@ export default function RegisterPage() {
                         name="name"
                         type="text"
                         autoComplete="name"
-                        className={`appearance-none block w-full px-4 py-3 ${errors.name && touched.name ? 'border-red-300' : 'border-gray-300'} border rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300`}
+                        className={`appearance-none block w-full px-4 py-3 ${errors.name && touched.name ? 'border-red-300' : 'border-gray-300'} border rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300`}
                         placeholder="John Doe"
                       />
                       {errors.name && touched.name && (
@@ -281,7 +283,7 @@ export default function RegisterPage() {
                         name="email"
                         type="email"
                         autoComplete="email"
-                        className={`appearance-none block w-full px-4 py-3 ${errors.email && touched.email ? 'border-red-300' : 'border-gray-300'} border rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300`}
+                        className={`appearance-none block w-full px-4 py-3 ${errors.email && touched.email ? 'border-red-300' : 'border-gray-300'} border rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300`}
                         placeholder="you@example.com"
                       />
                       {errors.email && touched.email && (
@@ -308,18 +310,18 @@ export default function RegisterPage() {
                         name="password"
                         type={showPassword ? 'text' : 'password'}
                         autoComplete="new-password"
-                        className={`appearance-none block w-full px-4 py-3 ${errors.password && touched.password ? 'border-red-300' : 'border-gray-300'} border rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 pr-12`}
+                        className={`appearance-none block w-full px-4 py-3 ${errors.password && touched.password ? 'border-red-300' : 'border-gray-300'} border rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 pr-12`}
                         aria-describedby="password-requirements"
                       />
                       <button
                         type="button"
-                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-blue-600 hover:text-blue-700 transition-colors duration-300"
                         onClick={() => setShowPassword(!showPassword)}
                       >
                         {showPassword ? (
-                          <EyeSlashIcon className="h-5 w-5 text-gray-400 hover:text-gray-600 transition-colors duration-300" />
+                          <EyeSlashIcon className="h-5 w-5" />
                         ) : (
-                          <EyeIcon className="h-5 w-5 text-gray-400 hover:text-gray-600 transition-colors duration-300" />
+                          <EyeIcon className="h-5 w-5" />
                         )}
                       </button>
                     </div>
@@ -390,17 +392,17 @@ export default function RegisterPage() {
                         name="confirmPassword"
                         type={showConfirmPassword ? 'text' : 'password'}
                         autoComplete="new-password"
-                        className={`appearance-none block w-full px-4 py-3 ${errors.confirmPassword && touched.confirmPassword ? 'border-red-300' : 'border-gray-300'} border rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 pr-12`}
+                        className={`appearance-none block w-full px-4 py-3 ${errors.confirmPassword && touched.confirmPassword ? 'border-red-300' : 'border-gray-300'} border rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 pr-12`}
                       />
                       <button
                         type="button"
-                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-blue-600 hover:text-blue-700 transition-colors duration-300"
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                       >
                         {showConfirmPassword ? (
-                          <EyeSlashIcon className="h-5 w-5 text-gray-400 hover:text-gray-600 transition-colors duration-300" />
+                          <EyeSlashIcon className="h-5 w-5" />
                         ) : (
-                          <EyeIcon className="h-5 w-5 text-gray-400 hover:text-gray-600 transition-colors duration-300" />
+                          <EyeIcon className="h-5 w-5" />
                         )}
                       </button>
                     </div>
@@ -409,12 +411,12 @@ export default function RegisterPage() {
                     )}
                   </div>
 
-                  <div className="flex items-center p-3 bg-indigo-50 rounded-lg">
+                  <div className="flex items-center p-3 bg-blue-50 rounded-lg">
                     <Field
                       id="isPhotographer"
                       name="isPhotographer"
                       type="checkbox"
-                      className="h-5 w-5 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                      className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
                     <label htmlFor="isPhotographer" className="ml-3 block text-sm font-medium text-gray-700">
                       I am a photographer
@@ -425,7 +427,7 @@ export default function RegisterPage() {
                     <button
                       type="submit"
                       disabled={isSubmitting || isLoading}
-                      className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-base font-medium text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 transform hover:-translate-y-0.5"
+                      className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-base font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 transform hover:-translate-y-0.5"
                     >
                       {isLoading || isSubmitting ? (
                         <>
@@ -462,11 +464,11 @@ export default function RegisterPage() {
             <div className="mt-8 text-center text-sm">
               <p className="text-gray-600">
                 By creating an account, you agree to our{' '}
-                <a href="/terms" className="font-medium text-indigo-600 hover:text-indigo-500 transition-colors duration-300">
+                <a href="/terms" className="font-medium text-blue-600 hover:text-blue-700 transition-colors duration-300">
                   Terms of Service
                 </a>{' '}
                 and{' '}
-                <a href="/terms" className="font-medium text-indigo-600 hover:text-indigo-500 transition-colors duration-300">
+                <a href="/terms" className="font-medium text-blue-600 hover:text-blue-700 transition-colors duration-300">
                   Privacy Policy
                 </a>
                 .
