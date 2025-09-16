@@ -159,11 +159,3 @@ This project is licensed under the MIT License.
 
 
 
-
-{
-  "email": "photogapher1@example.com",
-  "full_name": "John Photographer",
-  "password": "securepassword123",
-  "confirm_password": "securepassword123",
-  "is_photographer": true
-}

@@ -297,6 +297,10 @@ class GalleryCreateSerializer(serializers.ModelSerializer):
         photos_data = validated_data.pop('photos', [])
         event = validated_data.pop('event', None)
         
+        # Ensure is_public is True by default if not provided
+        if 'is_public' not in validated_data:
+            validated_data['is_public'] = True
+            
         # Set the photographer to the current user
         validated_data['photographer'] = self.context['request'].user
         
