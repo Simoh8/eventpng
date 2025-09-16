@@ -10,7 +10,7 @@ import PageContainer from '../components/PageContainer';
 const pricingPlans = [
   {
     name: 'Pay As You Go',
-    price: ' KSH',
+    price: ' KSH 30',
     description: 'Per image download',
     features: [
       'High-quality image downloads',

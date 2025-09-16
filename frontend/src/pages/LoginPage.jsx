@@ -10,6 +10,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { isAuthenticated, user, isLoading } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   
   // Get the intended destination or default to '/'
   const from = location.state?.from?.pathname || '/';
@@ -65,13 +66,22 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      {/* Home Button */}
+      {/* Home Button with simplified Tailwind animations */}
       <Link
         to="/"
-        className="fixed top-6 left-6 z-50 flex items-center gap-2 bg-white text-blue-600 hover:text-blue-700 font-medium py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 border border-gray-200 hover:border-blue-300"
+        className="animate-pulse fixed top-6 left-6 z-50 flex items-center gap-2 bg-white text-blue-600 hover:text-blue-700 font-medium py-3 px-5 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 border-2 border-blue-200 hover:border-blue-400 hover:scale-105"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
-        <FaHome className="w-5 h-5" />
-        <span>Back to Home</span>
+        <FaHome className={`w-5 h-5 transition-all duration-300 ${isHovered ? 'animate-bounce' : ''}`} />
+        <span className="transition-all duration-300">{isHovered ? 'Return Home' : 'Back to Home'}</span>
+        
+        {/* Simple shimmer effect on hover */}
+        <div className="absolute inset-0 -z-10 overflow-hidden">
+          <div className={`absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent transform -skew-x-12 transition-all duration-1000 ${
+            isHovered ? 'translate-x-full' : '-translate-x-full'
+          }`} />
+        </div>
       </Link>
       
       <div className="w-full max-w-md">

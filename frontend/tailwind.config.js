@@ -39,6 +39,41 @@ module.exports = {
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
       },
+      animation: {
+        'float': 'float 3s ease-in-out infinite',
+        'pulse-slow': 'pulse 3s ease-in-out infinite',
+        'bounce-slow': 'bounce 2s infinite',
+        'particle-float': 'particleFloat 1s ease-in-out forwards',
+        'shimmer': 'shimmer 1.5s infinite',
+        'bounce-gentle': 'bounceGentle 0.5s ease-in-out',
+      },
+      keyframes: {
+        float: {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-5px)' },
+        },
+        particleFloat: {
+          '0%': { 
+            transform: 'translateY(0) translateX(0) rotate(0deg)',
+            opacity: '0',
+          },
+          '20%': { opacity: '1' },
+          '80%': { opacity: '1' },
+          '100%': { 
+            transform: 'translateY(-20px) translateX(10px) rotate(180deg)',
+            opacity: '0',
+          },
+        },
+        shimmer: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(100%)' },
+        },
+        bounceGentle: {
+          '0%, 100%': { transform: 'translateX(0)' },
+          '25%': { transform: 'translateX(-3px)' },
+          '75%': { transform: 'translateX(3px)' },
+        }
+      }
     },
   },
   plugins: [
