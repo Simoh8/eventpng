@@ -15,7 +15,7 @@ const Footer = () => {
             <p className="text-gray-400 mb-4">
               Capturing your special moments with professional photography services for all types of events.
             </p>
-            <div className="flex space-x-4">
+            {/* <div className="flex space-x-4">
               <a href="#" className="text-gray-400 hover:text-white transition-colors">
                 <FaFacebook className="w-5 h-5" />
               </a>
@@ -25,7 +25,7 @@ const Footer = () => {
               <a href="#" className="text-gray-400 hover:text-white transition-colors">
                 <FaInstagram className="w-5 h-5" />
               </a>
-            </div>
+            </div> */}
           </div>
 
           {/* Quick Links */}
@@ -45,12 +45,12 @@ const Footer = () => {
             <ul className="space-y-3">
               <li className="flex items-start">
                 <FaMapMarkerAlt className="mt-1 mr-3 text-blue-400 flex-shrink-0" />
-                <span className="text-gray-400">123 Photo Street, Nairobi, Kenya</span>
+                <span className="text-gray-400">Nairobi, Kenya</span>
               </li>
               <li className="flex items-center">
                 <FaEnvelope className="mr-3 text-blue-400" />
                 <a href="mailto:info@eventpng.com" className="text-gray-400 hover:text-white transition-colors">
-                  info@eventpng.com
+                  simomutu8@gmail.com
                 </a>
               </li>
               <li className="flex items-center">
