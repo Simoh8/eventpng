@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import LoginForm from '../components/auth/LoginForm';
+import { FaHome } from 'react-icons/fa';
 
 export default function LoginPage() {
   const location = useLocation();
@@ -23,7 +24,6 @@ export default function LoginPage() {
     
     if (isUserAuthenticated) {
       setIsProcessing(true);
-      console.log('User is authenticated, redirecting to:', from);
       
       // Use a small timeout to ensure the auth state is fully updated
       const timer = setTimeout(() => {
@@ -42,14 +42,11 @@ export default function LoginPage() {
   }, [isAuthenticated, from, navigate, isLoading, isProcessing]);
   
   const handleSuccess = useCallback(() => {
-    console.log('handleSuccess called, will redirect to:', from);
-    console.log('Current location state:', window.location.pathname);
     
     toast.success('Login successful!');
     
     // Small delay to show the success message before redirecting
     setTimeout(() => {
-      console.log('Executing navigation to:', from);
       navigate(from, { 
         replace: true,
         state: { from: undefined } // Clear the from state to prevent loops
@@ -68,6 +65,15 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+      {/* Home Button */}
+      <Link
+        to="/"
+        className="fixed top-6 left-6 z-50 flex items-center gap-2 bg-white text-blue-600 hover:text-blue-700 font-medium py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 border border-gray-200 hover:border-blue-300"
+      >
+        <FaHome className="w-5 h-5" />
+        <span>Back to Home</span>
+      </Link>
+      
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
           {/* Decorative header */}

@@ -1,28 +1,91 @@
-# Premium Image Gallery Platform
+# 📸 EventPNG - Professional Event Photography Platform
 
-A high-quality image gallery platform where photographers can showcase their work and users can purchase downloads.
+A premium image gallery platform for professional photographers to showcase their work and sell high-quality digital downloads. Built with modern web technologies to deliver a seamless experience for both photographers and customers.
 
-## Features
+## ✨ Features
 
-- **High-Quality Image Hosting**: Upload and display images without quality degradation
-- **Responsive Gallery Interface**: Beautiful, mobile-friendly galleries
-- **Secure Payment Processing**: Integrated with Stripe for secure transactions
-- **User Authentication**: JWT-based authentication system
-- **Gallery Management**: Create, update, and manage photo galleries
-- **Watermarked Previews**: Protect your images with watermarks
-- **Download Management**: Control access to high-resolution downloads
-- **Order History**: Track purchases and downloads
+### For Photographers
+- **Portfolio Showcase** - Create beautiful, responsive galleries to display your best work
+- **Digital Sales** - Sell high-resolution image downloads with secure payment processing
+- **Watermark Protection** - Automatic watermarking of preview images
+- **Gallery Management** - Organize photos into custom galleries and collections
+- **Analytics** - Track views and downloads of your work
 
-## Tech Stack
+### For Customers
+- **High-Quality Downloads** - Purchase and download full-resolution images
+- **Responsive Viewing** - Browse galleries on any device
+- **Secure Checkout** - Safe and easy payment processing
+- **Purchase History** - Access your purchased images anytime
 
-- **Backend**: Django 4.2.7 with Django REST Framework
-- **Frontend**: React.js with TypeScript
-- **Database**: PostgreSQL (SQLite for development)
-- **Storage**: AWS S3 (production) / Local storage (development)
-- **Payments**: Stripe Checkout
-- **Authentication**: JWT with djangorestframework-simplejwt
-- **Image Processing**: Pillow
-- **Deployment**: Docker, Gunicorn, Nginx
+## 🛠 Tech Stack
+
+### Frontend
+- **Framework**: React 18 with TypeScript
+- **State Management**: React Context API
+- **Styling**: Tailwind CSS
+- **Form Handling**: React Hook Form with Yup validation
+- **Routing**: React Router v6
+- **UI Components**: Headless UI, Heroicons
+- **Authentication**: JWT with Google OAuth integration
+
+### Backend
+- **Framework**: Django 4.2 with Django REST Framework
+- **Database**: PostgreSQL (production) / SQLite (development)
+- **Authentication**: djangorestframework-simplejwt
+- **Image Processing**: Pillow, django-storages
+- **Payments**: Stripe Checkout integration
+- **Email**: SendGrid for transactional emails
+
+### Infrastructure
+- **Storage**: AWS S3 for media storage
+- **Hosting**: Docker containerization
+- **Web Server**: Nginx with Gunicorn
+- **CI/CD**: GitHub Actions
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Node.js 18+ and npm
+- Python 3.10+
+- PostgreSQL
+- AWS S3 bucket (for production)
+- Stripe account
+- Google OAuth credentials
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/eventpng.git
+   cd eventpng
+   ```
+
+2. **Set up backend**
+   ```bash
+   cd backend
+   python -m venv venv
+   source venv/bin/activate  # On Windows: .\venv\Scripts\activate
+   pip install -r requirements.txt
+   python manage.py migrate
+   python manage.py createsuperuser
+   ```
+
+3. **Set up frontend**
+   ```bash
+   cd ../frontend
+   npm install
+   cp .env.example .env.local
+   # Update environment variables in .env.local
+   ```
+
+4. **Run the application**
+   ```bash
+   # In backend directory
+   python manage.py runserver
+   
+   # In frontend directory (new terminal)
+   npm start
+   ```
 
 ## 📸 Screenshots
 
@@ -31,6 +94,18 @@ A high-quality image gallery platform where photographers can showcase their wor
   <img src="./docs/screenshots/event-detail.png" alt="Event Detail" width="30%">
   <img src="./docs/screenshots/checkout.png" alt="Checkout" width="30%">
 </div>
+
+## 🤝 Contributing
+
+Contributions are welcome! Please read our [contributing guidelines](CONTRIBUTING.md) to get started.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 📬 Contact
+
+For inquiries, please contact [your-email@example.com](mailto:your-email@example.com) or open an issue on GitHub.
 
 *More Screenshots coming soon*
 
@@ -49,8 +124,8 @@ A high-quality image gallery platform where photographers can showcase their wor
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/premium-gallery.git
-   cd premium-gallery
+   git clone https://github.com/Simoh8/eventpng.git
+   cd eventpng
    ```
 
 2. **Set up Python environment**
