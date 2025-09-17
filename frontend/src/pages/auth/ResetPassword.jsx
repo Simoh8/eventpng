@@ -5,7 +5,7 @@ import * as Yup from 'yup';
 import { toast } from 'react-hot-toast';
 import { Link } from "react-router-dom";
 
-import { FaCheckCircle, FaLock, FaArrowLeft } from 'react-icons/fa';
+import { FaCheckCircle, FaLock, FaArrowLeft, FaEye, FaEyeSlash } from 'react-icons/fa';
 import authService from '../../services/authService';
 
 const ResetPassword = () => {
@@ -13,6 +13,8 @@ const ResetPassword = () => {
   const [isValidLink, setIsValidLink] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const navigate = useNavigate();
 
   // Validate the reset link
@@ -159,15 +161,22 @@ const ResetPassword = () => {
                   <input
                     id="newPassword"
                     name="newPassword"
-                    type="password"
+                    type={showNewPassword ? "text" : "password"}
                     value={formik.values.newPassword}
                     onChange={formik.handleChange}
                     onBlur={formik.handleBlur}
-                    className={`appearance-none block w-full px-4 py-3 border ${
+                    className={`appearance-none block w-full px-4 py-3 pr-10 border ${
                       formik.touched.newPassword && formik.errors.newPassword ? 'border-red-300' : 'border-gray-300'
                     } rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300`}
                     placeholder="Enter new password"
                   />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                  >
+                    {showNewPassword ? <FaEyeSlash className="h-5 w-5" /> : <FaEye className="h-5 w-5" />}
+                  </button>
                 </div>
                 {formik.touched.newPassword && formik.errors.newPassword && (
                   <p className="mt-2 text-sm text-red-600">{formik.errors.newPassword}</p>
@@ -182,15 +191,22 @@ const ResetPassword = () => {
                   <input
                     id="confirmPassword"
                     name="confirmPassword"
-                    type="password"
+                    type={showConfirmPassword ? "text" : "password"}
                     value={formik.values.confirmPassword}
                     onChange={formik.handleChange}
                     onBlur={formik.handleBlur}
-                    className={`appearance-none block w-full px-4 py-3 border ${
+                    className={`appearance-none block w-full px-4 py-3 pr-10 border ${
                       formik.touched.confirmPassword && formik.errors.confirmPassword ? 'border-red-300' : 'border-gray-300'
                     } rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300`}
                     placeholder="Confirm new password"
                   />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    {showConfirmPassword ? <FaEyeSlash className="h-5 w-5" /> : <FaEye className="h-5 w-5" />}
+                  </button>
                 </div>
                 {formik.touched.confirmPassword && formik.errors.confirmPassword && (
                   <p className="mt-2 text-sm text-red-600">{formik.errors.confirmPassword}</p>
