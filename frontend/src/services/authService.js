@@ -371,11 +371,17 @@ const authService = {
       const response = await api.post('/api/accounts/auth/password/reset/confirm/', {
         uid,
         token,
-        new_password: newPassword,
+        new_password1: newPassword,
+        new_password2: newPassword, // Send the same password twice as confirmation
       });
       return response.data;
     } catch (error) {
-      throw error.response?.data || error.message;
+      // Return the full error response for better error handling
+      const errorData = error.response?.data;
+      if (errorData) {
+        throw errorData;
+      }
+      throw new Error(error.message || 'Failed to reset password');
     }
   },
 

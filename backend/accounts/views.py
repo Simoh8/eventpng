@@ -1,5 +1,6 @@
 import logging
-from rest_framework import generics, permissions, status, serializers
+from rest_framework import generics, permissions, status
+from . import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 import os
@@ -261,7 +262,8 @@ class CurrentUserView(APIView):
     def get(self, request):
         try:
             # Get the user data using the UserSerializer
-            serializer = serializers.UserSerializer(request.user)
+            from .serializers import UserSerializer
+            serializer = UserSerializer(request.user)
             
             # Log successful user data retrieval
             logger.info(f"User data retrieved for: {request.user.email}")
@@ -409,14 +411,17 @@ class PasswordResetRequestView(APIView):
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         
-        # Build reset URL
-        reset_url = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
+        # Build reset URL with domain and next parameter
+        reset_path = f"/reset-password/{uid}/{token}/"
+        reset_url = f"{settings.FRONTEND_URL}{reset_path}"
+        next_url = f"{settings.FRONTEND_URL}/login"  # Where to redirect after password reset
+        full_reset_url = f"{settings.FRONTEND_URL}{reset_path}?next={next_url}"
         
         # Email subject and message
         subject = "Password Reset Request"
         context = {
             'user': user,
-            'reset_url': reset_url,
+            'reset_url': full_reset_url,
             'protocol': 'https' if request.is_secure() else 'http',
             'domain': request.get_host(),
             'site_name': 'EventPNG',
@@ -456,29 +461,33 @@ class PasswordResetConfirmView(APIView):
     permission_classes = [permissions.AllowAny]
     
     def post(self, request, *args, **kwargs):
+        logger.info(f"Password reset request data: {request.data}")
         serializer = PasswordResetConfirmSerializer(data=request.data)
         
         if not serializer.is_valid():
+            logger.error(f"Password reset validation errors: {serializer.errors}")
             return Response(
                 {'status': 'error', 'errors': serializer.errors},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         try:
-            serializer.save()
+            user = serializer.save()
+            logger.info(f"Password reset successful for user: {user.email}")
             return Response(
                 {'status': 'success', 'message': 'Password has been reset successfully.'},
                 status=status.HTTP_200_OK
             )
         except ValidationError as e:
+            logger.error(f"Password reset validation error: {str(e.detail)}")
             return Response(
                 {'status': 'error', 'errors': e.detail},
                 status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
-            logger.error(f"Error resetting password: {str(e)}")
+            logger.error(f"Error resetting password: {str(e)}", exc_info=True)
             return Response(
-                {'status': 'error', 'message': 'Failed to reset password.'},
+                {'status': 'error', 'message': 'Failed to reset password. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
