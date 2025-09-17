@@ -3,7 +3,7 @@ Hello {{ user.first_name|default:'there' }},
 We're excited to let you know that a new gallery has been added to the event "{{ event.name }}":
 
 {{ gallery.title }}
-{{ '=' * 50 }}  <!-- Fixed length separator -->
+==================================================
 
 {% if gallery.description %}
 {{ gallery.description }}

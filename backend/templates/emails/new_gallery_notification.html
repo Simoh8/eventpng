@@ -1,37 +1,274 @@
 {% extends "emails/base.html" %}
 
 {% block content %}
-  <p>Hello {{ user.first_name|default:'there' }},</p>
-  
-  <p>We're excited to let you know that a new gallery has been added to the event "{{ event.name }}":</p>
-  
-  <div style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 5px;">
-    <h2 style="margin-top: 0; color: #2c3e50;">{{ gallery.title }}</h2>
+<div class="email-container">
+    <!-- Header -->
+    <div class="header">
+        <div class="logo">{{ site_name }}</div>
+        <h1>New Gallery Available</h1>
+    </div>
     
-    {% if gallery.description %}
-      <p>{{ gallery.description }}</p>
-    {% endif %}
+    <!-- Content -->
+    <div class="content">
+        <p class="greeting">Hello {{ user.first_name|default:'there' }},</p>
+        
+        <p class="message">We're excited to let you know that a new gallery has been added to the event:</p>
+        
+        <div class="event-card">
+            <h2 class="event-name">{{ event.name }}</h2>
+            
+            <div class="event-details">
+                {% if event.location %}
+                <div class="detail-item">
+                    <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2C8.13 2 5 5.13 5 9C5 14.25 12 22 12 22C12 22 19 14.25 19 9C19 5.13 15.87 2 12 2ZM12 11.5C10.62 11.5 9.5 10.38 9.5 9C9.5 7.62 10.62 6.5 12 6.5C13.38 6.5 14.5 7.62 14.5 9C14.5 10.38 13.38 11.5 12 11.5Z" fill="#2563eb"/>
+                    </svg>
+                    <span>{{ event.location }}</span>
+                </div>
+                {% endif %}
+                
+                {% if event.date %}
+                <div class="detail-item">
+                    <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M19 4H18V3C18 2.45 17.55 2 17 2C16.45 2 16 2.45 16 3V4H8V3C8 2.45 7.55 2 7 2C6.45 2 6 2.45 6 3V4H5C3.89 4 3.01 4.9 3.01 6L3 20C3 21.1 3.89 22 5 22H19C20.1 22 21 21.1 21 20V6C21 4.9 20.1 4 19 4ZM19 20H5V10H19V20ZM19 8H5V6H19V8Z" fill="#2563eb"/>
+                    </svg>
+                    <span>{{ event.date|date:"F j, Y" }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="gallery-card">
+            <h3 class="gallery-title">{{ gallery.title }}</h3>
+            
+            {% if gallery.description %}
+            <p class="gallery-description">{{ gallery.description }}</p>
+            {% endif %}
+            
+            <div class="button-container">
+                <a href="{{ site_url }}/events/{{ event.slug }}" class="button">
+                    View Gallery
+                </a>
+            </div>
+        </div>
+        
+        <p class="message">Happy browsing!</p>
+        
+        <p class="message" style="margin-bottom: 10px;">Best regards,<br>{{ site_name }} Team</p>
+    </div>
     
-    <p><strong>Event:</strong> {{ event.name }}</p>
+    <!-- Footer -->
+    <div class="footer">
+        <div class="footer-links">
+            <a href="{{ site_url }}/help" target="_blank" class="blue-link">Help Center</a>
+            <a href="{{ site_url }}/privacy" target="_blank" class="blue-link">Privacy Policy</a>
+            <a href="{{ site_url }}/terms" target="_blank" class="blue-link">Terms of Service</a>
+        </div>
+        <div class="copyright">
+            © {% now "Y" %} {{ site_name }}. All rights reserved.<br>
+            This is an automated message, please do not reply directly to this email.
+        </div>
+    </div>
+</div>
+
+<style>
+    .email-container {
+        max-width: 600px;
+        margin: 0 auto;
+        background-color: #ffffff;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e2e8f0;
+    }
     
-    {% if event.location %}
-      <p><strong>Location:</strong> {{ event.location }}</p>
-    {% endif %}
+    .header {
+        background: linear-gradient(135deg, #2563eb, #3b82f6);
+        padding: 30px 20px;
+        text-align: center;
+        color: white;
+    }
     
-    {% if event.date %}
-      <p><strong>Date:</strong> {{ event.date|date:"F j, Y" }}</p>
-    {% endif %}
+    .logo {
+        font-size: 28px;
+        font-weight: 800;
+        margin-bottom: 10px;
+        display: inline-block;
+        letter-spacing: -0.5px;
+    }
     
-    <p style="margin-top: 20px;">
-      <a href="{{ site_url }}/events/{{ event.slug }}" 
-         style="display: inline-block; padding: 10px 20px; background: #3498db; color: white; 
-                text-decoration: none; border-radius: 4px;">
-        View Gallery
-      </a>
-    </p>
-  </div>
-  
-  <p>Happy browsing!</p>
-  
-  <p>Best regards,<br>{{ site_name }} Team</p>
+    .header h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 600;
+        letter-spacing: -0.5px;
+    }
+    
+    .content {
+        padding: 30px;
+    }
+    
+    .greeting {
+        font-size: 18px;
+        margin-bottom: 20px;
+        color: #1a202c;
+        font-weight: 500;
+    }
+    
+    .message {
+        margin-bottom: 20px;
+        color: #4a5568;
+        line-height: 1.7;
+        font-size: 15px;
+    }
+    
+    .event-card {
+        background-color: #f8fafc;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 25px 0;
+        border: 1px solid #e2e8f0;
+    }
+    
+    .event-name {
+        margin: 0 0 15px 0;
+        color: #1e293b;
+        font-size: 20px;
+        font-weight: 600;
+    }
+    
+    .event-details {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .detail-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: #475569;
+        font-size: 14px;
+    }
+    
+    .gallery-card {
+        background-color: #eff6ff;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 25px 0;
+        border: 1px solid #bfdbfe;
+    }
+    
+    .gallery-title {
+        margin: 0 0 15px 0;
+        color: #1e40af;
+        font-size: 18px;
+        font-weight: 600;
+    }
+    
+    .gallery-description {
+        margin: 0 0 20px 0;
+        color: #374151;
+        line-height: 1.6;
+    }
+    
+    .button-container {
+        text-align: center;
+        margin: 20px 0 0 0;
+    }
+    
+    .button {
+        display: inline-block;
+        padding: 14px 35px;
+        background: linear-gradient(135deg, #2563eb, #3b82f6);
+        color: white !important;
+        text-decoration: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 16px;
+        box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+        transition: all 0.2s ease;
+        border: none;
+        cursor: pointer;
+    }
+    
+    .button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(37, 99, 235, 0.4);
+    }
+    
+    .blue-link {
+        color: #2563eb;
+        text-decoration: none;
+        font-weight: 500;
+        transition: all 0.2s ease;
+    }
+    
+    .blue-link:hover {
+        color: #1d4ed8;
+        text-decoration: underline;
+    }
+    
+    .footer {
+        text-align: center;
+        padding: 25px 30px;
+        background-color: #f8fafc;
+        color: #64748b;
+        font-size: 14px;
+        border-top: 1px solid #e2e8f0;
+    }
+    
+    .footer-links {
+        margin-bottom: 15px;
+    }
+    
+    .footer-links a {
+        color: #2563eb;
+        text-decoration: none;
+        margin: 0 12px;
+        font-size: 13px;
+        transition: color 0.2s;
+    }
+    
+    .footer-links a:hover {
+        color: #1d4ed8;
+        text-decoration: underline;
+    }
+    
+    .copyright {
+        margin-top: 15px;
+        font-size: 13px;
+        color: #94a3b8;
+    }
+    
+    @media (max-width: 600px) {
+        .content {
+            padding: 25px 20px;
+        }
+        
+        .header {
+            padding: 25px 15px;
+        }
+        
+        .logo {
+            font-size: 24px;
+        }
+        
+        .header h1 {
+            font-size: 20px;
+        }
+        
+        .button {
+            padding: 12px 28px;
+            font-size: 15px;
+            width: 100%;
+            max-width: 280px;
+        }
+        
+        .footer-links a {
+            display: block;
+            margin: 8px 0;
+        }
+    }
+</style>
 {% endblock %}
