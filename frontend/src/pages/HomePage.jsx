@@ -79,13 +79,13 @@ const RecentGalleryCard = ({ gallery }) => {
       color: 'text-blue-600 bg-blue-50'
     },
     { 
-      value: gallery.gallery_count || 0, 
+      value: gallery.gallery_count || 1, 
       label: 'Galleries',
       icon: RectangleGroupIcon,
       color: 'text-purple-600 bg-purple-50'
     },
     { 
-      value: gallery.photographer_count || 0, 
+      value: gallery.photographer_count || 1, 
       label: 'Photographers',
       icon: UserGroupIcon,
       color: 'text-green-600 bg-green-50'

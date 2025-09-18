@@ -561,15 +561,15 @@ class PhotoAdmin(admin.ModelAdmin):
     is_featured_display.allow_tags = True
     
     def status_display(self, obj):
+        status = 'published' if obj.is_public else 'private'
         status_colors = {
-            'draft': 'gray',
             'published': 'green',
-            'archived': 'orange',
+            'private': 'gray',
         }
-        color = status_colors.get(obj.status, 'gray')
+        color = status_colors.get(status, 'gray')
         return format_html(
-            '<span style="background: {}; color: white; padding: 2px 6px; border-radius: 10px; font-size: 11px;">{}</span>',
-            color, obj.get_status_display()
+            '<span style="background: {}; color: white; padding: 2px 6px; border-radius: 10px; font-size: 11px; text-transform: capitalize;">{}</span>',
+            color, status
         )
     status_display.short_description = 'Status'
     status_display.allow_tags = True
