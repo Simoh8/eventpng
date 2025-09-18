@@ -156,6 +156,72 @@ const isAuthenticated = () => {
 
 // Auth service methods
 const authService = {
+  // Register a new user
+  register: async function(userData) {
+    try {
+      // Make sure required fields are present
+      if (!userData.email || !userData.password || !userData.full_name) {
+        throw new Error('Email, password, and full name are required');
+      }
+
+      // Prepare the registration data in the exact format expected by the backend
+      const registrationData = {
+        email: userData.email,
+        full_name: userData.full_name,
+        password: userData.password,
+        confirm_password: userData.confirmPassword || userData.password,
+        is_photographer: userData.is_photographer || false
+      };
+      
+      // Add optional fields if they exist
+      if (userData.phone_number) {
+        registrationData.phone_number = userData.phone_number;
+      }
+
+      // Make the API call
+      const response = await api.post('/api/accounts/register/', registrationData);
+      
+      // If we get here, registration was successful
+      return {
+        success: true,
+        data: response.data,
+        message: 'Registration successful!',
+        user: response.data.user,
+        access: response.data.access,
+        refresh: response.data.refresh
+      };
+      
+    } catch (error) {
+      console.error('Registration error:', error);
+      
+      // Handle different types of errors
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        const { data, status } = error.response;
+        
+        return {
+          success: false,
+          error: data.detail || 'Registration failed',
+          errors: data,
+          status
+        };
+      } else if (error.request) {
+        // The request was made but no response was received
+        return {
+          success: false,
+          error: 'No response from server. Please try again later.'
+        };
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        return {
+          success: false,
+          error: error.message || 'An error occurred during registration.'
+        };
+      }
+    }
+  },
+  
   // Google OAuth login
   googleAuth: async function(credential) {
     const response = await api.post('/api/accounts/google/', { credential });

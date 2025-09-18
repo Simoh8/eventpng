@@ -43,7 +43,7 @@ const registerSchema = Yup.object().shape({
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const { register } = useAuth();
+  const { register, updateUser } = useAuth();
 
   const [isSuccess, setIsSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
@@ -62,21 +62,34 @@ export default function RegisterPage() {
       // Show loading toast
       toastId = toast.loading('Creating your account...');
       
-      const { 
-        success, 
-        error, 
-        data, 
-        fieldErrors = {}, 
-        isValidationError = false 
-      } = await register({
-        name: values.name,
+      // Call the register function from auth context with correct field names
+      const result = await register({
+        full_name: values.name,
         email: values.email,
         password: values.password,
-        isPhotographer: values.isPhotographer || false
+        confirmPassword: values.confirmPassword, 
+        is_photographer: values.isPhotographer || false
       });
       
-      if (success) {
-        const message = data?.message || 'Registration successful! Welcome to EventPhoto!';
+      if (result.success) {
+        // If we have tokens, store them
+        if (result.data?.access) {
+          localStorage.setItem('access_token', result.data.access);
+          if (result.data.refresh) {
+            localStorage.setItem('refresh_token', result.data.refresh);
+          }
+          
+          // Update auth state
+          if (result.data.user) {
+            // Store user data in localStorage
+            localStorage.setItem('user', JSON.stringify(result.data.user));
+            
+            // Update auth context
+            updateUser(result.data.user);
+          }
+        }
+        
+        const message = result.data?.message || 'Registration successful! welcome to Eventpng';
         setSuccessMessage(message);
         setIsSuccess(true);
         
@@ -90,22 +103,43 @@ export default function RegisterPage() {
         // Reset form
         resetForm();
         
-        // Redirect after 3 seconds
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 3000);
+     
       } else {
-        if (isValidationError && fieldErrors) {
+        // Handle registration errors
+        if (result.errors) {
+          // Map backend field names to form field names
+          const fieldMap = {
+            full_name: 'name',
+            password2: 'confirmPassword',
+            is_photographer: 'isPhotographer'
+          };
+          
           // Set field-specific errors
-          Object.entries(fieldErrors).forEach(([field, errorMsg]) => {
-            const formField = field === 'full_name' ? 'name' : 
-                            field === 'confirm_password' ? 'confirmPassword' :
-                            field;
-            setFieldError(formField, errorMsg);
+          Object.entries(result.errors).forEach(([field, errors]) => {
+            const formField = fieldMap[field] || field;
+            if (Array.isArray(errors) && errors.length > 0) {
+              setFieldError(formField, errors[0]);
+            } else if (typeof errors === 'string') {
+              setFieldError(formField, errors);
+            } else if (typeof errors === 'object' && errors !== null) {
+              // Handle nested errors
+              Object.entries(errors).forEach(([nestedField, nestedError]) => {
+                const nestedFormField = `${formField}.${nestedField}`;
+                const errorMessage = Array.isArray(nestedError) ? nestedError[0] : nestedError;
+                setFieldError(nestedFormField, errorMessage);
+              });
+            }
           });
           
-          if (fieldErrors.non_field_errors) {
-            toast.error(fieldErrors.non_field_errors.join(' '), { 
+          // Show the first error in a toast
+          const firstError = Object.entries(result.errors).find(([_, error]) => {
+            return !!error;
+          });
+          
+          if (firstError) {
+            const [field, error] = firstError;
+            const errorMessage = Array.isArray(error) ? error[0] : error;
+            toast.error(errorMessage || 'Please fix the form errors', { 
               id: toastId,
               duration: 5000,
               position: 'top-center'
@@ -114,7 +148,7 @@ export default function RegisterPage() {
             toast.dismiss(toastId);
           }
         } else {
-          const errorMsg = error?.message || error || 'Registration failed. Please check your details and try again.';
+          const errorMsg = result?.error || 'Registration failed. Please check your details and try again.';
           setStatus({ error: errorMsg });
           
           toast.error(errorMsg, { 
@@ -125,13 +159,17 @@ export default function RegisterPage() {
         }
       }
     } catch (err) {
-      const errorMsg = 'An unexpected error occurred. Please try again.';
-      setStatus({ error: errorMsg });
+      console.error('Registration error:', err);
+      const errorMessage = err?.response?.data?.detail || err?.message || 'An error occurred during registration';
+      setStatus({ error: errorMessage });
       
-      toast.error(errorMsg, { 
-        duration: 5000,
-        position: 'top-center'
-      });
+      if (toastId) {
+        toast.error(errorMessage, { 
+          id: toastId,
+          duration: 5000,
+          position: 'top-center'
+        });
+      }
     } finally {
       setSubmitting(false);
       setIsLoading(false);
@@ -449,17 +487,17 @@ export default function RegisterPage() {
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-300" />
               </div>
-              <div className="relative flex justify-center text-sm">
+              {/* <div className="relative flex justify-center text-sm">
                 <span className="px-3 bg-white text-gray-500 font-medium">Or continue with</span>
-              </div>
+              </div> */}
             </div>
 
-            <div className="mt-6">
+            {/* <div className="mt-6">
               <GoogleLoginButton 
                 text="Sign up with Google"
                 isSignUp={true}
               />
-            </div>
+            </div> */}
 
             <div className="mt-8 text-center text-sm">
               <p className="text-gray-600">

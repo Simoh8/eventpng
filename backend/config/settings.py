@@ -25,6 +25,9 @@ DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 # Hosts
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
 
+# Site URL - Used for email templates and other absolute URLs
+SITE_URL = os.getenv("SITE_URL", "http://localhost:3000")
+
 # -----------------------------------------------------------------------------
 # Applications
 # -----------------------------------------------------------------------------
@@ -148,20 +151,6 @@ REST_AUTH = {
 }
 
 # -----------------------------------------------------------------------------
-# JWT
-# -----------------------------------------------------------------------------
-SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-    "ROTATE_REFRESH_TOKENS": True,
-    "BLACKLIST_AFTER_ROTATION": True,
-    "UPDATE_LAST_LOGIN": True,
-    "ALGORITHM": "HS256",
-    "SIGNING_KEY": SECRET_KEY,
-    "AUTH_HEADER_TYPES": ("Bearer",),
-}
-
-# -----------------------------------------------------------------------------
 # Email
 # -----------------------------------------------------------------------------
 if DEBUG:
@@ -249,3 +238,37 @@ STRIPE_PUBLIC_KEY = os.getenv("STRIPE_PUBLIC_KEY")
 # Default primary key
 # -----------------------------------------------------------------------------
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# JWT Settings
+# -----------------------------------------------------------------------------
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+    "VERIFYING_KEY": None,
+    "AUDIENCE": None,
+    "ISSUER": None,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "AUTH_HEADER_NAME": "HTTP_AUTHORIZATION",
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+    "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
+    "TOKEN_TYPE_CLAIM": "token_type",
+    "JTI_CLAIM": "jti",
+    "SLIDING_TOKEN_REFRESH_EXP_CLAIM": "refresh_exp",
+    "SLIDING_TOKEN_LIFETIME": timedelta(minutes=5),
+    "SLIDING_TOKEN_REFRESH_LIFETIME": timedelta(days=1),
+    
+    # Cookie settings
+    "AUTH_COOKIE": "access",
+    "AUTH_COOKIE_SECURE": not DEBUG,
+    "AUTH_COOKIE_HTTP_ONLY": True,
+    "AUTH_COOKIE_PATH": "/",
+    "AUTH_COOKIE_SAMESITE": "Lax",
+    "AUTH_COOKIE_DOMAIN": None,
+    "REFRESH_TOKEN_COOKIE": "refresh"
+}
