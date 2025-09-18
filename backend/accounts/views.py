@@ -347,101 +347,119 @@ def create(self, request, *args, **kwargs):
         return response
 
 
+
 class PasswordResetRequestView(APIView):
     """
-    View to handle password reset requests.
-    Sends a password reset email with a token.
+    API View for requesting a password reset email.
     """
     permission_classes = [permissions.AllowAny]
     
-    def post(self, request):
+    def post(self, request, *args, **kwargs):
         serializer = EmailSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(
-                {'error': 'Invalid email address'}, 
+                {'status': 'error', 'errors': serializer.errors},
                 status=status.HTTP_400_BAD_REQUEST
             )
             
         email = serializer.validated_data['email']
+        
         try:
             user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # Return an error response if the email doesn't exist
+            return Response(
+                {
+                    'status': 'error', 
+                    'message': 'The email address you entered does not exist in our system. Please check the email and try again, or sign up for a new account.'
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
             
-            # Generate token and uid
-            token = default_token_generator.make_token(user)
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            
-            # Build reset URL
-            reset_url = f"{settings.FRONTEND_URL}/reset-password/confirm/{uid}/{token}/"
-            
+        # Generate token and uid for password reset
+        token = default_token_generator.make_token(user)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        
+        # Build reset URL with domain and next parameter
+        reset_path = f"/reset-password/{uid}/{token}/"
+        reset_url = f"{settings.FRONTEND_URL}{reset_path}"
+        next_url = f"{settings.FRONTEND_URL}/login"  # Where to redirect after password reset
+        full_reset_url = f"{settings.FRONTEND_URL}{reset_path}?next={next_url}"
+        
+        # Email subject and message
+        subject = "Password Reset Request"
+        context = {
+            'user': user,
+            'reset_url': full_reset_url,
+            'protocol': 'https' if request.is_secure() else 'http',
+            'domain': request.get_host(),
+            'site_name': 'EventPNG',
+        }
+        
+        # Render email template
+        message = render_to_string('emails/password_reset_email.html', context)
+        
+        try:
             # Send email
-            subject = "Password Reset Requested"
-            message = render_to_string('emails/password_reset_email.txt', {
-                'user': user,
-                'reset_url': reset_url,
-            })
-            
             send_mail(
-                subject,
-                message,
-                settings.DEFAULT_FROM_EMAIL,
-                [user.email],
+                subject=subject,
+                message='',  # Empty message since we're using html_message
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                html_message=message,
                 fail_silently=False,
             )
             
             return Response(
-                {'message': 'Password reset email has been sent'}, 
+                {'status': 'success', 'message': 'Password reset email has been sent.'},
                 status=status.HTTP_200_OK
             )
             
-        except User.DoesNotExist:
-            # Don't reveal that the user doesn't exist
+        except Exception as e:
+            logger.error(f"Error sending password reset email: {str(e)}")
             return Response(
-                {'message': 'If an account exists with this email, a password reset link has been sent'}, 
-                status=status.HTTP_200_OK
+                {'status': 'error', 'message': 'Failed to send password reset email.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
 
 
 class PasswordResetConfirmView(APIView):
     """
-    View to handle password reset confirmation.
-    Validates the token and sets the new password.
+    API View for confirming a password reset.
     """
     permission_classes = [permissions.AllowAny]
     
-    def post(self, request, uidb64, token):
-        try:
-            # Decode the uidb64 to get the user
-            uid = force_str(urlsafe_base64_decode(uidb64))
-            user = User.objects.get(pk=uid)
-            
-            # Check if the token is valid
-            if not default_token_generator.check_token(user, token):
-                return Response(
-                    {'error': 'Invalid or expired token'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Validate the new password
-            serializer = PasswordResetConfirmSerializer(data=request.data)
-            if not serializer.is_valid():
-                return Response(
-                    {'error': 'Invalid data', 'details': serializer.errors}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Set the new password
-            user.set_password(serializer.validated_data['new_password'])
-            user.save()
-            
+    def post(self, request, *args, **kwargs):
+        logger.info(f"Password reset request data: {request.data}")
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            logger.error(f"Password reset validation errors: {serializer.errors}")
             return Response(
-                {'message': 'Password has been reset successfully'}, 
+                {'status': 'error', 'errors': serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            user = serializer.save()
+            logger.info(f"Password reset successful for user: {user.email}")
+            return Response(
+                {'status': 'success', 'message': 'Password has been reset successfully.'},
                 status=status.HTTP_200_OK
             )
-            
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        except ValidationError as e:
+            logger.error(f"Password reset validation error: {str(e.detail)}")
             return Response(
-                {'error': 'Invalid user'}, 
+                {'status': 'error', 'errors': e.detail},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error resetting password: {str(e)}", exc_info=True)
+            return Response(
+                {'status': 'error', 'message': 'Failed to reset password. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 

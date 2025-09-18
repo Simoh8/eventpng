@@ -399,9 +399,41 @@ const authService = {
     }
   },
 
+
+
+
+
+  forgotPassword: async (email) => {
+    try {
+      const response = await api.post('/api/accounts/auth/password/reset/', { email });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error.message;
+    }
+  },
+
+  resetPassword: async (uid, token, newPassword) => {
+    try {
+      const response = await api.post('/api/accounts/auth/password/reset/confirm/', {
+        uid,
+        token,
+        new_password1: newPassword,
+        new_password2: newPassword, // Send the same password twice as confirmation
+      });
+      return response.data;
+    } catch (error) {
+      // Return the full error response for better error handling
+      const errorData = error.response?.data;
+      if (errorData) {
+        throw errorData;
+      }
+      throw new Error(error.message || 'Failed to reset password');
+    }
+  },
   // Check if user is authenticated
   isAuthenticated: isAuthenticated,
   
+
   // Get stored user
   getStoredUser: getStoredUser,
   

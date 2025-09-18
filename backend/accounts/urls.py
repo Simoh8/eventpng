@@ -8,7 +8,10 @@ from .views import (
 from .google_views import GoogleAuthConfigView, GoogleLogin
 from .api_views import AccountSettingsView
 
+
+
 app_name = 'accounts'
+
 
 urlpatterns = [
     # Authentication
@@ -30,8 +33,8 @@ urlpatterns = [
     path('change-password/', views.ChangePasswordView.as_view(), name='change_password'),
     
     # Password reset
-    path('password/reset/', PasswordResetRequestView.as_view(), name='password_reset'),
-    path('password/reset/confirm/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
+    path('auth/password/reset/', PasswordResetRequestView.as_view(), name='password_reset'),
+    path('auth/password/reset/confirm/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
     
     # Account settings
     path('settings/', AccountSettingsView.as_view(), name='account_settings'),
@@ -39,3 +42,4 @@ urlpatterns = [
     # Test endpoint (remove in production)
     path('env-test/', EnvTestView.as_view(), name='env_test'),
 ]
+
