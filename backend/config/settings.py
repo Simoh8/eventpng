@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
+from corsheaders.defaults import default_headers
+
 
 # Load environment variables
 load_dotenv()
@@ -28,6 +30,9 @@ ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
 # Site URL - Used for email templates and other absolute URLs
 SITE_URL = os.getenv("SITE_URL", "http://localhost:3000")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")  # For password reset links
+
+# Cache control settings (in seconds)
+CACHE_CONTROL_MAX_AGE = 60 * 60 * 24 * 7  # 1 week in seconds
 
 # -----------------------------------------------------------------------------
 # Applications
@@ -307,3 +312,10 @@ SIMPLE_JWT = {
     "AUTH_COOKIE_DOMAIN": None,
     "REFRESH_TOKEN_COOKIE": "refresh"
 }
+
+CORS_ALLOW_ALL_HEADERS = True
+
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "pragma",
+]

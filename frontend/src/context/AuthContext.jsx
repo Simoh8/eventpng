@@ -3,6 +3,9 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import authService from '../services/authService';
 
+// Custom event name for auth state changes
+const AUTH_STATE_CHANGED_EVENT = 'authStateChanged';
+
 const AuthContext = createContext(null);
 
 // Default context value
@@ -77,8 +80,6 @@ export const AuthProvider = ({ children }) => {
   // console.log('AuthProvider mounted', {
   //   hasToken: !!localStorage.getItem('access'),
   //   storedUser: authService.getStoredUser(),
-  //   isAuthenticated: authService.isAuthenticated()
-  // });
 
   // Fetch user data on mount and when authentication state changes
   const { data: userData, isLoading: isUserLoading, refetch: refetchUser } = useQuery({
@@ -268,7 +269,7 @@ export const AuthProvider = ({ children }) => {
     }
   });
 
-  // Handle successful login - optimized for performance
+  // Handle successful login with full page refresh
   const handleLoginSuccess = useCallback((userData) => {
     if (!userData) {
       console.error('No userData provided to handleLoginSuccess');
@@ -298,25 +299,29 @@ export const AuthProvider = ({ children }) => {
     // Batch React Query updates
     queryClient.setQueryData(['currentUser'], userData);
     
-    // Use requestAnimationFrame for smoother navigation
-    requestAnimationFrame(() => {
-      navigate(targetPath, { 
-        replace: true,
-        state: { from: undefined }
-      });
-    });
+    // Force a full page refresh to ensure all components are properly initialized
+    window.location.href = targetPath;
   }, [navigate, location.state, queryClient]);
 
   // Handle logout
   const handleLogout = useCallback(() => {
     authService.logout();
     queryClient.clear();
+    
+    // Clear auth state from localStorage
+    localStorage.removeItem('authState');
+    
+    // Update local state
     setState({
       user: null,
       isAuthenticated: false,
       isLoading: false,
       error: null
     });
+    
+    // Dispatch storage event to sync across tabs
+    window.dispatchEvent(new Event('storage'));
+    
     navigate('/login');
   }, [navigate, queryClient]);
 
@@ -408,18 +413,64 @@ export const AuthProvider = ({ children }) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
     try {
+      // Call the login service
       const { user } = await authService.login(credentials);
-      handleLoginSuccess(user);
-      return { success: true };
+      
+      // Immediately update the state with the new user data
+      if (user) {
+        const newState = {
+          user,
+          isAuthenticated: true,
+          isLoading: false,
+          error: null
+        };
+        
+        setState(newState);
+        
+        // Update the query cache
+        queryClient.setQueryData(['currentUser'], user);
+        
+        // Determine redirect path based on user role
+        const redirectPath = user.is_staff || user.is_superuser 
+          ? '/admin/dashboard' 
+          : user.is_photographer 
+            ? '/photographer-dashboard' 
+            : '/my-gallery';
+        
+        const targetPath = location.state?.from?.pathname || redirectPath;
+        
+        // Store auth data in localStorage for cross-tab sync
+        localStorage.setItem('authState', JSON.stringify({
+          isAuthenticated: true,
+          user: user
+        }));
+        
+        // Navigate to the target path
+        navigate(targetPath, { 
+          replace: true,
+          state: { from: undefined }
+        });
+        
+        // Dispatch auth state change event
+        window.dispatchEvent(new Event('storage'));
+        
+        return { success: true, user };
+      } else {
+        throw new Error('No user data received from server');
+      }
     } catch (error) {
+      console.error('Login error:', error);
       setState(prev => ({
         ...prev,
         isLoading: false,
-        error: error.message || 'Login failed. Please try again.'
+        error: error.message || 'Login failed. Please check your credentials and try again.'
       }));
-      return { success: false, error: error.message };
+      return { 
+        success: false, 
+        error: error.message || 'Login failed. Please check your credentials and try again.'
+      };
     }
-  }, [handleLoginSuccess]);
+  }, [navigate, queryClient, location.state]);
 
   const loginWithGoogle = useCallback(async (credential) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));

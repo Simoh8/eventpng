@@ -311,80 +311,92 @@ const HomePage = () => {
       // Check cache first
       const cachedData = getCachedData(EVENTS_CACHE_KEY);
       if (cachedData && cachedData.events) {
+        console.log('Using cached events data:', cachedData.events);
         setEvents(cachedData.events);
         setStats(cachedData.stats || {});
-        setLoading(false);
       }
       
-      // Fetch fresh data with rate limiting
+      // Use a consistent limit for events
+      const eventsLimit = 4;
+      const eventsUrl = `${API_ENDPOINTS.PUBLIC_EVENTS}?limit=${eventsLimit}&ordering=-date`;
+      
       console.log('Making API requests to:', {
-        events: `${API_ENDPOINTS.PUBLIC_EVENTS}?limit=3&ordering=-start_date`,
+        events: eventsUrl,
         stats: API_ENDPOINTS.STATS,
         recent: API_ENDPOINTS.RECENT_GALLERIES
       });
       
-      const [eventsRes, statsRes, recentRes] = await Promise.all([
-        makeRequest(() => {
-          console.log('Fetching events from:', `${API_ENDPOINTS.PUBLIC_EVENTS}?limit=4&ordering=-start_date`);
-          return axios.get(`${API_ENDPOINTS.PUBLIC_EVENTS}?limit=4&ordering=-start_date`, {
-            headers: {
-              'Cache-Control': 'no-cache',
-              'Pragma': 'no-cache',
-              'Expires': '0'
-            }
-          });
-        }).then(response => {
-          console.log('Events response:', response);
-          return response;
-        }).catch(err => {
+      const requests = [
+        // Events request - using minimal headers to avoid CORS issues
+        makeRequest(() => axios.get(eventsUrl, {
+          // Remove all custom headers to let the browser handle them
+          withCredentials: false // Set to false for public endpoints to avoid CORS preflight
+        })).catch(err => {
           console.error('Error fetching events:', err);
-          return { error: err };
+          return { data: { results: [] } }; // Return empty results on error
         }),
         
-        makeRequest(() => {
-          console.log('Fetching stats from:', API_ENDPOINTS.STATS);
-          return axios.get(API_ENDPOINTS.STATS);
-        }).then(response => {
-          console.log('Stats response:', response);
-          return response;
-        }).catch(err => {
+        // Stats request
+        makeRequest(() => axios.get(API_ENDPOINTS.STATS)).catch(err => {
           console.error('Error fetching stats:', err);
-          return { error: err };
+          return { data: {} }; // Return empty stats on error
         }),
         
- 
-        makeRequest(() => {
-          console.log('Fetching recent galleries from:', API_ENDPOINTS.RECENT_GALLERIES);
-          return axios.get(API_ENDPOINTS.RECENT_GALLERIES);
-        }).then(response => {
-          console.log('Recent galleries response:', response);
-          return response;
-        }).catch(err => {
+        // Recent galleries request
+        makeRequest(() => axios.get(API_ENDPOINTS.RECENT_GALLERIES)).catch(err => {
           console.error('Error fetching recent galleries:', err);
-          return { error: err };
+          return { data: { results: [] } }; // Return empty results on error
         })
-      ]);
+      ];
+      
+      const [eventsRes, statsRes, recentRes] = await Promise.all(requests);
       
       // Process responses - handle both direct array and paginated response
       let eventsData = [];
-      if (!eventsRes.error) {
+      let eventsError = null;
+      
+      // Process events response
+      if (eventsRes && eventsRes.data) {
         if (Array.isArray(eventsRes.data)) {
           eventsData = eventsRes.data;
-        } else if (eventsRes.data?.results) {
+        } else if (eventsRes.data.results) {
           eventsData = eventsRes.data.results;
-        } else if (eventsRes.data) {
-          eventsData = [eventsRes.data];
+        } else if (eventsRes.data.data) {
+          eventsData = eventsRes.data.data;
         }
+      } else if (eventsRes && eventsRes.error) {
+        console.error('Error in events response:', eventsRes.error);
+        eventsError = eventsRes.error;
+      } else if (Array.isArray(eventsRes.data)) {
+        eventsData = eventsRes.data;
+      } else if (eventsRes.data?.results) {
+        eventsData = eventsRes.data.results;
+      } else if (eventsRes.data) {
+        eventsData = [eventsRes.data];
       }
+      console.log('Processed events data:', eventsData);
       
       // Process stats
-      const serverStats = !statsRes.error && statsRes.data 
+      const serverStats = statsRes && statsRes.data 
         ? statsRes.data 
-        : { total_galleries: 0, total_events: 0, total_photographers: 0 };
+        : { 
+            total_galleries: 0, 
+            total_photos: 0,
+            total_events: 0, 
+            total_photographers: 0 
+          };
         
-      const recentGalleries = !recentRes.error && recentRes.data 
-        ? Array.isArray(recentRes.data) ? recentRes.data : (recentRes.data.results || [])
-        : [];
+      // Process recent galleries
+      let recentGalleries = [];
+      if (recentRes && recentRes.data) {
+        if (Array.isArray(recentRes.data)) {
+          recentGalleries = recentRes.data;
+        } else if (recentRes.data.results) {
+          recentGalleries = recentRes.data.results;
+        } else if (recentRes.data.data) {
+          recentGalleries = recentRes.data.data;
+        }
+      }
 
       // Calculate additional stats from events if available
       if (eventsData.length > 0) {
@@ -403,28 +415,42 @@ const HomePage = () => {
         });
       }
       
-      // Update cache and state
-      const statsData = {
+      // Prepare stats data
+      const newStats = {
         totalGalleries: serverStats.total_galleries || 0,
         totalPhotos: serverStats.total_photos || 0,
         totalEvents: serverStats.total_events || 0,
         totalPhotographers: serverStats.total_photographers || 0,
-        recentGalleries: recentGalleries.slice(0, 3)
-      };
-
-      // Always update cache and state, even if there are no events
-      saveToCache(EVENTS_CACHE_KEY, {
-        events: eventsData,
-        stats: statsData,
         recentGalleries: recentGalleries
-      });
+      };
       
+      console.log('Updating state with events:', eventsData);
+      console.log('Updating stats:', newStats);
+      
+      // Update state once with all data
       setEvents(eventsData);
-      setStats(statsData);
+      setStats(newStats);
       setHasLoadedStats(true);
       
-      if (eventsData.length === 0 && !cachedData) {
-        setError('No events found. Please check back later.');
+      // Clear any previous errors if we have events
+      if (eventsData.length > 0) {
+        setError(null);
+      } else if (eventsError) {
+        setError('Error loading events. ' + 
+          (eventsError.response?.status === 429 ? 'Too many requests. Please wait a moment and try again.' : 
+           eventsError.response?.data?.detail || 'Please try again later.')
+        );
+      } else if (!cachedData) {
+        console.log('No events found in the response');
+        setError('No upcoming events at the moment. Check back soon!');
+      }
+      
+      // Save to cache if we have data
+      if (eventsData.length > 0 || Object.keys(newStats).length > 0) {
+        saveToCache(EVENTS_CACHE_KEY, {
+          events: eventsData,
+          stats: newStats
+        });
       }
       
     } catch (err) {
@@ -748,17 +774,17 @@ const HomePage = () => {
                 Recent Galleries
               </h2>
               <p className="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
-                Explore the latest photo galleries from our events
+                Explore the 3 latest photo galleries from our events
               </p>
             </div>
             
             <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
-              {stats.recentGalleries.map((gallery) => (
+              {stats.recentGalleries.slice(0, 3).map((gallery) => (
                 <RecentGalleryCard key={gallery.id} gallery={gallery} />
               ))}
             </div>
             
-            {stats.recentGalleries.length >= 3 && (
+            {stats.recentGalleries.length > 0 && (
               <div className="mt-12 text-center">
                 <Link 
                   to="/galleries" 
@@ -807,7 +833,7 @@ const HomePage = () => {
               Latest Events
             </h2>
             <p className="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
-              Discover our most recent photography events
+              Discover our 4 most recent photography events
             </p>
             {error && (
               <div className="mt-4 text-sm text-red-600 bg-red-50 p-3 rounded-md inline-block">
