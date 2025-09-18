@@ -17,30 +17,34 @@ export default function LoginPage() {
   
   // If user is already authenticated, redirect them
   useEffect(() => {
-    // Only proceed if auth check is complete and we're not already processing
+    // Only proceed if not loading and not already processing
     if (isLoading || isProcessing) return;
     
+    // Get the token and check authentication status
     const token = localStorage.getItem('access');
     const isUserAuthenticated = isAuthenticated || (token && token !== 'undefined');
     
     if (isUserAuthenticated) {
+      // Don't process if we're already on the target page
+      if (location.pathname === from) return;
+      
       setIsProcessing(true);
       
-      // Use a small timeout to ensure the auth state is fully updated
-      const timer = setTimeout(() => {
+      // Clear any existing timeouts to prevent multiple redirects
+      let timer = setTimeout(() => {
         navigate(from, { 
           replace: true,
-          state: { from: undefined } // Clear the from state to prevent loops
+          state: { from: undefined }
         });
         setIsProcessing(false);
-      }, 100);
+      }, 0); // Reduced timeout to minimum
       
       return () => {
         clearTimeout(timer);
         setIsProcessing(false);
       };
     }
-  }, [isAuthenticated, from, navigate, isLoading, isProcessing]);
+  }, [isAuthenticated, from, navigate, isLoading, isProcessing, location.pathname]);
   
   const handleSuccess = useCallback(() => {
     
@@ -55,11 +59,11 @@ export default function LoginPage() {
     }, 500);
   }, [from, navigate]);
 
-  // Show loading state while checking authentication
-  if (isLoading) {
+  // Show loading state only if we're checking initial auth state
+  if (isLoading && !isProcessing) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
       </div>
     );
   }

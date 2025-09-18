@@ -268,51 +268,42 @@ export const AuthProvider = ({ children }) => {
     }
   });
 
-  // Handle successful login
+  // Handle successful login - optimized for performance
   const handleLoginSuccess = useCallback((userData) => {
-    console.log('1. [handleLoginSuccess] Starting with userData:', !!userData);
-    
     if (!userData) {
-      console.error('2. [handleLoginSuccess] No userData provided');
+      console.error('No userData provided to handleLoginSuccess');
       return;
     }
     
     // Store user data in localStorage
-    console.log('2. [handleLoginSuccess] Storing user data in localStorage');
     localStorage.setItem('user', JSON.stringify(userData));
     
-    // Determine redirect path based on user role
-    let redirectPath = '/';
-    if (userData.is_staff || userData.is_superuser) {
-      redirectPath = '/admin/dashboard';
-    } else if (userData.is_photographer) {
-      redirectPath = '/photographer/dashboard';
-    } else {
-      redirectPath = '/my-gallery';
-    }
+    // Determine redirect path based on user role - simplified logic
+    const redirectPath = userData.is_staff || userData.is_superuser 
+      ? '/admin/dashboard' 
+      : userData.is_photographer 
+        ? '/photographer/dashboard' 
+        : '/my-gallery';
     
-    // Get the redirect path from location state or use the default based on user role
     const targetPath = location.state?.from?.pathname || redirectPath;
     
-    // Update state
-    setState(prev => ({
-      ...prev,
+    // Single state update with all changes
+    setState({
       user: userData,
       isAuthenticated: true,
       isLoading: false,
       error: null
-    }));
+    });
     
-    // Update React Query cache
+    // Batch React Query updates
     queryClient.setQueryData(['currentUser'], userData);
     
-    // Force a re-render of protected routes
-    queryClient.invalidateQueries(['currentUser']);
-    
-    // Redirect
-    navigate(targetPath, { 
-      replace: true,
-      state: { from: undefined } // Clear the from state to prevent loops
+    // Use requestAnimationFrame for smoother navigation
+    requestAnimationFrame(() => {
+      navigate(targetPath, { 
+        replace: true,
+        state: { from: undefined }
+      });
     });
   }, [navigate, location.state, queryClient]);
 

@@ -154,7 +154,7 @@ REST_AUTH = {
 # Email
 # -----------------------------------------------------------------------------
 if DEBUG:
-    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+    EMAIL_BACKEND = "config.email_backends.SilentConsoleEmailBackend"
 else:
     EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
     EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
