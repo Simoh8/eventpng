@@ -56,7 +56,16 @@ class CustomUser(AbstractUser):
     objects = UserManager()
     
     def __str__(self):
-        return self.email
+        try:
+            if hasattr(self, 'email') and self.email:
+                return str(self.email)
+            if hasattr(self, 'username') and self.username:
+                return str(self.username)
+            if hasattr(self, 'id') and self.id:
+                return f"user-{self.id}"
+            return "[deleted user]"
+        except Exception:
+            return "[user]"
     
     @property
     def display_name(self):
@@ -105,7 +114,20 @@ class NotificationPreference(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     def __str__(self):
-        return f"Notification preferences for {self.user.email}"
+        try:
+            user_identifier = ""
+            if hasattr(self, 'user') and self.user:
+                if hasattr(self.user, 'email') and self.user.email:
+                    user_identifier = self.user.email
+                elif hasattr(self.user, 'id'):
+                    user_identifier = f"user {self.user.id}"
+                else:
+                    user_identifier = "[unknown user]"
+            else:
+                user_identifier = "[no user]"
+            return f"Notification preferences for {user_identifier}"
+        except Exception as e:
+            return "Notification preferences [error]"
     
     class Meta:
         verbose_name = _('notification preference')

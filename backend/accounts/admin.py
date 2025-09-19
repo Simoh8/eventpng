@@ -210,6 +210,106 @@ class CustomUserAdmin(BaseUserAdmin):
         updated = queryset.update(is_photographer=False)
         self.message_user(request, f'Successfully removed photographer status from {updated} user(s).', messages.SUCCESS)
     remove_photographer.short_description = "Remove photographer status"
+    
+    def _safe_delete_related_objects(self, user):
+        """Safely delete all related objects for a user."""
+        from django.db import transaction
+        from django.apps import apps
+        
+        # Get all related objects
+        related_objects = [
+            f for f in user._meta.get_fields()
+            if (f.one_to_many or f.one_to_one) and f.auto_created and not f.concrete
+        ]
+        
+        with transaction.atomic():
+            # First, handle notification preferences
+            if hasattr(user, 'notification_preferences'):
+                try:
+                    user.notification_preferences.delete()
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Could not delete notification preferences for user {getattr(user, 'id', 'unknown')}: {str(e)}")
+            
+            # Delete other related objects
+            for related_obj in related_objects:
+                try:
+                    # Handle one-to-one fields
+                    if related_obj.one_to_one:
+                        related = getattr(user, related_obj.get_accessor_name(), None)
+                        if related:
+                            related.delete()
+                    # Handle one-to-many fields
+                    else:
+                        related_manager = getattr(user, related_obj.get_accessor_name(), None)
+                        if related_manager:
+                            related_manager.all().delete()
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Could not delete related object {related_obj.name} for user {getattr(user, 'id', 'unknown')}: {str(e)}")
+    
+    def delete_model(self, request, obj):
+        """
+        Handle model deletion to prevent errors during user deletion.
+        """
+        try:
+            # First, handle related objects that might cause issues
+            self._safe_delete_related_objects(obj)
+            
+            # Get user email before deletion for the success message
+            user_email = getattr(obj, 'email', 'User')
+            user_id = getattr(obj, 'id', 'unknown')
+            
+            # Proceed with the normal deletion
+            obj.delete()
+            
+            # Show success message
+            from django.contrib import messages
+            messages.success(
+                request,
+                f"The user '{user_email if user_email else 'User'}' was deleted successfully."
+            )
+            
+        except Exception as e:
+            # Log the error and show a user-friendly message
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error deleting user {getattr(obj, 'id', 'unknown')}: {str(e)}", exc_info=True)
+            
+            from django.contrib import messages
+            messages.error(
+                request,
+                "An error occurred while deleting the user. Please try again or contact support if the problem persists."
+            )
+    
+    def delete_queryset(self, request, queryset):
+        """
+        Handle bulk deletion of users.
+        """
+        deleted_count = 0
+        for user in queryset:
+            try:
+                self._safe_delete_related_objects(user)
+                user.delete()
+                deleted_count += 1
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error deleting user {getattr(user, 'id', 'unknown')}: {str(e)}", exc_info=True)
+        
+        from django.contrib import messages
+        if deleted_count > 0:
+            messages.success(
+                request,
+                f"Successfully deleted {deleted_count} user(s)."
+            )
+        if deleted_count < len(queryset):
+            messages.warning(
+                request,
+                f"Could not delete {len(queryset) - deleted_count} user(s). Please check the logs for more details."
+            )
 
 # Unregister the default User model if it's already registered
 try:
