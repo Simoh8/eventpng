@@ -173,15 +173,13 @@ class Gallery(models.Model):
         related_name='galleries',
         limit_choices_to={'is_photographer': True}
     )
-    is_public = models.BooleanField(
-        default=True,
-        help_text="If True, gallery is visible to everyone. If False, only accessible via direct link.",
-        null=False,
-        blank=True
-    )
     is_active = models.BooleanField(
         default=True,
         help_text="If False, gallery is hidden from everyone including the photographer."
+    )
+    is_private = models.BooleanField(
+        default=False,
+        help_text="If True, gallery is only accessible via direct link and not listed publicly"
     )
     price = models.DecimalField(
         max_digits=10,
@@ -194,16 +192,15 @@ class Gallery(models.Model):
         blank=True,
         help_text="If set, the gallery will be featured until this date"
     )
-    cover_photo = models.ForeignKey(
-        'Photo',
-        on_delete=models.SET_NULL,
+    cover_photo = models.ImageField(
+        upload_to='gallery_covers/%Y/%m/%d/',
         null=True,
         blank=True,
-        related_name='cover_for_galleries'
+        help_text="Cover photo for the gallery"
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
+    
     class Meta:
         verbose_name_plural = 'galleries'
         ordering = ['-created_at']
@@ -212,14 +209,18 @@ class Gallery(models.Model):
         return str(self.title) if self.title is not None else f"Gallery {self.id}"
 
     def save(self, *args, **kwargs):
+        # Generate slug if not exists
         if not self.slug:
-            self.slug = slugify(self.title)
-            # Ensure slug is unique
-            original_slug = self.slug
-            counter = 1
-            while Gallery.objects.filter(slug=self.slug).exclude(pk=self.pk).exists():
-                self.slug = f"{original_slug}-{counter}"
-                counter += 1
+            base_slug = slugify(self.title)
+            unique_id = str(uuid.uuid4())[:8]
+            self.slug = f"{base_slug}-{unique_id}"
+        
+        # If no cover photo is set, try to use the first photo in the gallery
+        if not self.cover_photo and hasattr(self, 'photos') and self.photos.exists():
+            first_photo = self.photos.first()
+            if first_photo and first_photo.image:
+                self.cover_photo = first_photo.image
+        
         super().save(*args, **kwargs)
 
     def _get_photo_count(self):

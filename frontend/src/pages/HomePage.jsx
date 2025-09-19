@@ -78,7 +78,7 @@ const RecentGalleryCard = ({ gallery }) => {
   // Get all available images for the gallery
   const galleryImages = React.useMemo(() => {
     try {
-      console.log('Processing gallery data:', gallery);
+      // console.log('Processing gallery data:', gallery);
       const images = [];
       
       // Helper function to extract image URL
@@ -126,8 +126,6 @@ const RecentGalleryCard = ({ gallery }) => {
         });
       }
       
-      // Log the found images for debugging
-      console.log('Found images for gallery:', images);
       
       // If no images found, use a simple SVG placeholder
       if (images.length === 0) {
@@ -492,12 +490,12 @@ const HomePage = () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching events and stats...');
+      // console.log('Fetching events and stats...');
       
       // Check cache first
       const cachedData = getCachedData(EVENTS_CACHE_KEY);
       if (cachedData && cachedData.events) {
-        console.log('Using cached events data:', cachedData.events);
+        // console.log('Using cached events data:', cachedData.events);
         setEvents(cachedData.events);
         setStats(cachedData.stats || {});
       }
@@ -506,11 +504,11 @@ const HomePage = () => {
       const eventsLimit = 4;
       const eventsUrl = `${API_ENDPOINTS.PUBLIC_EVENTS}?limit=${eventsLimit}&ordering=-date`;
       
-      console.log('Making API requests to:', {
-        events: eventsUrl,
-        stats: API_ENDPOINTS.STATS,
-        recent: API_ENDPOINTS.RECENT_GALLERIES
-      });
+      // console.log('Making API requests to:', {
+      //   events: eventsUrl,
+      //   stats: API_ENDPOINTS.STATS,
+      //   recent: API_ENDPOINTS.RECENT_GALLERIES
+      // });
       
       const requests = [
         // Events request - using minimal headers to avoid CORS issues
@@ -560,7 +558,7 @@ const HomePage = () => {
       } else if (eventsRes.data) {
         eventsData = [eventsRes.data];
       }
-      console.log('Processed events data:', eventsData);
+      // console.log('Processed events data:', eventsData);
       
       // Process stats
       const serverStats = statsRes && statsRes.data 
@@ -610,10 +608,7 @@ const HomePage = () => {
         recentGalleries: recentGalleries
       };
       
-      console.log('Updating state with events:', eventsData);
-      console.log('Updating stats:', newStats);
-      
-      // Update state once with all data
+
       setEvents(eventsData);
       setStats(newStats);
       setHasLoadedStats(true);
@@ -627,7 +622,7 @@ const HomePage = () => {
            eventsError.response?.data?.detail || 'Please try again later.')
         );
       } else if (!cachedData) {
-        console.log('No events found in the response');
+        // console.log('No events found in the response');
         setError('No upcoming events at the moment. Check back soon!');
       }
       
