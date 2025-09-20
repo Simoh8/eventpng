@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CloudArrowUpIcon, ServerIcon} from '@heroicons/react/24/outline';
 import DetailLayout from '../../components/dashboard/DetailLayout';
 import api from '../../utils/api';
+import { API_ENDPOINTS } from '../../utils/apiEndpoints';
 
 export default function StorageDetail() {
   const [storage, setStorage] = useState({
@@ -18,8 +19,8 @@ export default function StorageDetail() {
       try {
         setLoading(true);
         const [statsRes, filesRes] = await Promise.all([
-          api.get('/api/photographer/dashboard/stats/'),
-          api.get('/api/gallery/photos/')
+          api.get(API_ENDPOINTS.PHOTOGRAPHER_DASHBOARD.STATS),
+          api.get(API_ENDPOINTS.GALLERY.LIST)
         ]);
 
         if (statsRes.data) {

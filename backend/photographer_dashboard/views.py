@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.db.models import Sum, Count, Q
 from datetime import timedelta, datetime
 from gallery.models import Gallery, Photo, Payment, Download
+from accounts.models import CustomUser
 from django.conf import settings
 import os
 
@@ -14,32 +15,62 @@ class DashboardStatsView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        # Get email from query parameters or use authenticated user
+        user_email = request.query_params.get('email')
+        print(f"Received request from email: {user_email}")
+        print(f"Authenticated user: {request.user.email if request.user.is_authenticated else 'Not authenticated'}")
+        
+        if user_email:
+            try:
+                user = CustomUser.objects.get(email=user_email)
+                print(f"Found user by email: {user.email}, ID: {user.id}")
+            except CustomUser.DoesNotExist:
+                print(f"User with email {user_email} not found")
+                return Response(
+                    {'error': 'User not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            user = request.user
+            print(f"Using authenticated user: {user.email if user.is_authenticated else 'No authenticated user'}")
+        
         # Generate a cache key based on the user
-        cache_key = f'dashboard_stats_{request.user.id}'
+        cache_key = f'dashboard_stats_{user.id}'
+        print(f"Using cache key: {cache_key}")
         
         # Try to get data from cache
         cached_data = cache.get(cache_key)
         if cached_data:
+            print("Cache hit - returning cached data")
             return Response(cached_data)
+        print("Cache miss - generating new data")
         
         # Calculate time ranges
         now = timezone.now()
         thirty_days_ago = now - timedelta(days=30)
         seven_days_ago = now - timedelta(days=7)
         
-        # Get galleries data
-        galleries = Gallery.objects.filter(photographer=request.user)
+        # Get galleries data for the specified user
+        galleries = Gallery.objects.filter(photographer=user)
         recent_galleries = galleries.filter(created_at__gte=thirty_days_ago)
+        
+        print(f"Found {galleries.count()} total galleries for user {user.email}")
+        print(f"Found {recent_galleries.count()} recent galleries for user {user.email}")
         
         # Get payments data
         payments = Payment.objects.filter(
             status='completed',
-            downloads__photo__gallery__photographer=request.user
+            downloads__photo__gallery__photographer=user
         ).distinct()
         
+        print(f"Found {payments.count()} completed payments for user {user.email}")
+        
         # Calculate storage used
-        photos = Photo.objects.filter(gallery__photographer=request.user)
+        photos = Photo.objects.filter(gallery__photographer=user)
         total_storage = photos.aggregate(total=Sum('file_size'))['total'] or 0
+        
+        print(f"Found {photos.count()} photos for user {user.email}")
+        print(f"Total storage used: {total_storage} bytes")
         
         # Calculate storage used in last 30 days
         recent_photos = photos.filter(created_at__gte=thirty_days_ago)
@@ -85,22 +116,46 @@ class DashboardActivityView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        # Get email from query parameters or use authenticated user
+        user_email = request.query_params.get('email')
+        print(f"[Activity] Received request from email: {user_email}")
+        print(f"[Activity] Authenticated user: {request.user.email if request.user.is_authenticated else 'Not authenticated'}")
+        
+        if user_email:
+            try:
+                user = CustomUser.objects.get(email=user_email)
+                print(f"[Activity] Found user by email: {user.email}, ID: {user.id}")
+            except CustomUser.DoesNotExist:
+                print(f"[Activity] User with email {user_email} not found")
+                return Response(
+                    {'error': 'User not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            user = request.user
+            print(f"[Activity] Using authenticated user: {user.email if user.is_authenticated else 'No authenticated user'}")
+        
         # Generate a cache key based on the user
-        cache_key = f'dashboard_activity_{request.user.id}'
+        cache_key = f'dashboard_activity_{user.id}'
+        print(f"[Activity] Using cache key: {cache_key}")
         
         # Try to get data from cache
         cached_data = cache.get(cache_key)
         if cached_data:
+            print("[Activity] Cache hit - returning cached data")
             return Response(cached_data)
+        print("[Activity] Cache miss - generating new data")
         
         activities = []
         now = timezone.now()
         
         # Get recent gallery activities
         recent_galleries = Gallery.objects.filter(
-            photographer=request.user,
+            photographer=user,
             created_at__gte=now - timedelta(days=30)
         ).order_by('-created_at')[:5]
+        
+        print(f"[Activity] Found {recent_galleries.count()} recent galleries for user {user.email}")
         
         for gallery in recent_galleries:
             activities.append({

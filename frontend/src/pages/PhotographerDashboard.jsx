@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import authService from '../services/authService';
 import { 
   PhotoIcon, 
   UserGroupIcon, 
@@ -124,50 +125,76 @@ export default function PhotographerDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const CACHE_EXPIRY = 5 * 60 * 1000; // 5 minutes in milliseconds
+  const currentUserEmail = user?.email || authService.getStoredUser()?.email;
+  // console.log('Current user email:', currentUserEmail);
   
   const fetchDashboardData = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
       
-      // Fetch dashboard data from the API
+      if (!currentUserEmail) {
+        throw new Error('User email not found. Please log in again.');
+      }
+
+      if (!currentUserEmail) {
+        throw new Error('User email is required');
+      }
+      
+
+
+
+
+
+      
+      // Always include the email parameter
+      const statsUrl = `${API_ENDPOINTS.PHOTOGRAPHER_DASHBOARD.STATS}?email=${encodeURIComponent(currentUserEmail)}`;
+      const activityUrl = `${API_ENDPOINTS.PHOTOGRAPHER_DASHBOARD.ACTIVITY}?email=${encodeURIComponent(currentUserEmail)}`;
+
+      
+      // Fetch dashboard data from the API with user email filter
       const [statsResponse, activityResponse] = await Promise.all([
-        api.get(API_ENDPOINTS.PHOTOGRAPHER_DASHBOARD.STATS),
-        api.get(API_ENDPOINTS.PHOTOGRAPHER_DASHBOARD.ACTIVITY)
+        api.get(statsUrl),
+        api.get(activityUrl)
       ]);
+      
 
       // Update stats with real data
       if (statsResponse.data) {
+        const { galleries = { total: 0, recent: 0 }, 
+                activeSessions = { total: 0, recent: 0 }, 
+                earnings = { total: 0, recent: 0 }, 
+                storageUsed = { used: 0, change: 0 } } = statsResponse.data;
         
-        const { galleries, activeSessions, earnings, storageUsed } = statsResponse.data;
+        // console.log('Dashboard stats:', { galleries, activeSessions, earnings, storageUsed });
         
         setStats([
           { 
             ...initialStats[0], 
-            value: galleries.total.toString(), 
-            change: `+${galleries.recent}`, 
-            changeType: 'positive',
+            value: (galleries.total || 0).toString(), 
+            change: galleries.recent > 0 ? `+${galleries.recent}` : '0', 
+            changeType: galleries.recent > 0 ? 'positive' : 'neutral',
             to: '/photographer-dashboard/galleries'
           },
           { 
             ...initialStats[1], 
-            value: activeSessions.total.toString(), 
+            value: (activeSessions.total || 0).toString(), 
             change: activeSessions.recent > 0 ? `+${activeSessions.recent}` : '0', 
             changeType: activeSessions.recent > 0 ? 'positive' : 'neutral',
             to: '/photographer-dashboard/sessions'
           },
           { 
             ...initialStats[2], 
-            value: `$${earnings.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
-            change: `+$${earnings.recent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
-            changeType: parseFloat(earnings.recent) > 0 ? 'positive' : 'neutral',
+            value: `$${(earnings.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
+            change: `+$${(earnings.recent || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
+            changeType: parseFloat(earnings.recent || 0) > 0 ? 'positive' : 'neutral',
             to: '/photographer-dashboard/earnings'
           },
           { 
             ...initialStats[3], 
-            value: `${storageUsed.used} GB`, 
-            change: `${storageUsed.change >= 0 ? '+' : ''}${storageUsed.change}%`, 
-            changeType: storageUsed.change > 0 ? 'negative' : 'positive',
+            value: `${storageUsed.used || 0} GB`, 
+            change: `${storageUsed.change >= 0 ? '+' : ''}${storageUsed.change || 0}%`, 
+            changeType: (storageUsed.change || 0) > 0 ? 'negative' : 'positive',
             to: '/photographer-dashboard/storage'
           },
         ]);
@@ -195,7 +222,7 @@ export default function PhotographerDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, []); // No dependencies needed as we're not using any external values
+  }, [currentUserEmail]); // Add currentUserEmail as a dependency
 
   // Filter activities based on the selected filter
   useEffect(() => {

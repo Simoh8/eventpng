@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CurrencyDollarIcon, ArrowUpIcon, ArrowDownIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import DetailLayout from '../../components/dashboard/DetailLayout';
 import api from '../../utils/api';
+import { API_ENDPOINTS } from '../../utils/apiEndpoints';
 
 export default function EarningsDetail() {
   const [earnings, setEarnings] = useState({
@@ -18,8 +19,8 @@ export default function EarningsDetail() {
       try {
         setLoading(true);
         const [statsRes, transactionsRes] = await Promise.all([
-          api.get('/api/photographer/dashboard/stats/'),
-          api.get('/api/payments/transactions/')
+          api.get(API_ENDPOINTS.PHOTOGRAPHER_DASHBOARD.STATS),
+          api.get(API_ENDPOINTS.PAYMENTS.TRANSACTIONS)
         ]);
 
         // Mock monthly data - in a real app, this would come from the API

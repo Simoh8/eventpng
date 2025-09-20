@@ -1,9 +1,9 @@
-// In /frontend/src/pages/dashboard/SessionsDetail.jsx
 import React, { useState, useEffect } from 'react';
 import { UserGroupIcon, GlobeAltIcon, DevicePhoneMobileIcon, 
   ComputerDesktopIcon, ClockIcon, CalendarIcon } from '@heroicons/react/24/outline';
 import DetailLayout from '../../components/dashboard/DetailLayout';
 import api from '../../utils/api';
+import { API_ENDPOINTS } from '../../utils/apiEndpoints';
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -23,7 +23,7 @@ export default function SessionsDetail() {
       setLoading(true);
       
       // Only fetch stats, not sessions
-      const statsRes = await api.get('/api/photographer/dashboard/stats/');
+      const statsRes = await api.get(API_ENDPOINTS.PHOTOGRAPHER_DASHBOARD.STATS);
 
       // Use mock data for sessions since the endpoint doesn't exist
       const mockSessions = [

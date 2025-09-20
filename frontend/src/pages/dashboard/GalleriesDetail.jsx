@@ -9,7 +9,7 @@ export default function GalleriesDetail() {
   
   const handleNewGallery = (e) => {
     e.preventDefault();
-    navigate('/photographer-dashboard/galleries/new');
+    window.location.href = 'http://localhost:3000/galleries/new';
   };
   
   const handleViewGallery = (galleryId) => {
@@ -44,7 +44,7 @@ export default function GalleriesDetail() {
           ? responseData 
           : (responseData?.results || []);
         
-        console.log('Galleries data:', galleriesData);
+        // console.log('Galleries data:', galleriesData);
         setGalleries(galleriesData);
         
         // Calculate public/private counts from galleries data
@@ -66,7 +66,6 @@ export default function GalleriesDetail() {
       // Handle stats response
       if (statsRes.status === 'fulfilled' && statsRes.value.data) {
         const statsData = statsRes.value.data;
-        console.log('Stats data:', statsData);
         
         setStats(prev => ({
           ...prev,
