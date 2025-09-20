@@ -834,12 +834,7 @@ class DownloadAdmin(admin.ModelAdmin):
     export_downloads_csv.short_description = "Export selected downloads to CSV"
 
 # Register models with the admin site
+# Note: Models are now registered using the @admin.register decorator
+# This function is kept for backward compatibility but does nothing
 def register_models():
-    admin_site.register(Event, EventAdmin)
-    admin_site.register(Gallery, GalleryAdmin)
-    admin_site.register(Photo, PhotoAdmin)
-    admin_site.register(Download, DownloadAdmin)
-    admin_site.register(EventCoverImage, EventCoverImageAdmin)
-
-# Call the registration function
-register_models()
+    pass
