@@ -39,6 +39,15 @@ export const API_ENDPOINTS = {
     LIST: `${BASE.GALLERY}/`,
     DETAIL: (id) => `${BASE.GALLERY}/${id}/`,
   },
+  
+  // Customer
+  CUSTOMER: {
+    DASHBOARD: '/api/customer/dashboard/',
+    PURCHASES: '/api/customer/purchases/',
+    FAVORITES: '/api/customer/favorites/',
+    ORDERS: '/api/customer/orders/',
+    DOWNLOADS: '/api/customer/downloads/'
+  },
 };
 
 export default API_ENDPOINTS;

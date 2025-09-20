@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../config';
 import { useAuth } from '../context/AuthContext';
 import html2canvas from 'html2canvas';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import { FaHeart, FaRegHeart } from 'react-icons/fa';
 
 const GalleryDetail = () => {
   const { id: slug } = useParams();
@@ -19,7 +20,61 @@ const GalleryDetail = () => {
   const [isVerifying, setIsVerifying] = useState(false);
   const [requiresPin, setRequiresPin] = useState(false);
   const [selectedPhotos, setSelectedPhotos] = useState(new Set());
+  const [likedPhotos, setLikedPhotos] = useState(new Set());
   const galleryRef = useRef(null);
+  
+  // Toggle like for a photo (client-side only for now)
+  const toggleLike = (photoId, e) => {
+    e.stopPropagation();
+    
+    // Check if user is authenticated
+    if (!user) {
+      navigate('/login', { state: { from: window.location.pathname } });
+      toast('Please log in to like photos', {
+        icon: 'ℹ️',
+        duration: 3000,
+      });
+      return;
+    }
+    
+    const isLiked = likedPhotos.has(photoId);
+    
+    // Toggle the like state
+    const newLikedPhotos = new Set(likedPhotos);
+    if (isLiked) {
+      newLikedPhotos.delete(photoId);
+    } else {
+      newLikedPhotos.add(photoId);
+    }
+    setLikedPhotos(newLikedPhotos);
+    
+    // Update the UI optimistically
+    queryClient.setQueryData(['gallery', slug], (oldData) => {
+      if (!oldData) return oldData;
+      
+      return {
+        ...oldData,
+        photos: oldData.photos.map(photo => {
+          if (photo.id === photoId) {
+            return {
+              ...photo,
+              like_count: isLiked 
+                ? Math.max(0, (photo.like_count || 0) - 1) 
+                : (photo.like_count || 0) + 1,
+              is_liked: !isLiked
+            };
+          }
+          return photo;
+        })
+      };
+    });
+    
+    // Show a success message
+    toast.success(isLiked ? 'Removed like' : 'Liked photo!');
+    
+    // Note: The like is only stored in the client's state and will reset on page refresh
+    // since the backend endpoint is not implemented yet
+  };
   
   // Toggle photo selection
   const togglePhotoSelection = (photoId) => {
@@ -166,23 +221,24 @@ const GalleryDetail = () => {
     };
   }, []);
   
-  const addWatermark = (imageUrl, text = '© EventPNG') => {
+  const addWatermark = (imageUrl, text = ' EventPNG') => {
     return new Promise((resolve) => {
       const img = new Image();
       img.crossOrigin = 'Anonymous';
+      img.src = imageUrl;
       
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
         canvas.width = img.width;
         canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
         
         // Draw the original image
         ctx.drawImage(img, 0, 0, img.width, img.height);
         
         // Add watermark text
-        ctx.font = `${Math.max(img.width * 0.03, 20)}px Arial`;
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        const fontSize = Math.max(img.width * 0.03, 20);
+        ctx.font = `${fontSize}px Arial`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         
@@ -199,7 +255,23 @@ const GalleryDetail = () => {
         // Create a grid of watermarks
         for (let x = -canvas.width; x < canvas.width * 2; x += spacing) {
           for (let y = -canvas.height; y < canvas.height * 2; y += spacing * 2) {
+            // Draw text shadow for better visibility
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+            ctx.shadowBlur = 5;
+            ctx.shadowOffsetX = 1;
+            ctx.shadowOffsetY = 1;
+            
+            // Draw text with a subtle outline
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.lineWidth = 2;
+            ctx.strokeText(text, x, y);
+            
+            // Draw the main text
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
             ctx.fillText(text, x, y);
+            
+            // Reset shadow for next iteration
+            ctx.shadowColor = 'transparent';
           }
         }
         
@@ -432,6 +504,19 @@ const GalleryDetail = () => {
     },
   });
 
+  // Initialize liked photos from gallery data
+  useEffect(() => {
+    if (gallery?.photos) {
+      const liked = new Set();
+      gallery.photos.forEach(photo => {
+        if (photo.is_liked) {
+          liked.add(photo.id);
+        }
+      });
+      setLikedPhotos(liked);
+    }
+  }, [gallery?.photos]);
+
   // Handle photo click - opens enlarged view
   const handlePhotoClick = (photo) => {
     setSelectedPhoto(photo);
@@ -443,6 +528,7 @@ const GalleryDetail = () => {
     setIsFullscreen(false);
     setSelectedPhoto(null);
   };
+
 
   if (isLoading) {
     return (
@@ -497,7 +583,7 @@ const GalleryDetail = () => {
             >
               {isVerifying ? (
                 <span className="flex items-center">
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
@@ -633,26 +719,30 @@ const GalleryDetail = () => {
             >
               {selectedPhotos.size === gallery.photos?.length ? 'Deselect All' : 'Select All'}
             </button>
-            <button
-              onClick={downloadSelectedImages}
-              disabled={isDownloading || selectedPhotos.size === 0}
-              className="px-4 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-all transform hover:-translate-y-0.5 disabled:opacity-50 flex items-center gap-2 shadow-md text-sm"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Download Selected
-            </button>
-            <button
-              onClick={downloadAllImages}
-              disabled={isDownloading}
-              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all transform hover:-translate-y-0.5 disabled:opacity-50 flex items-center gap-2 shadow-md text-sm"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Download All
-            </button>
+            {user && (
+              <>
+                <button
+                  onClick={downloadSelectedImages}
+                  disabled={isDownloading || selectedPhotos.size === 0}
+                  className="px-4 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-all transform hover:-translate-y-0.5 disabled:opacity-50 flex items-center gap-2 shadow-md text-sm"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download Selected
+                </button>
+                <button
+                  onClick={downloadAllImages}
+                  disabled={isDownloading}
+                  className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all transform hover:-translate-y-0.5 disabled:opacity-50 flex items-center gap-2 shadow-md text-sm"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download All
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -668,48 +758,103 @@ const GalleryDetail = () => {
                 onClick={() => handlePhotoClick(photo)}
               >
                 <div className="relative w-full h-full">
-                  <img
-                    src={photo.image}
-                    alt={photo.caption || 'Gallery photo'}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Available';
-                    }}
-                  />
-                  
-                  {/* Selection checkbox - always visible */}
-                  <div 
-                    className="absolute top-2 left-2 z-10"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      togglePhotoSelection(photo.id);
-                    }}
-                  >
-                    <div className={`w-6 h-6 flex items-center justify-center rounded-full ${
-                      selectedPhotos.has(photo.id) ? 'bg-blue-600' : 'bg-white bg-opacity-80'
-                    }`}>
-                      {selectedPhotos.has(photo.id) && (
-                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
+                  <div className="relative w-full h-full">
+                    <img
+                      src={photo.image}
+                      alt={photo.caption || 'Gallery photo'}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Available';
+                      }}
+                      style={{
+                        WebkitUserSelect: 'none',
+                        MozUserSelect: 'none',
+                        msUserSelect: 'none',
+                        userSelect: 'none',
+                        pointerEvents: 'none'
+                      }}
+                    />
+                    <div 
+                      className="absolute inset-0 pointer-events-none" 
+                      style={{
+                        backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'200\' height=\'200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Ctext x=\'100\' y=\'100\' font-family=\'Arial\' font-size=\'16\' fill=\'rgba(255,255,255,0.3)\' text-anchor=\'middle\' dominant-baseline=\'middle\' transform=\'rotate(-30, 100, 100)\'>EventPNG.com</text%3E%3C/svg%3E")',
+                        opacity: 0.6,
+                        pointerEvents: 'none'
+                      }}
+                    ></div>
+                    
+                    {/* Like button and count */}
+                    <div 
+                      className="absolute bottom-2 right-2 flex items-center gap-1 bg-black bg-opacity-50 rounded-full px-2 py-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        onClick={(e) => toggleLike(photo.id, e)}
+                        className="text-white hover:text-red-400 transition-colors"
+                        aria-label={photo.is_liked ? 'Unlike' : 'Like'}
+                      >
+                        {likedPhotos.has(photo.id) ? (
+                          <FaHeart className="text-red-500" />
+                        ) : (
+                          <FaRegHeart className="text-white" />
+                        )}
+                      </button>
+                      <span className="text-white text-xs font-medium">
+                        {photo.like_count || 0}
+                      </span>
                     </div>
+                  </div>
+                
+                {/* Selection checkbox - always visible */}
+                <div 
+                  className="absolute top-2 left-2 z-10"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    togglePhotoSelection(photo.id);
+                  }}
+                >
+                  <div className={`w-6 h-6 flex items-center justify-center rounded-full ${
+                    selectedPhotos.has(photo.id) ? 'bg-blue-600' : 'bg-white bg-opacity-80'
+                  }`}>
+                    {selectedPhotos.has(photo.id) && (
+                      <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
                   </div>
                   
                   <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        downloadImage(photo);
-                      }}
-                      className="bg-white bg-opacity-90 rounded-full p-3 text-gray-800 hover:bg-opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0 shadow-lg hover:shadow-xl"
-                      title="Download Image"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                    </button>
+                    {user ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          downloadImage(photo);
+                        }}
+                        className="bg-white bg-opacity-90 rounded-full p-3 text-gray-800 hover:bg-opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0 shadow-lg hover:shadow-xl"
+                        title="Download Image"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate('/login', { state: { from: window.location.pathname } });
+                          toast.info('Please log in to download images');
+                        }}
+                        className="bg-white bg-opacity-90 rounded-full px-4 py-2 text-sm font-medium text-gray-800 hover:bg-opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0 shadow-lg hover:shadow-xl flex items-center gap-1"
+                        title="Login to Download"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                        </svg>
+                        Login to Download
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -771,13 +916,45 @@ const GalleryDetail = () => {
                 </button>
               </>
             )}
-            
             <div className="relative max-w-full max-h-full">
-              <img
-                src={selectedPhoto.image}
-                alt={selectedPhoto.caption || 'Selected photo'}
-                className="max-w-full max-h-[80vh] object-contain rounded-sm"
-              />
+              <div className="relative">
+                <div className="relative">
+                  <img
+                    src={selectedPhoto.image}
+                    alt={selectedPhoto.caption || 'Selected photo'}
+                    className="max-w-full max-h-[80vh] object-contain rounded-sm"
+                    style={{
+                      WebkitUserSelect: 'none',
+                      MozUserSelect: 'none',
+                      msUserSelect: 'none',
+                      userSelect: 'none',
+                      pointerEvents: 'none'
+                    }}
+                  />
+                  {!user && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70">
+                      <div className="text-center p-6 bg-white bg-opacity-95 rounded-lg max-w-md mx-4">
+                        <h3 className="text-xl font-bold text-gray-800 mb-3">Login to Download</h3>
+                        <p className="text-gray-600 mb-4">Sign in to download high-quality, watermark-free images</p>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate('/login', { state: { from: window.location.pathname } });
+                          }}
+                          className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-2 rounded-lg hover:from-blue-700 hover:to-purple-700 transition-colors"
+                        >
+                          Sign In
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="absolute inset-0 pointer-events-none" style={{
+                    backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'200\' height=\'200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Ctext x=\'100\' y=\'100\' font-family=\'Arial\' font-size=\'20\' fill=\'rgba(255,255,255,0.3)\' text-anchor=\'middle\' dominant-baseline=\'middle\' transform=\'rotate(-30, 100, 100)\'>EventPNG.com</text%3E%3C/svg%3E")',
+                    opacity: user ? 0.4 : 0.7,
+                    pointerEvents: 'none'
+                  }}></div>
+                </div>
+              </div>
               
               {/* Selection checkbox in fullscreen view */}
               <div 
@@ -798,30 +975,65 @@ const GalleryDetail = () => {
                 </div>
               </div>
               
-              {/* Download button in fullscreen view */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  downloadImage(selectedPhoto);
-                }}
-                className="absolute top-4 right-16 text-white hover:text-gray-300 z-10 bg-gray-900 bg-opacity-50 rounded-full p-2 transition-colors"
-                title="Download Image"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-              </button>
+              {/* Like button in fullscreen view */}
+              <div className="absolute top-4 right-32 flex items-center gap-2 z-10">
+                <button
+                  onClick={(e) => toggleLike(selectedPhoto.id, e)}
+                  className="flex items-center gap-1 text-white hover:text-red-400 transition-colors bg-gray-900 bg-opacity-50 rounded-full p-2"
+                  aria-label={selectedPhoto.is_liked ? 'Unlike' : 'Like'}
+                >
+                  {likedPhotos.has(selectedPhoto.id) ? (
+                    <FaHeart className="text-red-500 text-xl" />
+                  ) : (
+                    <FaRegHeart className="text-white text-xl" />
+                  )}
+                  <span className="text-white text-sm font-medium ml-1">
+                    {selectedPhoto.like_count || 0}
+                  </span>
+                </button>
+              </div>
               
-              {selectedPhoto.caption && (
-                <div className="mt-4 text-white text-center text-lg font-medium">
-                  {selectedPhoto.caption}
+              {/* Download button in fullscreen view */}
+              {user ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    downloadImage(selectedPhoto);
+                  }}
+                  className="absolute top-4 right-16 text-white hover:text-gray-300 z-10 bg-gray-900 bg-opacity-50 rounded-full p-2 transition-colors"
+                  title="Download Image"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                </button>
+              ) : (
+                <div className="absolute top-4 right-16 z-10">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate('/login', { state: { from: window.location.pathname } });
+                    }}
+                    className="text-white hover:text-gray-300 bg-gray-900 bg-opacity-50 rounded-full p-2 transition-colors flex items-center gap-1 text-sm"
+                    title="Login to Download"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                    </svg>
+                  </button>
                 </div>
               )}
             </div>
+            
+            {selectedPhoto.caption && (
+              <div className="mt-4 text-white text-center text-lg font-medium">
+                {selectedPhoto.caption}
+              </div>
+            )}
           </div>
         </div>
-      )}
-    </div>
+    )}
+  </div>
   );
 };
 
