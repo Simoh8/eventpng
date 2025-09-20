@@ -19,6 +19,10 @@ import ResetPassword from './pages/auth/ResetPassword';
 import CustomerDashboard from './pages/CustomerDashboard';
 import PhotographerDashboard from './pages/PhotographerDashboard';
 import CreateGallery from './pages/CreateGallery';
+import GalleriesDetail from './pages/dashboard/GalleriesDetail';
+import EarningsDetail from './pages/dashboard/EarningsDetail';
+import StorageDetail from './pages/dashboard/StorageDetail';
+import SessionsDetail from './pages/dashboard/SessionsDetail';
 import AdminEvents from './pages/admin/AdminEvents';
 import EventForm from './pages/admin/EventForm';
 import MyPhotosPage from './pages/MyPhotosPage';
@@ -186,22 +190,49 @@ function AppContent() {
         />
 
         {/* --- Photographer --- */}
-        <Route
-          path="photographer-dashboard"
-          element={
-            <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
-              <PhotographerDashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="dashboard"
-          element={
-            <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
-              <PhotographerDashboard />
-            </ProtectedRoute>
-          }
-        />
+        {/* Photographer Dashboard Routes */}
+        <Route path="photographer-dashboard">
+          <Route
+            index
+            element={
+              <ProtectedRoute requiredRole="photographer" allowedRoles={['photographer']}>
+                <PhotographerDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="galleries"
+            element={
+              <ProtectedRoute requiredRole="photographer">
+                <GalleriesDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="sessions"
+            element={
+              <ProtectedRoute requiredRole="photographer">
+                <SessionsDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="earnings"
+            element={
+              <ProtectedRoute requiredRole="photographer">
+                <EarningsDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="storage"
+            element={
+              <ProtectedRoute requiredRole="photographer">
+                <StorageDetail />
+              </ProtectedRoute>
+            }
+          />
+        </Route>
         <Route
           path="galleries/new"
           element={

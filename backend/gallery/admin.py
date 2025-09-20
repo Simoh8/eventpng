@@ -21,7 +21,7 @@ admin_site = admin.site
 class PhotoInline(admin.TabularInline):
     model = Photo
     extra = 1
-    fields = ('image', 'thumbnail_preview', 'title', 'description', 'price', 'is_featured', 'status')
+    fields = ('image', 'thumbnail_preview', 'title', 'description', 'price', 'is_featured')
     readonly_fields = ('thumbnail_preview',)
     
     def thumbnail_preview(self, obj):

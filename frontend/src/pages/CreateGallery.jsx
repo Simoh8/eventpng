@@ -47,7 +47,7 @@ const fetchEvents = async () => {
 };
 
 // Function to upload gallery
-const createGallery = async ({ eventId, photos, title, description }, { onProgress }) => {
+const createGallery = async ({ eventId, photos, title, description, isPublic, isActive, price, coverPhotoIndex }, { onProgress }) => {
   const token = localStorage.getItem('access');
   if (!token) {
     throw new Error('No authentication token found. Please log in again.');
@@ -57,10 +57,17 @@ const createGallery = async ({ eventId, photos, title, description }, { onProgre
   formData.append('event', eventId);
   formData.append('title', title);
   formData.append('description', description || '');
+  formData.append('is_public', isPublic);
+  formData.append('is_active', isActive);
+  formData.append('price', price);
   
   // Append each photo to the form data
-  photos.forEach((photo) => {
+  photos.forEach((photo, index) => {
     formData.append('photos', photo);
+    // If this is the cover photo, add a flag
+    if (index === coverPhotoIndex) {
+      formData.append('cover_photo_index', index);
+    }
   });
 
   // Start processing simulation
@@ -155,6 +162,10 @@ export default function CreateGallery() {
   const [processingProgress, setProcessingProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasOngoingRequest, setHasOngoingRequest] = useState(false);
+  const [isPublic, setIsPublic] = useState(true);
+  const [isActive, setIsActive] = useState(true);
+  const [price, setPrice] = useState('0.00');
+  const [coverPhotoIndex, setCoverPhotoIndex] = useState(null);
   
   // Check for ongoing requests on component mount
   useEffect(() => {
@@ -225,9 +236,18 @@ export default function CreateGallery() {
 
   // Create gallery mutation
   const createGalleryMutation = useMutation({
-    mutationFn: ({ eventId, photos, title, description }) => 
+    mutationFn: ({ eventId, photos, title, description, isPublic, isActive, price, coverPhotoIndex }) => 
       createGallery(
-        { eventId, photos, title, description }, 
+        { 
+          eventId, 
+          photos, 
+          title, 
+          description, 
+          isPublic, 
+          isActive, 
+          price,
+          coverPhotoIndex
+        }, 
         { 
           onProgress: (progress, status) => {
             setProcessingProgress(progress);
@@ -316,6 +336,13 @@ export default function CreateGallery() {
       return;
     }
     
+    // Validate price format
+    const priceValue = parseFloat(price);
+    if (isNaN(priceValue) || priceValue < 0) {
+      toast.error('Please enter a valid price (0 or higher)');
+      return;
+    }
+    
     setHasOngoingRequest(true);
     setIsProcessing(true);
     createGalleryMutation.mutate({
@@ -323,7 +350,30 @@ export default function CreateGallery() {
       photos,
       title,
       description,
+      isPublic,
+      isActive,
+      price: priceValue.toFixed(2),
+      coverPhotoIndex: coverPhotoIndex !== null ? coverPhotoIndex : 0 // Default to first photo if none selected
     });
+  };
+  
+  // Handle price input change with validation
+  const handlePriceChange = (e) => {
+    const value = e.target.value;
+    // Allow only numbers and one decimal point
+    if (value === '' || /^\d*\.?\d{0,2}$/.test(value)) {
+      setPrice(value);
+    }
+  };
+  
+  // Format price on blur
+  const handlePriceBlur = () => {
+    if (price === '') {
+      setPrice('0.00');
+    } else {
+      const num = parseFloat(price);
+      setPrice(isNaN(num) ? '0.00' : num.toFixed(2));
+    }
   };
 
   // Determine if the create button should be disabled
@@ -547,6 +597,100 @@ export default function CreateGallery() {
                 />
               </div>
             </div>
+            
+            {/* Gallery Settings */}
+            <div className="space-y-4 border-t border-gray-200 pt-4">
+              <h3 className="text-sm font-medium text-gray-700">Gallery Settings</h3>
+              
+              {/* Public/Private Toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <label htmlFor="is-public" className="block text-sm font-medium text-gray-700">
+                    Public Gallery
+                  </label>
+                  <p className="text-xs text-gray-500">
+                    {isPublic 
+                      ? 'Visible to everyone with the link' 
+                      : 'Only accessible via direct link'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsPublic(!isPublic)}
+                  disabled={hasOngoingRequest}
+                  className={`${
+                    isPublic ? 'bg-indigo-600' : 'bg-gray-200'
+                  } relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2`}
+                >
+                  <span className="sr-only">Set gallery visibility</span>
+                  <span
+                    className={`${
+                      isPublic ? 'translate-x-5' : 'translate-x-0'
+                    } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
+                  />
+                </button>
+              </div>
+              
+              {/* Active/Inactive Toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <label htmlFor="is-active" className="block text-sm font-medium text-gray-700">
+                    Active
+                  </label>
+                  <p className="text-xs text-gray-500">
+                    {isActive 
+                      ? 'Gallery is visible and accessible' 
+                      : 'Gallery is hidden from everyone'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsActive(!isActive)}
+                  disabled={hasOngoingRequest}
+                  className={`${
+                    isActive ? 'bg-indigo-600' : 'bg-gray-200'
+                  } relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2`}
+                >
+                  <span className="sr-only">Set gallery status</span>
+                  <span
+                    className={`${
+                      isActive ? 'translate-x-5' : 'translate-x-0'
+                    } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
+                  />
+                </button>
+              </div>
+              
+              {/* Price Input */}
+              <div>
+                <label htmlFor="price" className="block text-sm font-medium text-gray-700">
+                  Price for full gallery download ($)
+                </label>
+                <div className="mt-1 relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <span className="text-gray-500 sm:text-sm">$</span>
+                  </div>
+                  <input
+                    type="text"
+                    name="price"
+                    id="price"
+                    value={price}
+                    onChange={handlePriceChange}
+                    onBlur={handlePriceBlur}
+                    className="block w-full pl-7 pr-12 sm:text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    placeholder="0.00"
+                    disabled={hasOngoingRequest}
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                    <span className="text-gray-500 sm:text-sm" id="price-currency">
+                      USD
+                    </span>
+                  </div>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Set to 0.00 for free downloads
+                </p>
+              </div>
+            </div>
 
             {/* Photo Upload */}
             <div>
@@ -596,12 +740,41 @@ export default function CreateGallery() {
                   {previews.map((preview, index) => (
                     <li key={index} className="pl-3 pr-4 py-3 flex items-center justify-between text-sm">
                       <div className="w-0 flex-1 flex items-center">
-                        <PhotoIcon className="flex-shrink-0 h-5 w-5 text-gray-400" />
+                        <div className="relative">
+                          {preview.id && preview.id.startsWith('blob:') ? (
+                            <img 
+                              src={preview.id} 
+                              alt={preview.name}
+                              className="h-10 w-10 object-cover rounded"
+                            />
+                          ) : (
+                            <PhotoIcon className="flex-shrink-0 h-5 w-5 text-gray-400" />
+                          )}
+                          {coverPhotoIndex === index && (
+                            <div className="absolute -top-1 -right-1 bg-indigo-600 rounded-full p-0.5">
+                              <svg className="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
                         <span className="ml-2 flex-1 w-0 truncate">
                           {preview.name}
                         </span>
                       </div>
-                      <div className="ml-4 flex-shrink-0">
+                      <div className="ml-4 flex space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => setCoverPhotoIndex(index)}
+                          className={`text-sm font-medium ${
+                            coverPhotoIndex === index 
+                              ? 'text-indigo-600' 
+                              : 'text-gray-500 hover:text-indigo-500'
+                          }`}
+                          disabled={hasOngoingRequest}
+                        >
+                          {coverPhotoIndex === index ? 'Cover' : 'Set as cover'}
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleRemoveFile(index)}

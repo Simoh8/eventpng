@@ -129,7 +129,6 @@ const RecentGalleryCard = ({ gallery }) => {
       
       // If no images found, use a simple SVG placeholder
       if (images.length === 0) {
-        console.warn('No valid images found for gallery, using placeholder');
         return [
           `data:image/svg+xml,${encodeURIComponent(
             '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" fill="none">' +
