@@ -11,7 +11,8 @@ import {
   MagnifyingGlassIcon,
   ArrowDownTrayIcon,
   ShareIcon,
-  ArrowPathIcon
+  ArrowPathIcon,
+  CloudArrowDownIcon
 } from '@heroicons/react/24/outline';
 import api from '../utils/api';
 import { API_ENDPOINTS } from '../utils/apiEndpoints';
@@ -19,10 +20,34 @@ import { toast } from 'react-toastify';
 
 // Default stats data structure
 const defaultStats = [
-  { name: 'Purchased Photos', value: '0', icon: PhotoIcon, color: 'bg-blue-100 text-blue-600' },
-  { name: 'Favorites', value: '0', icon: HeartIcon, color: 'bg-pink-100 text-pink-600' },
-  { name: 'Orders', value: '0', icon: ShoppingCartIcon, color: 'bg-green-100 text-green-600' },
-  { name: 'Pending Downloads', value: '0', icon: ClockIcon, color: 'bg-yellow-100 text-yellow-600' },
+  { 
+    name: 'Total Downloads', 
+    value: '0', 
+    icon: CloudArrowDownIcon, 
+    color: 'bg-indigo-100 text-indigo-600',
+    description: 'Photos you\'ve downloaded'
+  },
+  { 
+    name: 'Purchased Photos', 
+    value: '0', 
+    icon: PhotoIcon, 
+    color: 'bg-blue-100 text-blue-600',
+    description: 'Photos you\'ve purchased'
+  },
+  { 
+    name: 'Favorites', 
+    value: '0', 
+    icon: HeartIcon, 
+    color: 'bg-pink-100 text-pink-600',
+    description: 'Photos you\'ve liked'
+  },
+  { 
+    name: 'Active Orders', 
+    value: '0', 
+    icon: ShoppingCartIcon, 
+    color: 'bg-green-100 text-green-600',
+    description: 'Your current orders'
+  },
 ];
 
 export default function CustomerDashboard() {
@@ -32,6 +57,7 @@ export default function CustomerDashboard() {
   const [dashboardData, setDashboardData] = useState({
     stats: [...defaultStats],
     recentPurchases: [],
+    recentDownloads: [],
     favorites: [],
     orders: [],
     loading: true,
@@ -43,11 +69,18 @@ export default function CustomerDashboard() {
       setDashboardData(prev => ({ ...prev, loading: true, error: null }));
       
       // Fetch all data in parallel
-      const [dashboardRes, purchasesRes, favoritesRes, ordersRes] = await Promise.all([
+      const [
+        dashboardRes, 
+        purchasesRes, 
+        favoritesRes, 
+        ordersRes,
+        downloadsRes
+      ] = await Promise.all([
         api.get(API_ENDPOINTS.CUSTOMER.DASHBOARD),
-        api.get(API_ENDPOINTS.CUSTOMER.PURCHASES, { params: { limit: 2 } }),
-        api.get(API_ENDPOINTS.CUSTOMER.FAVORITES, { params: { limit: 2 } }),
-        api.get(API_ENDPOINTS.CUSTOMER.ORDERS, { params: { limit: 2 } })
+        api.get(API_ENDPOINTS.CUSTOMER.PURCHASES, { params: { limit: 3 } }),
+        api.get(API_ENDPOINTS.CUSTOMER.FAVORITES, { params: { limit: 3 } }),
+        api.get(API_ENDPOINTS.CUSTOMER.ORDERS, { params: { limit: 3 } }),
+        api.get(API_ENDPOINTS.CUSTOMER.DOWNLOADS, { params: { limit: 4 } })
       ]);
 
       // Process the data
@@ -56,15 +89,16 @@ export default function CustomerDashboard() {
       // Update stats with real data
       if (dashboardRes.data) {
         const data = dashboardRes.data;
-        stats[0].value = data.purchasedPhotos?.toString() || '0';
-        stats[1].value = data.favoritesCount?.toString() || '0';
-        stats[2].value = data.ordersCount?.toString() || '0';
-        stats[3].value = data.pendingDownloads?.toString() || '0';
+        stats[0].value = data.totalDownloads?.toString() || '0';
+        stats[1].value = data.purchasedPhotos?.toString() || '0';
+        stats[2].value = data.favoritesCount?.toString() || '0';
+        stats[3].value = data.ordersCount?.toString() || '0';
       }
 
       setDashboardData({
         stats,
         recentPurchases: purchasesRes.data?.results || [],
+        recentDownloads: downloadsRes.data?.results || [],
         favorites: favoritesRes.data?.results || [],
         orders: ordersRes.data?.results || [],
         loading: false,
@@ -95,7 +129,7 @@ export default function CustomerDashboard() {
     return new Date(dateString).toLocaleDateString(undefined, options);
   };
 
-  const { stats, recentPurchases, favorites, orders, loading, error } = dashboardData;
+  const { stats, recentPurchases, recentDownloads, favorites, orders, loading, error } = dashboardData;
 
   if (loading) {
     return (
@@ -170,32 +204,44 @@ export default function CustomerDashboard() {
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-          {stats.map((stat) => {
-            const Icon = stat.icon;
-            return (
-              <div key={stat.name} className="bg-white overflow-hidden shadow rounded-lg">
-                <div className="px-4 py-5 sm:p-6">
-                  <div className="flex items-center">
-                    <div className={`flex-shrink-0 p-3 rounded-md ${stat.color} bg-opacity-20`}>
-                      <Icon className="h-6 w-6" aria-hidden="true" />
-                    </div>
-                    <div className="ml-4">
-                      <dt className="text-sm font-medium text-gray-500 truncate">{stat.name}</dt>
-                      <dd className="text-2xl font-semibold text-gray-900">
-                        {loading ? (
-                          <div className="h-8 w-12 bg-gray-200 rounded animate-pulse"></div>
-                        ) : (
-                          stat.value
-                        )}
-                      </dd>
-                    </div>
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 gap-5 mt-6 sm:grid-cols-2 lg:grid-cols-4">
+          {stats.map((stat, statIdx) => (
+            <div
+              key={statIdx}
+              className="relative overflow-hidden rounded-lg bg-white px-4 pt-5 pb-12 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200"
+            >
+              <dt>
+                <div className={`absolute rounded-full p-3 ${stat.color} bg-opacity-50`}>
+                  <stat.icon className="h-6 w-6" aria-hidden="true" />
+                </div>
+                <p className="ml-16 text-sm font-medium text-gray-500">{stat.name}</p>
+              </dt>
+              <dd className="ml-16 flex items-baseline pb-6 sm:pb-7">
+                <div>
+                  <p className="text-2xl font-semibold text-gray-900">{stat.value}</p>
+                  {stat.description && (
+                    <p className="text-xs text-gray-500 mt-1">{stat.description}</p>
+                  )}
+                </div>
+                <div className="absolute inset-x-0 bottom-0 bg-gray-50 px-4 py-3 sm:px-4">
+                  <div className="text-sm">
+                    <Link 
+                      to={
+                        stat.name === 'Total Downloads' ? '/downloads' :
+                        stat.name === 'Favorites' ? '/favorites' :
+                        stat.name === 'Active Orders' ? '/orders' : '#'
+                      } 
+                      className="font-medium text-indigo-600 hover:text-indigo-500 inline-flex items-center"
+                    >
+                      View details
+                      <ArrowRightOnRectangleIcon className="ml-1 h-4 w-4" />
+                    </Link>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              </dd>
+            </div>
+          ))}
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

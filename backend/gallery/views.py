@@ -335,6 +335,8 @@ class PhotoDetailView(generics.RetrieveUpdateDestroyAPIView):
         except (Photo.DoesNotExist, ValueError):
             raise Http404("Photo not found")
 
+
+
 class DownloadPhotoView(generics.CreateAPIView):
     """View for downloading a photo (records the download)."""
     serializer_class = serializers.DownloadSerializer
@@ -352,8 +354,6 @@ class DownloadPhotoView(generics.CreateAPIView):
         
         # Check if the photo is public or the user has purchased it
         if not photo.is_public:
-            # In a real app, you'd check if the user has purchased this photo
-            # For now, we'll just check if they're the photographer
             if photo.gallery.photographer != request.user:
                 return Response(
                     {"detail": "You don't have permission to download this photo."},
@@ -367,12 +367,49 @@ class DownloadPhotoView(generics.CreateAPIView):
             ip_address=self.get_client_ip(request)
         )
         
-        # In a real app, you'd serve the file here or redirect to a signed URL
-        # For now, we'll just return the photo URL
-        serializer = serializers.PhotoSerializer(photo)
-        return Response(serializer.data)
+        # Log the download activity
+        from customer_dashboard.utils.activity_logger import log_user_activity
+        from customer_dashboard.models.activity import UserActivity
+        
+        log_user_activity(
+            user=request.user,
+            activity_type=UserActivity.ActivityType.PHOTO_DOWNLOAD,  # Use the enum value
+            obj=photo,
+            metadata={
+                'photo_id': str(photo.id),
+                'photo_title': getattr(photo, 'title', 'Untitled'),
+                'gallery_id': str(photo.gallery_id) if hasattr(photo, 'gallery_id') and photo.gallery_id else None,
+                'gallery_title': photo.gallery.title if hasattr(photo, 'gallery') and photo.gallery else None
+            }
+        )
+        
+        # Serve the file for download
+        from django.http import FileResponse
+        import os
+        
+        # Get the file path
+        file_path = photo.image.path
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            return Response(
+                {"detail": "File not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Open the file and create a response
+        file = open(file_path, 'rb')
+        response = FileResponse(file)
+        
+        # Set the content type and headers for download
+        response['Content-Type'] = 'application/octet-stream'
+        response['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
+        response['Content-Length'] = os.path.getsize(file_path)
+        
+        return response
     
     def get_client_ip(self, request):
+        """Helper method to get the client's IP address."""
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
         if x_forwarded_for:
             ip = x_forwarded_for.split(',')[0]

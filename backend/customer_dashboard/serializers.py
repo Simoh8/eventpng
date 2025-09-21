@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from gallery.models import Photo  # Import the Photo model
-from gallery.serializers import PhotoSerializer  # Assuming you have a PhotoSerializer
+from gallery.models import Photo, Download as GalleryDownload
+from gallery.serializers import PhotoSerializer
 from .models import CustomerProfile, Purchase, Favorite, Order, OrderItem
 
 User = get_user_model()
@@ -12,8 +12,11 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = CustomerProfile
-        fields = ['email', 'full_name', 'total_purchases', 'total_spent', 'created_at']
-        read_only_fields = ['total_purchases', 'total_spent', 'created_at']
+        fields = [
+            'email', 'full_name', 'total_purchases', 
+            'total_spent', 'total_downloads', 'created_at'
+        ]
+        read_only_fields = ['total_purchases', 'total_spent', 'total_downloads', 'created_at']
     
     def get_full_name(self, obj):
         return f"{obj.user.first_name} {obj.user.last_name}"
@@ -57,6 +60,23 @@ class OrderItemSerializer(serializers.ModelSerializer):
         model = OrderItem
         fields = ['id', 'photo', 'photo_id', 'quantity', 'price', 'subtotal', 'created_at']
         read_only_fields = ['id', 'subtotal', 'created_at']
+
+class DownloadSerializer(serializers.ModelSerializer):
+    """
+    Serializer for user download history
+    """
+    photo = PhotoSerializer(read_only=True)
+    gallery_title = serializers.CharField(source='photo.gallery.title', read_only=True)
+    gallery_slug = serializers.SlugField(source='photo.gallery.slug', read_only=True)
+    download_date = serializers.DateTimeField(source='downloaded_at')
+    
+    class Meta:
+        model = GalleryDownload
+        fields = [
+            'id', 'photo', 'gallery_title', 'gallery_slug',
+            'download_date', 'ip_address'
+        ]
+        read_only_fields = fields
 
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
