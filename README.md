@@ -238,3 +238,4 @@ This project is licensed under the MIT License.
 
 
 
+now if they dont set it as public generate a otp code to that gallary which i want the user to use in order to access the inages in that gallary 

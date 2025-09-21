@@ -1,8 +1,10 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import API from '../config'; // default import
+import PinModal from '../components/modals/PinModal';
+import React from "react";
 
 import { makeRequest } from '../utils/apiUtils';
 import { API_ENDPOINTS } from '../config';
@@ -27,7 +29,6 @@ import {
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthContext';
 
-// Default cover image if none is provided from the API
 const DEFAULT_COVER_IMAGE = 'https://images.unsplash.com/photo-1516450360452-1f389e6b5cef?auto=format&fit=crop&w=1470&q=80';
 
 // Stats card component with loading state
@@ -67,28 +68,137 @@ const StatCard = ({ icon: Icon, title, value, color = 'blue', description = null
   );
 };
 
-// Recent gallery item component with improved layout
+// Recent gallery item component with improved layout and image slideshow
 const RecentGalleryCard = ({ gallery }) => {
   const navigate = useNavigate();
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Get all available images for the gallery
+  const galleryImages = React.useMemo(() => {
+    try {
+      // console.log('Processing gallery data:', gallery);
+      const images = [];
+      
+      // Helper function to extract image URL
+      const getImageUrl = (img) => {
+        if (!img) return null;
+        
+        // Handle string URLs
+        if (typeof img === 'string') {
+          return img.startsWith('http') ? img : null;
+        }
+        
+        // Handle image objects
+        if (typeof img === 'object') {
+          // Try different possible properties that might contain the image URL
+          return (
+            img.image || 
+            img.url || 
+            (img.media_file && img.media_file.url) ||
+            (img.original && (img.original.url || img.original.image)) ||
+            null
+          );
+        }
+        
+        return null;
+      };
+      
+      // Add cover image if exists
+      if (gallery.cover_image) {
+        const coverImage = getImageUrl(gallery.cover_image);
+        if (coverImage) images.push(coverImage);
+      }
+      
+      // Add featured images if available
+      if (gallery.images && Array.isArray(gallery.images)) {
+        gallery.images.forEach(img => {
+          if (!img) return;
+          try {
+            const imgUrl = getImageUrl(img);
+            if (imgUrl && !images.includes(imgUrl)) {
+              images.push(imgUrl);
+            }
+          } catch (e) {
+            console.warn('Invalid image format:', img, e);
+          }
+        });
+      }
+      
+      
+      // If no images found, use a simple SVG placeholder
+      if (images.length === 0) {
+        return [
+          `data:image/svg+xml,${encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" fill="none">' +
+            '<rect width="400" height="300" fill="%23f0f0f0"/>' +
+            '<rect x="150" y="100" width="100" height="100" fill="%23ddd" rx="2"/>' +
+            '<path d="M200 120L185 150H200L185 180H215L200 150H215L200 120Z" fill="%23aaa"/>' +
+            '</svg>'
+          )}`
+        ];
+      }
+      
+      return images;
+    } catch (error) {
+      console.error('Error processing gallery images:', error, gallery);
+      // Return a simple SVG as fallback
+      return [
+        `data:image/svg+xml,${encodeURIComponent(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" fill="none">' +
+          '<rect width="400" height="300" fill="%23f0f0f0"/>' +
+          '<rect x="150" y="100" width="100" height="100" fill="%23ddd" rx="2"/>' +
+          '<path d="M200 120L185 150H200L185 180H215L200 150H215L200 120Z" fill="%23aaa"/>' +
+          '</svg>'
+        )}`
+      ];
+    }
+  }, [gallery]);
+
+  // Auto-rotate images when hovered
+  React.useEffect(() => {
+    if (!isHovered || galleryImages.length <= 1) return;
+    
+    const interval = setInterval(() => {
+      setCurrentImageIndex(prev => (prev + 1) % galleryImages.length);
+    }, 3000); // Rotate every 3 seconds
+    
+    return () => clearInterval(interval);
+  }, [isHovered, galleryImages.length]);
+  
+  // Handle image load state
+  const handleImageLoad = () => {
+    setIsLoading(false);
+  };
+  
+  // Handle image error
+  const handleImageError = (e) => {
+    console.warn('Failed to load image:', e.target.src);
+    // Set a simple SVG as fallback
+    e.target.src = `data:image/svg+xml,${encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" fill="none">' +
+      '<rect width="400" height="300" fill="%23f0f0f0"/>' +
+      '<rect x="150" y="100" width="100" height="100" fill="%23ddd" rx="2"/>' +
+      '<path d="M200 120L185 150H200L185 180H215L200 150H215L200 120Z" fill="%23aaa"/>' +
+      '</svg>'
+    )}`;
+    e.target.onerror = null; // Prevent infinite loop if the fallback also fails
+  };
   
   const stats = [
     { 
-      value: gallery.photo_count || 0, 
+      value: gallery.total_photos || 0, 
       label: 'Photos',
       icon: PhotoIcon,
       color: 'text-blue-600 bg-blue-50'
     },
     { 
-      value: gallery.gallery_count || 0, 
-      label: 'Galleries',
-      icon: RectangleGroupIcon,
-      color: 'text-purple-600 bg-purple-50'
-    },
-    { 
-      value: gallery.photographer_count || 0, 
-      label: 'Photographers',
-      icon: UserGroupIcon,
-      color: 'text-green-600 bg-green-50'
+      value: gallery.photographer?.full_name || 'Unknown',
+      label: 'Photographer',
+      icon: UserCircleIcon,
+      color: 'text-purple-600 bg-purple-50',
+      isName: true // Flag to indicate this is a name, not a number
     }
   ];
 
@@ -108,61 +218,134 @@ const RecentGalleryCard = ({ gallery }) => {
       })
     : 'Date not available';
 
+  // Handle manual navigation between images
+  const goToImage = (index) => {
+    setCurrentImageIndex(index);
+  };
+
   return (
     <div 
-      className="group bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300 overflow-hidden cursor-pointer h-full flex flex-col"
+      className="group bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300 overflow-hidden cursor-pointer h-full flex flex-col transform hover:-translate-y-1"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       onClick={handleClick}
     >
-      {/* Gallery Cover Image */}
-      <div className="h-40 bg-gray-100 relative overflow-hidden">
-        {gallery.cover_image ? (
-          <img 
-            src={gallery.cover_image} 
-            alt={gallery.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-            <PhotoIcon className="h-12 w-12 text-gray-400" />
+      {/* Gallery Cover Image with Slideshow */}
+      <div className="h-48 bg-gradient-to-br from-gray-50 to-gray-100 relative overflow-hidden">
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="flex space-x-2">
+              {[1, 2, 3].map((i) => (
+                <div 
+                  key={i} 
+                  className="h-2 w-2 bg-gray-300 rounded-full animate-bounce"
+                  style={{ animationDelay: `${i * 0.15}s` }}
+                />
+              ))}
+            </div>
           </div>
         )}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
-          <h3 className="text-white font-semibold text-lg truncate">{gallery.title || 'Untitled Gallery'}</h3>
-          <p className="text-sm text-gray-200 truncate">
-            {gallery.event?.title || 'No associated event'}
-          </p>
+        
+        <div className="relative w-full h-full">
+          {galleryImages.map((image, index) => (
+            <motion.div
+              key={index}
+              className="absolute inset-0 w-full h-full"
+              initial={{ opacity: 0 }}
+              animate={{
+                opacity: index === currentImageIndex ? 1 : 0,
+                scale: isHovered ? 1.05 : 1,
+                transition: { duration: 0.5, ease: 'easeInOut' }
+              }}
+            >
+              <img 
+                src={image} 
+                alt={`${gallery.title || 'Gallery'} ${index + 1}`}
+                className={`w-full h-full object-cover transition-opacity duration-300 ${
+                  index === currentImageIndex ? 'opacity-100' : 'opacity-0'
+                }`}
+                onLoad={handleImageLoad}
+                onError={handleImageError}
+                loading="lazy"
+              />
+            </motion.div>
+          ))}
+          
+          {/* Navigation Dots */}
+          {galleryImages.length > 1 && (
+            <div className="absolute bottom-3 left-0 right-0 flex justify-center space-x-2 z-10 px-2">
+              {galleryImages.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCurrentImageIndex(index);
+                  }}
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    index === currentImageIndex 
+                      ? 'w-6 bg-white shadow-sm' 
+                      : 'w-3 bg-white/60 hover:bg-white/80'
+                  }`}
+                  aria-label={`View image ${index + 1} of ${galleryImages.length}`}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+        
+        {/* Title Overlay */}
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-4 pt-8">
+          <h3 className="text-white font-semibold text-lg truncate drop-shadow-sm">
+            {gallery.title || 'Untitled Gallery'}
+          </h3>
+          {gallery.event?.title && (
+            <p className="text-sm text-white/90 font-medium mt-1 truncate flex items-center">
+              <CalendarIcon className="h-3.5 w-3.5 mr-1.5 flex-shrink-0" />
+              <span className="truncate">{gallery.event.title}</span>
+            </p>
+          )}
         </div>
       </div>
       
       {/* Gallery Details */}
       <div className="p-4 flex-1 flex flex-col">
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="grid grid-cols-2 gap-3 mb-3">
           {stats.map((stat, idx) => (
             <div 
               key={idx} 
-              className={`p-2 rounded-lg text-center ${stat.color} transition-colors duration-200`}
+              className={`p-3 rounded-xl ${
+                stat.isName 
+                  ? 'bg-purple-50 text-purple-800' 
+                  : 'bg-blue-50 text-blue-800'
+              } transition-all duration-200 hover:shadow-sm`}
             >
-              <stat.icon className="h-5 w-5 mx-auto mb-1" />
-              <p className="text-xs font-medium">{stat.label}</p>
-              <p className="text-sm font-bold">{stat.value}</p>
+              <div className="flex items-center">
+                <stat.icon 
+                  className={`h-5 w-5 ${
+                    stat.isName ? 'text-purple-500' : 'text-blue-500'
+                  }`} 
+                />
+                <span className="ml-2 text-sm font-medium">{stat.label}</span>
+              </div>
+              <p className={`mt-1 text-base font-semibold ${stat.isName ? 'truncate' : ''}`}>
+                {stat.value}
+              </p>
             </div>
           ))}
         </div>
         
-        {/* Date and Author */}
+        {/* Footer */}
         <div className="mt-auto pt-3 border-t border-gray-100">
           <div className="flex items-center justify-between text-xs text-gray-500">
             <div className="flex items-center">
-              <ClockIcon className="h-3.5 w-3.5 mr-1" />
+              <ClockIcon className="h-3.5 w-3.5 mr-1.5 text-gray-400" />
               <span>{formattedDate}</span>
             </div>
-            {gallery.photographer_name && (
-              <div className="flex items-center">
-                <UserCircleIcon className="h-3.5 w-3.5 mr-1" />
-                <span>{gallery.photographer_name}</span>
-              </div>
-            )}
+            <div className="flex items-center text-sm text-gray-700 font-medium">
+              <span>View Gallery</span>
+              <ArrowRightIcon className="h-3.5 w-3.5 ml-1 transition-transform group-hover:translate-x-0.5" />
+            </div>
           </div>
         </div>
       </div>
@@ -306,85 +489,97 @@ const HomePage = () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching events and stats...');
+      // console.log('Fetching events and stats...');
       
       // Check cache first
       const cachedData = getCachedData(EVENTS_CACHE_KEY);
       if (cachedData && cachedData.events) {
+        // console.log('Using cached events data:', cachedData.events);
         setEvents(cachedData.events);
         setStats(cachedData.stats || {});
-        setLoading(false);
       }
       
-      // Fetch fresh data with rate limiting
-      console.log('Making API requests to:', {
-        events: `${API_ENDPOINTS.PUBLIC_EVENTS}?limit=3&ordering=-start_date`,
-        stats: API_ENDPOINTS.STATS,
-        recent: API_ENDPOINTS.RECENT_GALLERIES
-      });
+      // Use a consistent limit for events
+      const eventsLimit = 4;
+      const eventsUrl = `${API_ENDPOINTS.PUBLIC_EVENTS}?limit=${eventsLimit}&ordering=-date`;
       
-      const [eventsRes, statsRes, recentRes] = await Promise.all([
-        makeRequest(() => {
-          console.log('Fetching events from:', `${API_ENDPOINTS.PUBLIC_EVENTS}?limit=4&ordering=-start_date`);
-          return axios.get(`${API_ENDPOINTS.PUBLIC_EVENTS}?limit=4&ordering=-start_date`, {
-            headers: {
-              'Cache-Control': 'no-cache',
-              'Pragma': 'no-cache',
-              'Expires': '0'
-            }
-          });
-        }).then(response => {
-          console.log('Events response:', response);
-          return response;
-        }).catch(err => {
+      // console.log('Making API requests to:', {
+      //   events: eventsUrl,
+      //   stats: API_ENDPOINTS.STATS,
+      //   recent: API_ENDPOINTS.RECENT_GALLERIES
+      // });
+      
+      const requests = [
+        // Events request - using minimal headers to avoid CORS issues
+        makeRequest(() => axios.get(eventsUrl, {
+          // Remove all custom headers to let the browser handle them
+          withCredentials: false // Set to false for public endpoints to avoid CORS preflight
+        })).catch(err => {
           console.error('Error fetching events:', err);
-          return { error: err };
+          return { data: { results: [] } }; // Return empty results on error
         }),
         
-        makeRequest(() => {
-          console.log('Fetching stats from:', API_ENDPOINTS.STATS);
-          return axios.get(API_ENDPOINTS.STATS);
-        }).then(response => {
-          console.log('Stats response:', response);
-          return response;
-        }).catch(err => {
+        // Stats request
+        makeRequest(() => axios.get(API_ENDPOINTS.STATS)).catch(err => {
           console.error('Error fetching stats:', err);
-          return { error: err };
+          return { data: {} }; // Return empty stats on error
         }),
         
- 
-        makeRequest(() => {
-          console.log('Fetching recent galleries from:', API_ENDPOINTS.RECENT_GALLERIES);
-          return axios.get(API_ENDPOINTS.RECENT_GALLERIES);
-        }).then(response => {
-          console.log('Recent galleries response:', response);
-          return response;
-        }).catch(err => {
+        // Recent galleries request
+        makeRequest(() => axios.get(API_ENDPOINTS.RECENT_GALLERIES)).catch(err => {
           console.error('Error fetching recent galleries:', err);
-          return { error: err };
+          return { data: { results: [] } }; // Return empty results on error
         })
-      ]);
+      ];
+      
+      const [eventsRes, statsRes, recentRes] = await Promise.all(requests);
       
       // Process responses - handle both direct array and paginated response
       let eventsData = [];
-      if (!eventsRes.error) {
+      let eventsError = null;
+      
+      // Process events response
+      if (eventsRes && eventsRes.data) {
         if (Array.isArray(eventsRes.data)) {
           eventsData = eventsRes.data;
-        } else if (eventsRes.data?.results) {
+        } else if (eventsRes.data.results) {
           eventsData = eventsRes.data.results;
-        } else if (eventsRes.data) {
-          eventsData = [eventsRes.data];
+        } else if (eventsRes.data.data) {
+          eventsData = eventsRes.data.data;
         }
+      } else if (eventsRes && eventsRes.error) {
+        console.error('Error in events response:', eventsRes.error);
+        eventsError = eventsRes.error;
+      } else if (Array.isArray(eventsRes.data)) {
+        eventsData = eventsRes.data;
+      } else if (eventsRes.data?.results) {
+        eventsData = eventsRes.data.results;
+      } else if (eventsRes.data) {
+        eventsData = [eventsRes.data];
       }
+      // console.log('Processed events data:', eventsData);
       
       // Process stats
-      const serverStats = !statsRes.error && statsRes.data 
+      const serverStats = statsRes && statsRes.data 
         ? statsRes.data 
-        : { total_galleries: 0, total_events: 0, total_photographers: 0 };
+        : { 
+            total_galleries: 0, 
+            total_photos: 0,
+            total_events: 0, 
+            total_photographers: 0 
+          };
         
-      const recentGalleries = !recentRes.error && recentRes.data 
-        ? Array.isArray(recentRes.data) ? recentRes.data : (recentRes.data.results || [])
-        : [];
+      // Process recent galleries
+      let recentGalleries = [];
+      if (recentRes && recentRes.data) {
+        if (Array.isArray(recentRes.data)) {
+          recentGalleries = recentRes.data;
+        } else if (recentRes.data.results) {
+          recentGalleries = recentRes.data.results;
+        } else if (recentRes.data.data) {
+          recentGalleries = recentRes.data.data;
+        }
+      }
 
       // Calculate additional stats from events if available
       if (eventsData.length > 0) {
@@ -403,28 +598,39 @@ const HomePage = () => {
         });
       }
       
-      // Update cache and state
-      const statsData = {
+      // Prepare stats data
+      const newStats = {
         totalGalleries: serverStats.total_galleries || 0,
         totalPhotos: serverStats.total_photos || 0,
         totalEvents: serverStats.total_events || 0,
         totalPhotographers: serverStats.total_photographers || 0,
-        recentGalleries: recentGalleries.slice(0, 3)
-      };
-
-      // Always update cache and state, even if there are no events
-      saveToCache(EVENTS_CACHE_KEY, {
-        events: eventsData,
-        stats: statsData,
         recentGalleries: recentGalleries
-      });
+      };
       
+
       setEvents(eventsData);
-      setStats(statsData);
+      setStats(newStats);
       setHasLoadedStats(true);
       
-      if (eventsData.length === 0 && !cachedData) {
-        setError('No events found. Please check back later.');
+      // Clear any previous errors if we have events
+      if (eventsData.length > 0) {
+        setError(null);
+      } else if (eventsError) {
+        setError('Error loading events. ' + 
+          (eventsError.response?.status === 429 ? 'Too many requests. Please wait a moment and try again.' : 
+           eventsError.response?.data?.detail || 'Please try again later.')
+        );
+      } else if (!cachedData) {
+        // console.log('No events found in the response');
+        setError('No upcoming events at the moment. Check back soon!');
+      }
+      
+      // Save to cache if we have data
+      if (eventsData.length > 0 || Object.keys(newStats).length > 0) {
+        saveToCache(EVENTS_CACHE_KEY, {
+          events: eventsData,
+          stats: newStats
+        });
       }
       
     } catch (err) {
@@ -748,25 +954,19 @@ const HomePage = () => {
                 Recent Galleries
               </h2>
               <p className="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
-                Explore the latest photo galleries from our events
+                Explore the 3 latest photo galleries from our events
               </p>
             </div>
             
             <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
-              {stats.recentGalleries.map((gallery) => (
+              {stats.recentGalleries.slice(0, 3).map((gallery) => (
                 <RecentGalleryCard key={gallery.id} gallery={gallery} />
               ))}
             </div>
             
-            {stats.recentGalleries.length >= 3 && (
+            {stats.recentGalleries.length > 0 && (
               <div className="mt-12 text-center">
-                <Link 
-                  to="/galleries" 
-                  className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
-                >
-                  View All Galleries
-                  <ArrowRightIcon className="ml-2 -mr-1 h-5 w-5" />
-                </Link>
+
               </div>
             )}
           </div>
@@ -807,7 +1007,7 @@ const HomePage = () => {
               Latest Events
             </h2>
             <p className="mt-3 max-w-2xl mx-auto text-xl text-gray-500 sm:mt-4">
-              Discover our most recent photography events
+              Discover our 4 most recent photography events
             </p>
             {error && (
               <div className="mt-4 text-sm text-red-600 bg-red-50 p-3 rounded-md inline-block">
@@ -881,66 +1081,13 @@ const HomePage = () => {
       </section>
 
       {/* PIN Modal */}
-      <AnimatePresence>
-        {showPinModal && (
-          <motion.div 
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setShowPinModal(false)}
-          >
-            <motion.div 
-              className="bg-white rounded-lg shadow-xl max-w-md w-full p-6"
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 20, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="text-center">
-                <LockClosedIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  This is a private event
-                </h3>
-                <p className="text-gray-500 mb-6">
-                  Please enter the event PIN to continue
-                </p>
-                
-                <form onSubmit={handlePinSubmit}>
-                  <div className="mb-4">
-                    <input
-                      type="password"
-                      value={pin}
-                      onChange={(e) => setPin(e.target.value)}
-                      className="block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500"
-                      placeholder="Enter PIN"
-                      required
-                    />
-                    {pinError && (
-                      <p className="mt-2 text-sm text-red-600">{pinError}</p>
-                    )}
-                  </div>
-                  <div className="flex justify-end space-x-3">
-                    <button
-                      type="button"
-                      className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                      onClick={() => setShowPinModal(false)}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                    >
-                      Continue
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <PinModal
+        isOpen={showPinModal}
+        onClose={() => setShowPinModal(false)}
+        onPinSubmit={handlePinSubmit}
+        isLoading={false}
+        error={pinError}
+      />
     </div>
   );
 };

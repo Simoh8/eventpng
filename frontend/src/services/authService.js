@@ -1,4 +1,3 @@
-
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
 
@@ -8,6 +7,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 10000, // Add timeout to prevent hanging requests
 });
 
 // Flag to prevent multiple simultaneous token refresh attempts
@@ -19,8 +19,7 @@ const processQueue = (error, token = null) => {
     if (error) {
       prom.reject(error);
     } else {
-      return;
-
+      prom.resolve(token);
     }
   });
   failedQueue = [];
@@ -49,31 +48,47 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   response => response,
   async (error) => {
-    if (error.response?.status === 401) {
-      const originalRequest = error.config;
-
-      // Prevent infinite loops
-      if (originalRequest._retry) {
-        return Promise.reject(error);
+    const originalRequest = error.config;
+    
+    // Only handle 401 errors and avoid retry loops
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        // If already refreshing, add to queue
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then(token => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return api(originalRequest);
+        }).catch(err => {
+          return Promise.reject(err);
+        });
       }
+      
       originalRequest._retry = true;
-
+      isRefreshing = true;
+      
       try {
         const refreshed = await authService.refreshToken();
         if (refreshed?.access) {
           localStorage.setItem('access', refreshed.access);
           api.defaults.headers.common['Authorization'] = `Bearer ${refreshed.access}`;
+          
+          // Process queued requests
+          processQueue(null, refreshed.access);
+          
           return api(originalRequest); // retry the failed request
         }
       } catch (refreshError) {
         console.error('[Axios] Token refresh failed:', refreshError);
+        processQueue(refreshError, null);
         authService.logout();
+      } finally {
+        isRefreshing = false;
       }
     }
     return Promise.reject(error);
   }
 );
-
 
 // Check if token is valid
 const isTokenValid = (token) => {
@@ -140,12 +155,6 @@ const isAuthenticated = () => {
   const tokenValid = isTokenValid(token);
   const hasUser = !!user;
   
-  // console.log('[authService] Authentication check:', {
-  //   hasToken: !!token,
-  //   tokenValid,
-  //   hasUser
-  // });
-  
   // If token is invalid but we have a user, clean up
   if (!tokenValid && hasUser) {
     localStorage.removeItem('user');
@@ -154,8 +163,83 @@ const isAuthenticated = () => {
   return tokenValid && hasUser;
 };
 
+// Get CSRF token from cookies
+const getCSRFToken = () => {
+  // Get CSRF token from cookies if using session authentication
+  const cookieValue = document.cookie
+    .split('; ')
+    .find(row => row.startsWith('csrftoken='))
+    ?.split('=')[1];
+  
+  return cookieValue || null;
+};
+
 // Auth service methods
 const authService = {
+  // Add CSRF token getter
+  getCSRFToken,
+  // Register a new user
+  register: async function(userData) {
+    try {
+      // Make sure required fields are present
+      if (!userData.email || !userData.password || !userData.full_name) {
+        throw new Error('Email, password, and full name are required');
+      }
+
+      // Prepare the registration data
+      const registrationData = {
+        email: userData.email,
+        full_name: userData.full_name,
+        password: userData.password,
+        confirm_password: userData.confirmPassword || userData.password,
+        is_photographer: userData.is_photographer || false
+      };
+      
+      // Add optional fields if they exist
+      if (userData.phone_number) {
+        registrationData.phone_number = userData.phone_number;
+      }
+
+      // Make the API call
+      const response = await api.post('/api/accounts/register/', registrationData);
+      
+      // If we get here, registration was successful
+      return {
+        success: true,
+        data: response.data,
+        message: 'Registration successful!',
+        user: response.data.user,
+        access: response.data.access,
+        refresh: response.data.refresh
+      };
+      
+    } catch (error) {
+      console.error('Registration error:', error);
+      
+      // Handle different types of errors
+      if (error.response) {
+        const { data, status } = error.response;
+        
+        return {
+          success: false,
+          error: data.detail || 'Registration failed',
+          errors: data,
+          status
+        };
+      } else if (error.request) {
+        return {
+          success: false,
+          error: 'No response from server. Please try again later.'
+        };
+      } else {
+        return {
+          success: false,
+          error: error.message || 'An error occurred during registration.'
+        };
+      }
+    }
+  },
+  
   // Google OAuth login
   googleAuth: async function(credential) {
     const response = await api.post('/api/accounts/google/', { credential });
@@ -169,7 +253,6 @@ const authService = {
       localStorage.setItem('user', JSON.stringify(user));
       this.setAuthHeader(access);
   
-      // return everything so AuthProvider can use it
       return { access, refresh, user };
     }
   
@@ -213,30 +296,7 @@ const authService = {
     delete api.defaults.headers.common['Authorization'];
   },
 
-  // getProfile: async function() {
-  //   try {
-  //     const response = await api.get('/api/accounts/profile/');
-  //     const userData = response.data;
-      
-  //     if (!userData || !userData.id) {
-  //       throw new Error('Invalid user data received');
-  //     }
-      
-  //     // Update stored user data
-  //     localStorage.setItem('user', JSON.stringify(userData));
-  //     return userData;
-  //   } catch (error) {
-  //     if (error.response?.status === 401) {
-  //       this.logout();
-  //     }
-  //     throw error;
-  //   }
-  // },
-
   // Refresh access token
-  
-  
-  
   refreshToken: async function() {
     try {
       console.log('[authService] Starting token refresh');
@@ -339,24 +399,10 @@ const authService = {
     }
   },
 
-  // Helper to get CSRF token
-  getCSRFToken: function() {
-    if (typeof document === 'undefined') return '';
-    
-    const name = 'csrftoken=';
-    const decodedCookie = decodeURIComponent(document.cookie);
-    const cookieArray = decodedCookie.split(';');
-    
-    for (let i = 0; i < cookieArray.length; i++) {
-      const cookie = cookieArray[i].trim();
-      if (cookie.indexOf(name) === 0) {
-        return cookie.substring(name.length);
-      }
-    }
-    return '';
-  },
-  
-  // Password reset
+
+
+
+
   forgotPassword: async (email) => {
     try {
       const response = await api.post('/api/accounts/auth/password/reset/', { email });
@@ -384,10 +430,10 @@ const authService = {
       throw new Error(error.message || 'Failed to reset password');
     }
   },
-
   // Check if user is authenticated
   isAuthenticated: isAuthenticated,
   
+
   // Get stored user
   getStoredUser: getStoredUser,
   

@@ -6,7 +6,7 @@ from django.db import models
 from django.conf import settings
 from django.utils.text import slugify
 from django.core.validators import FileExtensionValidator
-from django.db.models.signals import pre_save
+from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 from django.core.files.storage import default_storage
 
@@ -65,7 +65,7 @@ class Event(models.Model):
         ordering = ['-date', 'name']
 
     def __str__(self):
-        return self.name
+        return str(self.name) if self.name is not None else f"Event {self.id}"
         
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -209,7 +209,7 @@ class Gallery(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return self.title
+        return str(self.title) if self.title is not None else f"Gallery {self.id}"
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -288,7 +288,7 @@ class Photo(models.Model):
         ordering = ['order', '-created_at']
 
     def __str__(self):
-        return self.title or f"Photo {self.id}"
+        return str(self.title) if self.title is not None and self.title.strip() else f"Photo {self.id}"
 
     def save(self, *args, **kwargs):
         """Save the photo and extract metadata."""
@@ -452,7 +452,13 @@ class Payment(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"Payment {self.id} - {self.get_status_display()} - ${self.amount}"
+        try:
+            status = getattr(self, 'status', 'unknown')
+            status_display = self.get_status_display() if hasattr(self, 'get_status_display') else status
+            amount = f"${float(self.amount):.2f}" if hasattr(self, 'amount') and self.amount is not None else "$0.00"
+            return f"Payment {self.id} - {status_display} - {amount}"
+        except Exception as e:
+            return f"Payment {getattr(self, 'id', 'unknown')} - error"
 
 
 class Download(models.Model):
@@ -490,14 +496,35 @@ class Download(models.Model):
 
     class Meta:
         ordering = ['-downloaded_at']
+
+
+class Like(models.Model):
+    """
+    Tracks when users like photos.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='photo_likes'
+    )
+    photo = models.ForeignKey(
+        Photo,
+        on_delete=models.CASCADE,
+        related_name='likes'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
         unique_together = ['user', 'photo']
+        ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['download_token']),
             models.Index(fields=['user', 'photo']),
         ]
 
     def __str__(self):
-        return f"{self.user} downloaded {self.photo}"
+        user_str = str(self.user) if self.user else "[deleted user]"
+        photo_str = str(self.photo) if hasattr(self, 'photo') and self.photo else "[deleted photo]"
+        return f"{user_str} likes {photo_str}"
 
     @property
     def is_paid(self):

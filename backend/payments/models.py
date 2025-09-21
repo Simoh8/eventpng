@@ -65,7 +65,12 @@ class Order(models.Model):
         ordering = ['-created_at']
     
     def __str__(self):
-        return f"Order {self.id} - {self.get_status_display()}"
+        try:
+            status = getattr(self, 'status', 'unknown')
+            status_display = self.get_status_display() if hasattr(self, 'get_status_display') else status
+            return f"Order {getattr(self, 'id', 'unknown')} - {status_display}"
+        except Exception as e:
+            return f"Order {getattr(self, 'id', 'unknown')} - error"
     
     def save(self, *args, **kwargs):
         # Update timestamps
@@ -163,7 +168,14 @@ class Transaction(models.Model):
         ordering = ['-created_at']
     
     def __str__(self):
-        return f"{self.get_transaction_type_display()} - {self.amount} {self.currency} ({self.get_status_display()})"
+        try:
+            transaction_type = getattr(self, 'get_transaction_type_display', lambda: getattr(self, 'transaction_type', 'unknown'))()
+            amount = f"{float(getattr(self, 'amount', 0)):.2f}" if hasattr(self, 'amount') and self.amount is not None else "0.00"
+            currency = getattr(self, 'currency', 'USD')
+            status = getattr(self, 'get_status_display', lambda: getattr(self, 'status', 'unknown'))()
+            return f"{transaction_type} - {amount} {currency} ({status})"
+        except Exception as e:
+            return f"Transaction {getattr(self, 'id', 'unknown')} - error"
 
 
 class DownloadToken(models.Model):
@@ -191,7 +203,12 @@ class DownloadToken(models.Model):
         unique_together = [('order', 'photo')]
     
     def __str__(self):
-        return f"Token for {self.photo} (Order: {self.order.id})"
+        try:
+            photo_str = str(self.photo) if hasattr(self, 'photo') and self.photo else "[deleted photo]"
+            order_id = getattr(getattr(self, 'order', None), 'id', 'unknown')
+            return f"Token for {photo_str} (Order: {order_id})"
+        except Exception as e:
+            return f"Token {getattr(self, 'token', 'unknown')} - error"
     
     @property
     def is_valid(self):

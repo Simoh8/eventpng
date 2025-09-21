@@ -2,12 +2,16 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
 from .views import (
-    GoogleAuthConfigView, GoogleLogin, CSRFTokenView, EnvTestView,
+    CSRFTokenView, EnvTestView,
     PasswordResetRequestView, PasswordResetConfirmView
 )
+from .google_views import GoogleAuthConfigView, GoogleLogin
 from .api_views import AccountSettingsView
 
+
+
 app_name = 'accounts'
+
 
 urlpatterns = [
     # Authentication
@@ -15,26 +19,27 @@ urlpatterns = [
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('csrf/', CSRFTokenView.as_view(), name='get_csrf'),
     
+    # Google OAuth
+    path('google/', include([
+        path('', GoogleLogin.as_view(), name='google_auth'),  # Redirect to login by default
+        path('config/', GoogleAuthConfigView.as_view(), name='google_config'),
+        path('login/', GoogleLogin.as_view(), name='google_login'),
+    ])),
+    
     # User management
     path('register/', views.RegisterView.as_view(), name='register'),
     path('me/', views.CurrentUserView.as_view(), name='current_user'),
-    path('me/update/', views.UserDetailView.as_view(), name='update_profile'),
-    path('me/account-settings/', AccountSettingsView.as_view(), name='account_settings'),
-    path('me/change-password/', views.ChangePasswordView.as_view(), name='change_password'),
+    path('me/update/', views.UserDetailView.as_view(), name='update_user'),
+    path('change-password/', views.ChangePasswordView.as_view(), name='change_password'),
     
-    # OAuth Configuration
-    path('config/google/', GoogleAuthConfigView.as_view(), name='google_auth_config'),
-    
-    # Google OAuth2 endpoints
-    path('google/', GoogleLogin.as_view(), name='google_login'),
-    
-    # Environment test endpoint
-    path('env-test/', EnvTestView.as_view(), name='env_test'),
-    
-    # Password reset endpoints
+    # Password reset
     path('auth/password/reset/', PasswordResetRequestView.as_view(), name='password_reset'),
     path('auth/password/reset/confirm/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
     
-    # Add auth/me/ endpoint for frontend compatibility
-    path('auth/me/', views.CurrentUserView.as_view(), name='auth_me'),
+    # Account settings
+    path('settings/', AccountSettingsView.as_view(), name='account_settings'),
+    
+    # Test endpoint (remove in production)
+    path('env-test/', EnvTestView.as_view(), name='env_test'),
 ]
+

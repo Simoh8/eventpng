@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -10,82 +10,129 @@ import {
   StarIcon,
   MagnifyingGlassIcon,
   ArrowDownTrayIcon,
-  ShareIcon
+  ShareIcon,
+  ArrowPathIcon
 } from '@heroicons/react/24/outline';
+import api from '../utils/api';
+import { API_ENDPOINTS } from '../utils/apiEndpoints';
+import { toast } from 'react-toastify';
 
-// Mock data for the dashboard
-const stats = [
-  { name: 'Purchased Photos', value: '24', icon: PhotoIcon, color: 'bg-blue-100 text-blue-600' },
-  { name: 'Favorites', value: '12', icon: HeartIcon, color: 'bg-pink-100 text-pink-600' },
-  { name: 'Orders', value: '5', icon: ShoppingCartIcon, color: 'bg-green-100 text-green-600' },
-  { name: 'Pending Downloads', value: '2', icon: ClockIcon, color: 'bg-yellow-100 text-yellow-600' },
-];
-
-const recentPurchases = [
-  { 
-    id: 1, 
-    title: 'Beach Sunset', 
-    event: 'Summer Vacation 2023',
-    date: '2023-07-15',
-    price: '19.99',
-    image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=60',
-    downloadLink: '#'
-  },
-  { 
-    id: 2, 
-    title: 'Mountain View', 
-    event: 'Nature Expedition',
-    date: '2023-06-22',
-    price: '24.99',
-    image: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=60',
-    downloadLink: '#'
-  },
-];
-
-const favorites = [
-  { 
-    id: 1, 
-    title: 'City Lights', 
-    photographer: 'Alex Johnson',
-    price: '29.99',
-    image: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=60',
-  },
-  { 
-    id: 2, 
-    title: 'Mountain Peak', 
-    photographer: 'Sarah Wilson',
-    price: '34.99',
-    image: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=60',
-  },
-];
-
-const orders = [
-  {
-    id: 'ORD-78901',
-    date: '2023-08-15',
-    status: 'Delivered',
-    total: '89.97',
-    items: 3,
-    downloadLink: '#'
-  },
-  {
-    id: 'ORD-78900',
-    date: '2023-08-10',
-    status: 'Processing',
-    total: '49.98',
-    items: 2,
-    downloadLink: '#'
-  }
+// Default stats data structure
+const defaultStats = [
+  { name: 'Purchased Photos', value: '0', icon: PhotoIcon, color: 'bg-blue-100 text-blue-600' },
+  { name: 'Favorites', value: '0', icon: HeartIcon, color: 'bg-pink-100 text-pink-600' },
+  { name: 'Orders', value: '0', icon: ShoppingCartIcon, color: 'bg-green-100 text-green-600' },
+  { name: 'Pending Downloads', value: '0', icon: ClockIcon, color: 'bg-yellow-100 text-yellow-600' },
 ];
 
 export default function CustomerDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   
+  const [dashboardData, setDashboardData] = useState({
+    stats: [...defaultStats],
+    recentPurchases: [],
+    favorites: [],
+    orders: [],
+    loading: true,
+    error: null
+  });
+
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      setDashboardData(prev => ({ ...prev, loading: true, error: null }));
+      
+      // Fetch all data in parallel
+      const [dashboardRes, purchasesRes, favoritesRes, ordersRes] = await Promise.all([
+        api.get(API_ENDPOINTS.CUSTOMER.DASHBOARD),
+        api.get(API_ENDPOINTS.CUSTOMER.PURCHASES, { params: { limit: 2 } }),
+        api.get(API_ENDPOINTS.CUSTOMER.FAVORITES, { params: { limit: 2 } }),
+        api.get(API_ENDPOINTS.CUSTOMER.ORDERS, { params: { limit: 2 } })
+      ]);
+
+      // Process the data
+      const stats = [...defaultStats];
+      
+      // Update stats with real data
+      if (dashboardRes.data) {
+        const data = dashboardRes.data;
+        stats[0].value = data.purchasedPhotos?.toString() || '0';
+        stats[1].value = data.favoritesCount?.toString() || '0';
+        stats[2].value = data.ordersCount?.toString() || '0';
+        stats[3].value = data.pendingDownloads?.toString() || '0';
+      }
+
+      setDashboardData({
+        stats,
+        recentPurchases: purchasesRes.data?.results || [],
+        favorites: favoritesRes.data?.results || [],
+        orders: ordersRes.data?.results || [],
+        loading: false,
+        error: null
+      });
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      setDashboardData(prev => ({
+        ...prev,
+        loading: false,
+        error: 'Failed to load dashboard data. Please try again later.'
+      }));
+      toast.error('Failed to load dashboard data');
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+  
   const handleLogout = () => {
     logout();
     navigate('/');
   };
+
+  const formatDate = (dateString) => {
+    const options = { year: 'numeric', month: 'long', day: 'numeric' };
+    return new Date(dateString).toLocaleDateString(undefined, options);
+  };
+
+  const { stats, recentPurchases, favorites, orders, loading, error } = dashboardData;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <ArrowPathIcon className="mx-auto h-12 w-12 text-gray-400 animate-spin" />
+          <h3 className="mt-2 text-sm font-medium text-gray-900">Loading dashboard...</h3>
+          <p className="mt-1 text-sm text-gray-500">Please wait while we load your data.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+            <svg className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <h3 className="mt-2 text-sm font-medium text-gray-900">Error loading dashboard</h3>
+          <p className="mt-1 text-sm text-gray-500">{error}</p>
+          <div className="mt-6">
+            <button
+              onClick={fetchDashboardData}
+              className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+            >
+              <ArrowPathIcon className="-ml-1 mr-2 h-5 w-5" />
+              Try again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -94,20 +141,13 @@ export default function CustomerDashboard() {
         <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 flex justify-between items-center">
           <h1 className="text-3xl font-bold text-gray-900">My Dashboard</h1>
           <div className="flex items-center space-x-4">
-            <button
-              type="button"
+            <Link
+              to="/gallery"
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
             >
               <MagnifyingGlassIcon className="h-5 w-5 mr-2" />
               Search Photos
-            </button>
-            {/* <button
-              onClick={handleLogout}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-            >
-              <ArrowRightOnRectangleIcon className="h-5 w-5 mr-2" />
-              Sign out
-            </button> */}
+            </Link>
           </div>
         </div>
       </header>
@@ -143,7 +183,13 @@ export default function CustomerDashboard() {
                     </div>
                     <div className="ml-4">
                       <dt className="text-sm font-medium text-gray-500 truncate">{stat.name}</dt>
-                      <dd className="text-2xl font-semibold text-gray-900">{stat.value}</dd>
+                      <dd className="text-2xl font-semibold text-gray-900">
+                        {loading ? (
+                          <div className="h-8 w-12 bg-gray-200 rounded animate-pulse"></div>
+                        ) : (
+                          stat.value
+                        )}
+                      </dd>
                     </div>
                   </div>
                 </div>
@@ -156,55 +202,98 @@ export default function CustomerDashboard() {
           {/* Recent Purchases */}
           <div className="lg:col-span-2">
             <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-              <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
+              <div className="px-4 py-5 sm:px-6 border-b border-gray-200 flex justify-between items-center">
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Recent Purchases</h3>
+                {recentPurchases.length > 0 && (
+                  <Link 
+                    to="/purchases" 
+                    className="text-sm font-medium text-primary-600 hover:text-primary-500"
+                  >
+                    View all
+                  </Link>
+                )}
               </div>
-              <div className="divide-y divide-gray-200">
-                {recentPurchases.map((item) => (
-                  <div key={item.id} className="p-4 hover:bg-gray-50">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 h-16 w-16 rounded-md overflow-hidden">
-                        <img
-                          className="h-full w-full object-cover"
-                          src={item.image}
-                          alt={item.title}
-                        />
-                      </div>
-                      <div className="ml-4 flex-1">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-medium text-gray-900">{item.title}</h4>
-                          <p className="text-sm font-medium text-gray-900">${item.price}</p>
-                        </div>
-                        <p className="text-sm text-gray-500">{item.event}</p>
-                        <div className="mt-2 flex items-center text-sm text-gray-500">
-                          <span>Purchased on {new Date(item.date).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex justify-between">
-                      <button
-                        type="button"
-                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                      >
-                        <ShareIcon className="h-4 w-4 mr-1" />
-                        Share
-                      </button>
-                      <a
-                        href={item.downloadLink}
-                        className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                      >
-                        <ArrowDownTrayIcon className="h-4 w-4 mr-1" />
-                        Download
-                      </a>
-                    </div>
+              {loading ? (
+                <div className="p-6 text-center text-gray-500">
+                  <ArrowPathIcon className="mx-auto h-8 w-8 animate-spin text-gray-400" />
+                  <p className="mt-2">Loading purchases...</p>
+                </div>
+              ) : recentPurchases.length === 0 ? (
+                <div className="p-6 text-center text-gray-500">
+                  <p>No recent purchases found.</p>
+                  <div className="mt-4">
+                    <Link
+                      to="/gallery"
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                    >
+                      Browse Photos
+                    </Link>
                   </div>
-                ))}
-              </div>
-              <div className="bg-gray-50 px-6 py-4 text-sm border-t border-gray-200">
-                <Link to="/purchases" className="font-medium text-primary-600 hover:text-primary-500">
-                  View all purchases
-                </Link>
-              </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="divide-y divide-gray-200">
+                    {recentPurchases.map((item) => (
+                      <div key={item.id} className="p-4 hover:bg-gray-50">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-16 w-16 rounded-md overflow-hidden bg-gray-200">
+                            {item.image ? (
+                              <img
+                                className="h-full w-full object-cover"
+                                src={item.image}
+                                alt={item.title || 'Purchased item'}
+                              />
+                            ) : (
+                              <div className="h-full w-full bg-gray-200 flex items-center justify-center text-gray-400">
+                                <PhotoIcon className="h-8 w-8" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="ml-4 flex-1">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-sm font-medium text-gray-900">{item.title || 'Untitled Item'}</h4>
+                              {item.price && (
+                                <p className="text-sm font-medium text-gray-900">
+                                  ${parseFloat(item.price).toFixed(2)}
+                                </p>
+                              )}
+                            </div>
+                            {item.event && (
+                              <p className="text-sm text-gray-500">{item.event}</p>
+                            )}
+                            {item.date && (
+                              <div className="mt-2 flex items-center text-sm text-gray-500">
+                                <span>Purchased on {formatDate(item.date)}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="mt-3 flex justify-between">
+                          <button
+                            type="button"
+                            className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                          >
+                            <ShareIcon className="h-4 w-4 mr-1" />
+                            Share
+                          </button>
+                          <a
+                            href={item.downloadLink}
+                            className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                          >
+                            <ArrowDownTrayIcon className="h-4 w-4 mr-1" />
+                            Download
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="bg-gray-50 px-6 py-4 text-sm border-t border-gray-200">
+                    <Link to="/purchases" className="font-medium text-primary-600 hover:text-primary-500">
+                      View all purchases
+                    </Link>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

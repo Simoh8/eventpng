@@ -27,7 +27,9 @@ const AccountSettingsPage = () => {
         const token = localStorage.getItem('access_token');
         const response = await api.get('/api/accounts/me/');
         const responseData = response.data;
-        const userData = responseData.data || {};
+        
+        // The user data is directly in responseData.user
+        const userData = responseData.user || {};
         const newFormData = {
           full_name: userData.full_name || '',
           email: userData.email || '',
