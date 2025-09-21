@@ -6,7 +6,7 @@ from django.db import models
 from django.conf import settings
 from django.utils.text import slugify
 from django.core.validators import FileExtensionValidator
-from django.db.models.signals import pre_save
+from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 from django.core.files.storage import default_storage
 
@@ -496,16 +496,35 @@ class Download(models.Model):
 
     class Meta:
         ordering = ['-downloaded_at']
+
+
+class Like(models.Model):
+    """
+    Tracks when users like photos.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='photo_likes'
+    )
+    photo = models.ForeignKey(
+        Photo,
+        on_delete=models.CASCADE,
+        related_name='likes'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
         unique_together = ['user', 'photo']
+        ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['download_token']),
             models.Index(fields=['user', 'photo']),
         ]
 
     def __str__(self):
         user_str = str(self.user) if self.user else "[deleted user]"
         photo_str = str(self.photo) if hasattr(self, 'photo') and self.photo else "[deleted photo]"
-        return f"{user_str} downloaded {photo_str}"
+        return f"{user_str} likes {photo_str}"
 
     @property
     def is_paid(self):

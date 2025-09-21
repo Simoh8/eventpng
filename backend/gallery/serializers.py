@@ -1,21 +1,51 @@
+from django.db.models import Count
 from rest_framework import serializers
-from .models import Event, Gallery, Photo, Download
+from .models import Event, Gallery, Photo, Download, Like
 from accounts.serializers import UserSerializer
+
+class LikeSerializer(serializers.ModelSerializer):
+    """Serializer for photo likes."""
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    
+    class Meta:
+        model = Like
+        fields = ['id', 'user', 'photo', 'created_at']
+        read_only_fields = ['id', 'user', 'created_at']
+        extra_kwargs = {
+            'photo': {'write_only': True}
+        }
+
 
 class PhotoSerializer(serializers.ModelSerializer):
     """Serializer for photos in galleries."""
     image_url = serializers.SerializerMethodField()
+    is_liked = serializers.SerializerMethodField()
+    like_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Photo
-        fields = ['id', 'title', 'description', 'image', 'image_url', 'width', 'height', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = [
+            'id', 'title', 'description', 'image', 'image_url', 
+            'width', 'height', 'created_at', 'is_liked', 'like_count'
+        ]
+        read_only_fields = ['id', 'created_at', 'is_liked', 'like_count']
     
     def get_image_url(self, obj):
         request = self.context.get('request')
         if obj.image:
             return request.build_absolute_uri(obj.image.url) if request else obj.image.url
         return None
+        
+    def get_is_liked(self, obj):
+        """Check if the current user has liked this photo."""
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.likes.filter(user=request.user).exists()
+        return False
+        
+    def get_like_count(self, obj):
+        """Get the total number of likes for this photo."""
+        return obj.likes.count()
 
 class GalleryWithPhotosSerializer(serializers.ModelSerializer):
     """Serializer for galleries that includes their photos."""
@@ -60,18 +90,47 @@ class PublicEventDetailSerializer(serializers.ModelSerializer):
         return None
         
     def get_galleries(self, obj):
-        # Use the prefetched galleries_data if available, otherwise query them
+        # Use the prefetched galleries_data if available, otherwise query them with annotations
         galleries = getattr(obj, 'galleries_data', None) or Gallery.objects.filter(
             event=obj,
             is_public=True
-        ).prefetch_related('photos')
+        ).prefetch_related(
+            'photos__likes',  # Prefetch likes for N+1 optimization
+            'photos__likes__user'  # Prefetch users who liked for N+1 optimization
+        )
         
-        # Use the GalleryWithPhotosSerializer to serialize the galleries
-        return GalleryWithPhotosSerializer(
-            galleries,
-            many=True,
-            context=self.context
-        ).data
+        # Get the current user from the request context
+        request = self.context.get('request')
+        
+        # Manually build the gallery data with like information
+        gallery_data = []
+        for gallery in galleries:
+            # Get photos with like counts
+            photos_data = []
+            for photo in gallery.photos.filter(is_public=True):
+                photos_data.append({
+                    'id': photo.id,
+                    'title': photo.title,
+                    'description': photo.description,
+                    'image': request.build_absolute_uri(photo.image.url) if request and hasattr(request, 'build_absolute_uri') else photo.image.url,
+                    'width': photo.width,
+                    'height': photo.height,
+                    'created_at': photo.created_at,
+                    'like_count': photo.likes.count(),
+                    'is_liked': photo.likes.filter(user=request.user).exists() if request and request.user.is_authenticated else False
+                })
+            
+            # Add gallery data with photos
+            gallery_data.append({
+                'id': gallery.id,
+                'title': gallery.title,
+                'description': gallery.description,
+                'photos': photos_data,
+                'created_at': gallery.created_at,
+                'updated_at': gallery.updated_at
+            })
+            
+        return gallery_data
 
 
 class PublicEventSerializer(serializers.ModelSerializer):
@@ -240,13 +299,32 @@ class GalleryDetailSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
     
     def get_photos(self, obj):
-        # Get public photos for the gallery
-        photos = obj.photos.filter(is_public=True)
-        return PhotoSerializer(
-            photos, 
-            many=True,
-            context=self.context
-        ).data
+        # Get public photos for the gallery with like counts
+        photos = obj.photos.filter(is_public=True).annotate(
+            like_count=Count('likes', distinct=True)
+        )
+        
+        # Get the current user from the request context
+        request = self.context.get('request')
+        
+        # Create a list to store photo data with like status
+        photo_data = []
+        
+        for photo in photos:
+            photo_dict = {
+                'id': photo.id,
+                'title': photo.title,
+                'description': photo.description,
+                'image': request.build_absolute_uri(photo.image.url) if request and hasattr(request, 'build_absolute_uri') else photo.image.url,
+                'width': photo.width,
+                'height': photo.height,
+                'created_at': photo.created_at,
+                'like_count': photo.like_count if hasattr(photo, 'like_count') else photo.likes.count(),
+                'is_liked': photo.likes.filter(user=request.user).exists() if request and request.user.is_authenticated else False
+            }
+            photo_data.append(photo_dict)
+            
+        return photo_data
     
     def get_event(self, obj):
         if not obj.event:

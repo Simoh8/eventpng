@@ -16,11 +16,11 @@ from django.core.cache import cache
 from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
-from .models import Event, Gallery, Photo, Download
+from .models import Event, Gallery, Photo, Download, Like
 
 # Get the custom user model
 User = get_user_model()
-from .serializers import GalleryListSerializer
+from .serializers import GalleryListSerializer, LikeSerializer
 from . import serializers
 from accounts.permissions import IsOwnerOrReadOnly, IsPhotographer, IsStaffOrSuperuser
 
@@ -62,6 +62,143 @@ class StatsView(APIView):
                 {'error': 'Failed to fetch statistics'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class LikePhotoView(APIView):
+    """
+    API endpoint to like/unlike a photo.
+    POST /api/gallery/photos/<photo_id>/like/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, photo_id):
+        try:
+            # Convert photo_id to UUID if it's a string
+            if isinstance(photo_id, str):
+                from uuid import UUID
+                try:
+                    photo_id = UUID(photo_id)
+                except ValueError:
+                    return Response(
+                        {'error': 'Invalid photo ID format'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            try:
+                photo = Photo.objects.get(id=photo_id, is_public=True)
+            except (Photo.DoesNotExist, ValueError):
+                return Response(
+                    {'error': 'Photo not found or not accessible'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Check if the user has already liked the photo
+            like = Like.objects.filter(
+                user=request.user,
+                photo=photo
+            ).first()
+
+            if like:
+                # Unlike the photo if already liked
+                like.delete()
+                action = 'unliked'
+            else:
+                # Like the photo if not already liked
+                Like.objects.create(user=request.user, photo=photo)
+                action = 'liked'
+
+            # Return the updated photo data
+            photo.refresh_from_db()  # Refresh to get updated like count
+            serializer = serializers.PhotoSerializer(
+                photo,
+                context={'request': request}
+            )
+            return Response({
+                'action': action,
+                'photo': serializer.data
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class UnlikePhotoView(APIView):
+    """
+    API endpoint to unlike a photo.
+    DELETE /api/photos/<photo_id>/unlike/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, photo_id):
+        try:
+            # Convert photo_id to UUID if it's a string
+            if isinstance(photo_id, str):
+                from uuid import UUID
+                try:
+                    photo_id = UUID(photo_id)
+                except ValueError:
+                    return Response(
+                        {'error': 'Invalid photo ID format'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            try:
+                like = Like.objects.get(
+                    user=request.user,
+                    photo_id=photo_id
+                )
+                like.delete()
+                
+                # Return the updated photo data
+                photo = Photo.objects.get(id=photo_id, is_public=True)
+                serializer = serializers.PhotoSerializer(
+                    photo,
+                    context={'request': request}
+                )
+                return Response(serializer.data)
+                
+            except Like.DoesNotExist:
+                # If the like doesn't exist, just return the current photo state
+                try:
+                    photo = Photo.objects.get(id=photo_id, is_public=True)
+                    serializer = serializers.PhotoSerializer(
+                        photo,
+                        context={'request': request}
+                    )
+                    return Response(serializer.data)
+                except Photo.DoesNotExist:
+                    return Response(
+                        {'error': 'Photo not found or not accessible'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+                
+        except Photo.DoesNotExist:
+            return Response(
+                {'error': 'Photo not found or not accessible'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+class UserLikedPhotosView(ListAPIView):
+    """
+    API endpoint to get all photos liked by the current user.
+    GET /api/users/me/likes/
+    """
+    serializer_class = serializers.PhotoSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        # Get all photos that the current user has liked
+        return Photo.objects.filter(
+            likes__user=self.request.user,
+            is_public=True
+        ).select_related('gallery').prefetch_related('likes')
 
 
 class RecentGalleriesView(ListAPIView):
