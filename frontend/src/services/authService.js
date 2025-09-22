@@ -261,10 +261,17 @@ const authService = {
       };
       
       const response = await axios.post(
-        `${API_BASE_URL}/api/accounts/google/`, 
+        `${API_BASE_URL}/api/accounts/google/`,
         { credential },
-        config
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': this.getCSRFToken(),
+          },
+          withCredentials: true, // ✅ important for cross-site cookies
+        }
       );
+      
       
       if (response.data && response.data.access && response.data.user) {
         const { access, refresh, user } = response.data;
