@@ -4,14 +4,13 @@ import { API_BASE_URL } from '../config';
 
 
 
-// Create axios instance with base URL
 const api = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  timeout: 10000, // Add timeout to prevent hanging requests
+  headers: { 'Content-Type': 'application/json' },
+  timeout: 10000,
+  withCredentials: true, 
 });
+
 
 // Flag to prevent multiple simultaneous token refresh attempts
 let isRefreshing = false;
@@ -268,7 +267,7 @@ const authService = {
             'Content-Type': 'application/json',
             'X-CSRFToken': this.getCSRFToken(),
           },
-          withCredentials: true, // ✅ important for cross-site cookies
+          withCredentials: true, 
         }
       );
       
