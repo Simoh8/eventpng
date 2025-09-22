@@ -1,9 +1,11 @@
 from .base import *
+import os
 
 DEBUG = False
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "yourdomain.com").split(",")
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "eventpng.ledgerctrl.com").split(",")
 
+# --- Security settings ---
 CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True
 SECURE_SSL_REDIRECT = True
@@ -14,8 +16,10 @@ SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 
+# --- Static files ---
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
+# --- Logging ---
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -29,3 +33,25 @@ LOGGING = {
     },
     "root": {"handlers": ["file", "console"], "level": "INFO"},
 }
+
+# --- CORS / CSRF ---
+INSTALLED_APPS += [
+    "corsheaders",
+]
+
+MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",  # must be before CommonMiddleware
+    "django.middleware.common.CommonMiddleware",
+] + MIDDLEWARE
+
+CORS_ALLOWED_ORIGINS = [
+    "https://eventpng.vercel.app",        # your frontend
+    "https://eventpng.ledgerctrl.com",   # backend domain (optional but safe)
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://eventpng.vercel.app",
+    "https://eventpng.ledgerctrl.com",
+]
