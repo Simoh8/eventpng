@@ -16,11 +16,14 @@ def send_welcome_email(user, is_photographer=False):
     # Choose the appropriate template based on user type
     template = 'emails/photographer_welcome.html' if is_photographer else 'emails/customer_welcome.html'
     
+    # Get the frontend URL, fallback to SITE_URL if FRONTEND_URL is not set
+    frontend_url = getattr(settings, 'FRONTEND_URL', getattr(settings, 'SITE_URL', 'https://youreventphoto.com'))
+    
     context = {
         'user': user,
         'site_name': 'EventPhoto',
         'contact_email': settings.DEFAULT_FROM_EMAIL,
-        'site_url': settings.SITE_URL,
+        'site_url': frontend_url.rstrip('/'),  # Remove trailing slash for consistency
     }
     
     html_message = render_to_string(template, context)
