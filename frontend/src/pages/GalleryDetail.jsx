@@ -35,9 +35,9 @@ const GalleryDetail = () => {
       
       let url;
       if (!isNaN(slug)) {
-        url = `${API_BASE_URL}/api/gallery/public/galleries/by-id/${slug}/`;
+        url = `${API_BASE_URL}api/gallery/public/galleries/by-id/${slug}/`;
       } else {
-        url = `${API_BASE_URL}/api/gallery/public/galleries/${slug}/`;
+        url = `${API_BASE_URL}api/gallery/public/galleries/${slug}/`;
       }
       
       try {
