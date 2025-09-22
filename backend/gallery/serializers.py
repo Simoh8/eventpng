@@ -300,8 +300,9 @@ class GalleryDetailSerializer(serializers.ModelSerializer):
     
     def get_photos(self, obj):
         # Get public photos for the gallery with like counts
+        # Using 'total_likes' as the annotation name to avoid conflict with the model's like_count field
         photos = obj.photos.filter(is_public=True).annotate(
-            like_count=Count('likes', distinct=True)
+            total_likes=Count('likes', distinct=True)
         )
         
         # Get the current user from the request context
@@ -319,7 +320,7 @@ class GalleryDetailSerializer(serializers.ModelSerializer):
                 'width': photo.width,
                 'height': photo.height,
                 'created_at': photo.created_at,
-                'like_count': photo.like_count if hasattr(photo, 'like_count') else photo.likes.count(),
+                'like_count': photo.total_likes if hasattr(photo, 'total_likes') else photo.likes.count(),
                 'is_liked': photo.likes.filter(user=request.user).exists() if request and request.user.is_authenticated else False
             }
             photo_data.append(photo_dict)
