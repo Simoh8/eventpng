@@ -281,6 +281,10 @@ class Photo(models.Model):
         help_text="If False, photo is hidden from everyone except the photographer."
     )
     order = models.PositiveIntegerField(default=0)
+    like_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of likes for this photo"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

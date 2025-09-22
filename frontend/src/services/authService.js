@@ -244,21 +244,56 @@ const authService = {
   
   // Google OAuth login
   googleAuth: async function(credential) {
-    const response = await api.post('/api/accounts/google/', { credential });
-    const { access, refresh, user } = response.data;
-  
-    if (access && user) {
-      localStorage.setItem('access', access);
-      if (refresh) {
-        localStorage.setItem('refresh', refresh);
+    try {
+      // Get CSRF token from cookies
+      const csrfToken = this.getCSRFToken();
+      if (!csrfToken) {
+        throw new Error('CSRF token not found');
       }
-      localStorage.setItem('user', JSON.stringify(user));
-      this.setAuthHeader(access);
-  
-      return { access, refresh, user };
+
+      const config = {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRFToken': csrfToken
+        },
+        withCredentials: true
+      };
+      
+      const response = await axios.post(
+        `${API_BASE_URL}/api/accounts/google/`, 
+        { credential },
+        config
+      );
+      
+      if (response.data && response.data.access && response.data.user) {
+        const { access, refresh, user } = response.data;
+        
+        // Store tokens and user data
+        localStorage.setItem('access', access);
+        if (refresh) {
+          localStorage.setItem('refresh', refresh);
+        }
+        localStorage.setItem('user', JSON.stringify(user));
+        
+        // Set auth header for future requests
+        this.setAuthHeader(access);
+        
+        // Return in the same format as the login function
+        return { 
+          access, 
+          refresh, 
+          user,
+          // Add these for compatibility with the login flow
+          data: { access, refresh, user }
+        };
+      } else {
+        throw new Error('Invalid response from Google OAuth');
+      }
+    } catch (error) {
+      console.error('Google auth error:', error);
+      throw error;
     }
-  
-    throw new Error('Invalid response from server');
   },
 
   // Login user

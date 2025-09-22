@@ -87,29 +87,22 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
     try {
       
       // Clear any existing auth data before login
-      localStorage.removeItem('access');
-      localStorage.removeItem('refresh');
-      localStorage.removeItem('user');
-      
       const response = await authService.login({
         email: formData.email,
         password: formData.password,
       });
       
-      
-      
-      // Store user data in localStorage
-      if (response?.user) {
-        localStorage.setItem('user', JSON.stringify(response.user));
+      if (!response?.user) {
+        throw new Error('No user data received from server');
       }
       
-      // Force a small delay to ensure state updates propagate
-      await new Promise(resolve => setTimeout(resolve, 100));
+      console.log('Login successful, user:', response.user);
       
-      // Call onSuccess callback which will handle the navigation
+      // Call onSuccess callback with user data which will handle the navigation
       if (onSuccess) {
-        onSuccess();
+        onSuccess(response.user);
       } else {
+        console.warn('No onSuccess callback provided, using default navigation');
         // Fallback navigation if onSuccess is not provided
         navigate(redirectTo, { 
           replace: true,
@@ -128,12 +121,47 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
   };
 
   // Handle Google OAuth success
-  const onGoogleSuccess = useCallback((response) => {
-    handleGoogleLogin(response, () => {
-      if (onSuccess) onSuccess();
-      navigate(redirectTo);
-    }, setError);
-  }, [onSuccess, navigate, redirectTo]);
+  const onGoogleSuccess = useCallback(async (response) => {
+    try {
+      setIsLoading(true);
+      setError('');
+      
+      await handleGoogleLogin(response, () => {
+        // Get the user data from localStorage that was just set
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        
+        // Call onSuccess with user data if it exists
+        if (onSuccess) {
+          onSuccess(user);
+        } else {
+          // Determine redirect path based on user role
+          const targetPath = user?.is_staff || user?.is_superuser
+            ? '/admin/dashboard'
+            : user?.is_photographer
+              ? '/photographer-dashboard'
+              : '/my-gallery';
+          
+          console.log('Google login successful, navigating to:', targetPath);
+          
+          // Add a small delay to ensure all state updates are processed
+          setTimeout(() => {
+            navigate(targetPath, { 
+              replace: true,
+              state: { from: undefined } // Clear the from state to prevent loops
+            });
+            
+            // Force a page reload to ensure all auth state is properly loaded
+            window.location.reload();
+          }, 100);
+        }
+      }, setError);
+    } catch (error) {
+      console.error('Google login error:', error);
+      setError(error.message || 'Failed to log in with Google');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [onSuccess, navigate]);
 
   // Handle Google OAuth error
   const onGoogleError = useCallback(() => {

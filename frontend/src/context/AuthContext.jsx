@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import authService from '../services/authService';
 
@@ -54,27 +54,38 @@ export const AuthProvider = ({ children }) => {
   const handleLoginSuccess = useCallback((userData) => {
     if (!userData) return;
 
+    // Store user data in localStorage
     localStorage.setItem('user', JSON.stringify(userData));
 
+    // Determine the correct dashboard based on user role
     const redirectPath = userData.is_staff || userData.is_superuser
       ? '/admin/dashboard'
       : userData.is_photographer
-        ? '/photographer/dashboard'
+        ? '/photographer-dashboard'
         : '/my-gallery';
 
+    // Get the intended destination or use the role-based redirect path
     const targetPath = location.state?.from?.pathname || redirectPath;
 
-    setState({
+    // Update the auth state
+    setState(prev => ({
+      ...prev,
       user: userData,
       isAuthenticated: true,
       isLoading: false,
       error: null
-    });
+    }));
 
+    // Update React Query cache
     queryClient.setQueryData(['currentUser'], userData);
 
-    navigate(targetPath, { replace: true, state: { from: undefined } });
-  }, [navigate, location.state, queryClient]);
+    // Perform the navigation
+    console.log('Redirecting to:', targetPath);
+    navigate(targetPath, { 
+      replace: true, 
+      state: { from: undefined } // Clear the from state to prevent loops
+    });
+  }, [navigate, queryClient, location]);
 
   const logout = useCallback(() => {
     authService.logout();
@@ -148,20 +159,86 @@ export const AuthProvider = ({ children }) => {
   const loginWithGoogle = useCallback(async (credential) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     try {
+      console.log('Starting Google OAuth flow with credential');
+      
+      // Call the auth service to authenticate with Google
       const { access, refresh, user } = await authService.googleAuth(credential);
-      if (!access || !user) throw new Error('Google login failed');
+      
+      if (!access || !user) {
+        throw new Error('Google login failed: No access token or user data received');
+      }
 
-      localStorage.setItem('access', access);
-      if (refresh) localStorage.setItem('refresh', refresh);
-      localStorage.setItem('user', JSON.stringify(user));
+      console.log('Google OAuth successful, user:', user);
+      
+      // Update React Query cache
+      queryClient.setQueryData(['currentUser'], user);
 
-      handleLoginSuccess(user);
-      return { success: true };
+      // Update auth state
+      setState(prev => ({
+        ...prev,
+        user,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null
+      }));
+
+      // Determine redirect path based on user role
+      const redirectPath = user.is_staff || user.is_superuser
+        ? '/admin/dashboard'
+        : user.is_photographer
+          ? '/photographer-dashboard'
+          : '/my-gallery';
+
+      // Use the from location if it exists and is not the login page
+      const fromPath = location.state?.from?.pathname;
+      const targetPath = (fromPath && !fromPath.startsWith('/login')) 
+        ? fromPath 
+        : redirectPath;
+
+      console.log('Google login successful, redirecting to:', targetPath);
+      
+      // Ensure we're not on the login page before navigating
+      if (window.location.pathname === '/login') {
+        navigate(targetPath, { 
+          replace: true,
+          state: { from: undefined } // Clear the from state to prevent loops
+        });
+      } else {
+        // If we're not on the login page, do a full page reload to ensure all state is updated
+        window.location.href = targetPath;
+      }
+
+      return { success: true, user };
     } catch (error) {
-      setState(prev => ({ ...prev, isLoading: false, error: error.message || 'Google login failed' }));
-      return { success: false, error: error.message };
+      console.error('Google login error:', error);
+      
+      // Clear any partial auth data
+      authService.logout();
+      localStorage.clear();
+      
+      // Update state to reflect the error
+      setState(prev => ({
+        ...prev,
+        isAuthenticated: false,
+        isLoading: false,
+        error: error.message || 'Failed to sign in with Google'
+      }));
+      
+      // If we're on the login page, show the error
+      if (window.location.pathname !== '/login') {
+        navigate('/login', { 
+          state: { 
+            from: location.state?.from,
+            error: error.message || 'Failed to sign in with Google'
+          },
+          replace: true 
+        });
+      }
+      const errorMessage = error.response?.data?.detail || error.message || 'Google login failed';
+      setState(prev => ({ ...prev, isLoading: false, error: errorMessage }));
+      return { success: false, error: errorMessage };
     }
-  }, [handleLoginSuccess]);
+  }, [handleLoginSuccess, queryClient, location.state, navigate]);
 
   const value = useMemo(() => ({
     user: state.user,
@@ -172,8 +249,20 @@ export const AuthProvider = ({ children }) => {
     logout,
     register,
     updateUser,
-    loginWithGoogle
-  }), [state, login, logout, register, updateUser, loginWithGoogle]);
+    loginWithGoogle,
+    handleLoginSuccess
+  }), [
+    state.user,
+    state.isAuthenticated,
+    state.isLoading,
+    state.error,
+    login,
+    logout,
+    register,
+    updateUser,
+    loginWithGoogle,
+    handleLoginSuccess
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
