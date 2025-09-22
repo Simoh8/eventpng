@@ -262,7 +262,7 @@ const authService = {
       }
       
       const response = await axios.post(
-        `${API_BASE_URL}/api/accounts/google/`,
+        `${API_BASE_URL}api/accounts/google/`,
         { credential },
         {
           headers,
