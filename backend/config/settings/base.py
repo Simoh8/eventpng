@@ -31,7 +31,6 @@ INSTALLED_APPS = [
 
     # Third-party
     "django_countries",
-    "corsheaders",
     "rest_framework",
     "rest_framework.authtoken",
     "rest_framework_simplejwt",
