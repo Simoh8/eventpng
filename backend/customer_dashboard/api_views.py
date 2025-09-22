@@ -89,7 +89,6 @@ class FavoriteViewSet(viewsets.ModelViewSet):
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Error in perform_create: {str(e)}", exc_info=True)
             raise
     
     def perform_destroy(self, instance):
@@ -117,7 +116,6 @@ class FavoriteViewSet(viewsets.ModelViewSet):
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Error in perform_destroy: {str(e)}", exc_info=True)
             raise
     
     @action(detail=False, methods=['post'])

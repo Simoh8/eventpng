@@ -14,10 +14,10 @@ const EventPinModal = ({ show, onHide, event, onSuccess }) => {
       setError('Please enter the PIN code');
       return;
     }
-
+  
     setIsLoading(true);
     setError('');
-
+  
     // Get CSRF token from cookies
     const getCookie = (name) => {
       let cookieValue = null;
@@ -33,9 +33,9 @@ const EventPinModal = ({ show, onHide, event, onSuccess }) => {
       }
       return cookieValue;
     };
-
+  
     const csrftoken = getCookie('csrftoken');
-
+  
     try {
       const response = await axios({
         method: 'post',
@@ -58,7 +58,6 @@ const EventPinModal = ({ show, onHide, event, onSuccess }) => {
         setError(response.data.error || 'Invalid PIN code. Please try again.');
       }
     } catch (err) {
-      console.error('Error verifying PIN:', err);
       setError(err.response?.data?.error || 'An error occurred. Please try again.');
     } finally {
       setIsLoading(false);

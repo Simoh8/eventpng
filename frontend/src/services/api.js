@@ -55,7 +55,6 @@ function getCSRFToken() {
     })
     .then(response => {
       if (!response.ok) {
-        console.error('Failed to fetch CSRF token');
         return '';
       }
       return document.cookie
@@ -64,11 +63,9 @@ function getCSRFToken() {
         ?.split('=')[1] || '';
     })
     .catch(error => {
-      console.error('Error fetching CSRF token:', error);
       return '';
     });
   } catch (error) {
-    console.error('Error in getCSRFToken:', error);
     return '';
   }
 }
@@ -108,7 +105,6 @@ api.interceptors.response.use(
           }
         }
       } catch (error) {
-        console.error('Failed to refresh token:', error);
         // Clear auth data and redirect to login
         localStorage.removeItem('access');
         localStorage.removeItem('refresh');

@@ -78,14 +78,12 @@ const GoogleLoginButton = ({ text = 'Continue with Google', isSignUp = false }) 
             window.location.href = '/my-gallery';
           }
         } else {
-          console.warn('No user data in login response, defaulting to /my-gallery');
           window.location.href = '/my-gallery';
         }
       } else {
         throw new Error(data.detail || 'Authentication failed');
       }
     } catch (error) {
-      console.error('Google auth error:', error);
       toast.error(error.message || 'Authentication failed. Please try again.');
     } finally {
       setIsLoading(false);
@@ -93,7 +91,6 @@ const GoogleLoginButton = ({ text = 'Continue with Google', isSignUp = false }) 
   };
 
   const handleError = () => {
-    console.error('Google OAuth error');
     toast.error('Failed to sign in with Google. Please try again.');
     setIsLoading(false);
   };
@@ -101,7 +98,6 @@ const GoogleLoginButton = ({ text = 'Continue with Google', isSignUp = false }) 
   const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
   
   if (!clientId) {
-    console.error('Google Client ID is not set in environment variables');
     return (
       <div className="w-full p-3 text-center text-red-600 bg-red-100 rounded">
         Google sign-in is not properly configured. Please contact support.

@@ -9,7 +9,6 @@ export const useEvents = (options = {}) => {
         const response = await api.get('/api/gallery/public/events/');
         return response.data;
       } catch (error) {
-        console.error('Error fetching public events:', error);
         throw error; // Re-throw to let React Query handle the error
       }
     },

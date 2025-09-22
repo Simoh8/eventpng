@@ -88,7 +88,6 @@ const HelpAndSupportPage = () => {
       setTimeout(() => setSubmitSuccess(false), 5000);
       
     } catch (error) {
-      console.error('Error submitting form:', error);
       alert(error.message || 'An error occurred. Please try again.');
     } finally {
       setIsSubmitting(false);

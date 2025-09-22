@@ -61,29 +61,24 @@ class ContactSubmissionSerializer(serializers.ModelSerializer):
         Custom validation for the entire serializer
         """
         logger = logging.getLogger(__name__)
-        logger.info(f"Validating contact form data: {data}")
         
         # Ensure required fields are present
         required_fields = ['name', 'email', 'phone_number', 'message']
         for field in required_fields:
             if not data.get(field):
                 error_msg = f"Missing required field: {field}"
-                logger.error(error_msg)
                 raise serializers.ValidationError({field: "This field is required."})
         
         # Validate email format
         email = data.get('email', '').strip()
         if email and '@' not in email:
             error_msg = f"Invalid email format: {email}"
-            logger.error(error_msg)
             raise serializers.ValidationError({"email": "Enter a valid email address."})
                 
         # Set default subject if not provided or empty
         subject = data.get('subject', '').strip()
         if not subject:
             data['subject'] = 'User Inquiry'
-            logger.info("Set default subject")
         
         # Log the final validated data
-        logger.info(f"Validated contact form data: {data}")
         return data

@@ -18,7 +18,6 @@ def custom_exception_handler(exc, context):
         return response
     
     # Log the error for debugging
-    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
     
     # Handle specific exceptions
     if isinstance(exc, ValidationError):

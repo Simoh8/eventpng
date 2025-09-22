@@ -38,7 +38,6 @@ const Form = ({
     try {
       await onSubmit(values, { setErrors, setTouched });
     } catch (err) {
-      console.error('Form submission error:', err);
       setErrors({
         ...errors,
         form: err.message || 'An error occurred. Please try again.',
@@ -46,6 +45,7 @@ const Form = ({
     }
   };
 
+  
   return (
     <form onSubmit={handleSubmit} className={`space-y-5 ${className}`}>
       {error && (

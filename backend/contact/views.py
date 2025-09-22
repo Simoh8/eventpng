@@ -23,18 +23,14 @@ class ContactFormView(APIView):
     
     def post(self, request, format=None):
         # Log the incoming request data and headers for debugging
-        logger.info(f"Received contact form data: {request.data}")
-        logger.info(f"Request headers: {dict(request.headers)}")
-        logger.info(f"User: {request.user}")
-        logger.info(f"User authenticated: {request.user.is_authenticated}")
         
         # Check authentication status
         if not request.user.is_authenticated:
             logger.info("User is not authenticated, but that's okay for this endpoint")
+
         
         serializer = ContactSubmissionSerializer(data=request.data)
         if not serializer.is_valid():
-            logger.error(f"Validation errors: {serializer.errors}")
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
         try:
@@ -54,7 +50,6 @@ class ContactFormView(APIView):
             return Response(response_data, status=status.HTTP_201_CREATED)
             
         except Exception as e:
-            logger.error(f"Error processing contact form: {str(e)}", exc_info=True)
             return Response(
                 {"error": "An error occurred while processing your request. Please try again later."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -95,5 +90,4 @@ class ContactFormView(APIView):
             return True
             
         except Exception as e:
-            logger.error(f"Failed to send contact email: {str(e)}", exc_info=True)
             return False

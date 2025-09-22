@@ -24,7 +24,6 @@ const ResetPassword = () => {
         // This is a placeholder - in a real app, you might want to validate the token with your backend
         setIsLoading(false);
       } catch (error) {
-        console.error('Link validation error:', error);
         setIsValidLink(false);
         setIsLoading(false);
       }
@@ -61,7 +60,6 @@ const ResetPassword = () => {
           navigate('/login');
         }, 3000);
       } catch (error) {
-        console.error('Password reset error:', error);
         const errorMessage = error?.detail || 'Failed to reset password. Please try again.';
         setFieldError('newPassword', errorMessage);
         toast.error(errorMessage);

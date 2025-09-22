@@ -121,7 +121,6 @@ const RecentGalleryCard = ({ gallery }) => {
               images.push(imgUrl);
             }
           } catch (e) {
-            console.warn('Invalid image format:', img, e);
           }
         });
       }
@@ -142,7 +141,6 @@ const RecentGalleryCard = ({ gallery }) => {
       
       return images;
     } catch (error) {
-      console.error('Error processing gallery images:', error, gallery);
       // Return a simple SVG as fallback
       return [
         `data:image/svg+xml,${encodeURIComponent(
@@ -174,7 +172,6 @@ const RecentGalleryCard = ({ gallery }) => {
   
   // Handle image error
   const handleImageError = (e) => {
-    console.warn('Failed to load image:', e.target.src);
     // Set a simple SVG as fallback
     e.target.src = `data:image/svg+xml,${encodeURIComponent(
       '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" fill="none">' +
@@ -466,7 +463,6 @@ const HomePage = () => {
       
       return parsedData.data;
     } catch (error) {
-      console.error('Error reading from cache:', error);
       return null;
     }
   }, []);
@@ -480,7 +476,6 @@ const HomePage = () => {
       };
       localStorage.setItem(key, JSON.stringify(cacheData));
     } catch (error) {
-      console.error('Error saving to cache:', error);
     }
   }, []);
 
@@ -515,19 +510,16 @@ const HomePage = () => {
           // Remove all custom headers to let the browser handle them
           withCredentials: false // Set to false for public endpoints to avoid CORS preflight
         })).catch(err => {
-          console.error('Error fetching events:', err);
           return { data: { results: [] } }; // Return empty results on error
         }),
         
         // Stats request
         makeRequest(() => axios.get(API_ENDPOINTS.STATS)).catch(err => {
-          console.error('Error fetching stats:', err);
           return { data: {} }; // Return empty stats on error
         }),
         
         // Recent galleries request
         makeRequest(() => axios.get(API_ENDPOINTS.RECENT_GALLERIES)).catch(err => {
-          console.error('Error fetching recent galleries:', err);
           return { data: { results: [] } }; // Return empty results on error
         })
       ];
@@ -548,7 +540,6 @@ const HomePage = () => {
           eventsData = eventsRes.data.data;
         }
       } else if (eventsRes && eventsRes.error) {
-        console.error('Error in events response:', eventsRes.error);
         eventsError = eventsRes.error;
       } else if (Array.isArray(eventsRes.data)) {
         eventsData = eventsRes.data;
@@ -634,7 +625,6 @@ const HomePage = () => {
       }
       
     } catch (err) {
-      console.error('Error fetching events:', err);
       if (!events.length) {
         setError('Failed to load events. ' + 
           (err.response?.status === 429 ? 'Too many requests. Please wait a moment and try again.' : 

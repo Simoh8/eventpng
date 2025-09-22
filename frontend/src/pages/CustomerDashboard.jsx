@@ -105,7 +105,6 @@ export default function CustomerDashboard() {
         error: null
       });
     } catch (error) {
-      console.error('Error fetching dashboard data:', error);
       setDashboardData(prev => ({
         ...prev,
         loading: false,

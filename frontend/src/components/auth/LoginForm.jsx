@@ -4,6 +4,8 @@ import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import * as yup from 'yup';
+import { useAuth } from '../../context/AuthContext';
+
 import authService from '../../services/authService';
 import FormInput from '../forms/FormInput';
 import { FaEye, FaEyeSlash } from 'react-icons/fa'; // Import eye icons
@@ -35,22 +37,18 @@ const handleGoogleLogin = async (response, onSuccess, setError) => {
       // Small delay to let context update
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      console.log('Calling onSuccess callback');
       onSuccess();
     } else {
       throw new Error('Authentication failed: No valid token received');
     }
   } catch (err) {
-    console.error('Google login error:', err);
     const errorMessage =
       err.response?.data?.message ||
       err.message ||
       'Google login failed. Please try again.';
-    console.error('Error details:', errorMessage);
     setError(errorMessage);
   }
 };
-
 // Define validation schema using Yup
 const loginSchema = yup.object().shape({
   email: yup
@@ -85,10 +83,8 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
     setError('');
     setIsLoading(true);
     
-    console.log('1. [LoginForm] Form submitted with data:', { email: formData.email });
 
     try {
-      console.log('2. [LoginForm] Calling authService.login...');
       
       // Clear any existing auth data before login
       localStorage.removeItem('access');
@@ -100,10 +96,7 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
         password: formData.password,
       });
       
-      console.log('3. [LoginForm] Login successful, response:', {
-        hasUser: !!response?.user,
-        hasToken: !!response?.accessToken
-      });
+      
       
       // Store user data in localStorage
       if (response?.user) {
@@ -115,11 +108,9 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
       
       // Call onSuccess callback which will handle the navigation
       if (onSuccess) {
-        console.log('4. [LoginForm] Calling onSuccess callback with redirectTo:', redirectTo);
         onSuccess();
       } else {
         // Fallback navigation if onSuccess is not provided
-        console.log('4. [LoginForm] No onSuccess callback, navigating to:', redirectTo);
         navigate(redirectTo, { 
           replace: true,
           state: { from: undefined } // Clear the from state to prevent loops

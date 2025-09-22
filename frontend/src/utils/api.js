@@ -66,7 +66,6 @@ api.interceptors.response.use(
       return api(originalRequest);
     } catch (refreshError) {
       // If refresh fails, log the user out
-      console.error('Token refresh failed:', refreshError);
       authService.logout();
       window.location.href = '/login';
       return Promise.reject(refreshError);

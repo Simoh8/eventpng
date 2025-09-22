@@ -11,7 +11,6 @@ export const useUser = () => {
       } catch (error) {
         // Don't throw error for 401 (unauthorized) as it's handled by the interceptor
         if (error.response?.status !== 401) {
-          console.error('Error fetching user data:', error);
         }
         return null;
       }

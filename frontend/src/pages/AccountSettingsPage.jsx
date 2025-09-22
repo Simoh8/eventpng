@@ -94,7 +94,6 @@ const AccountSettingsPage = () => {
       
       toast.success('Profile updated successfully');
     } catch (error) {
-      console.error('Update error:', error);
       
       if (error.response?.data) {
         // Handle validation errors

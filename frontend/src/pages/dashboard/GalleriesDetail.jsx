@@ -59,7 +59,6 @@ export default function GalleriesDetail() {
           private: privateCount
         }));
       } else {
-        console.error('Failed to fetch galleries:', galleriesRes.reason);
         throw new Error('Could not load galleries. Please try again.');
       }
       
@@ -73,11 +72,9 @@ export default function GalleriesDetail() {
           active: statsData.activeSessions?.total || 0
         }));
       } else {
-        console.error('Failed to fetch stats:', statsRes.reason);
         // Don't throw error for stats failure as it's not critical
       }
     } catch (error) {
-      console.error('Error in fetchGalleries:', error);
       setError(error.message || 'Failed to load galleries. Please try again.');
     } finally {
       setLoading(false);

@@ -64,7 +64,6 @@ const GalleryDetail = () => {
         
         return data;
       } catch (err) {
-        console.error('Error fetching gallery:', err);
         throw new Error('Failed to load gallery. Please try again later.');
       }
     },
@@ -78,14 +77,7 @@ const GalleryDetail = () => {
   // Debug: Log gallery data when it changes
   useEffect(() => {
     if (gallery?.photos) {
-      console.log('Gallery photos with like status:');
       gallery.photos.forEach(photo => {
-        console.log(`Photo ${photo.id}:`, {
-          id: photo.id,
-          is_liked: photo.is_liked,
-          like_count: photo.like_count,
-          calculatedIsLiked: isLiked(photo.id)
-        });
       });
     }
   }, [gallery, isLiked]);
@@ -108,12 +100,10 @@ const GalleryDetail = () => {
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
-        console.error('Error sharing:', err);
         try {
           await navigator.clipboard.writeText(shareData.url);
           toast.success('Link copied to clipboard!');
         } catch (copyError) {
-          console.error('Error copying to clipboard:', copyError);
           toast.error('Failed to share. Please copy the URL manually.');
         }
       }
@@ -302,7 +292,6 @@ const GalleryDetail = () => {
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error('Failed to record download:', errorData);
         return;
       }
       
@@ -323,7 +312,6 @@ const GalleryDetail = () => {
         };
       });
     } catch (error) {
-      console.error('Error recording download:', error);
       // Don't show error to user as this shouldn't block the download
     }
   };
@@ -354,7 +342,6 @@ const GalleryDetail = () => {
       document.body.removeChild(link);
       toast.success('Image downloaded with watermark');
     } catch (error) {
-      console.error('Download error:', error);
       toast.error('Failed to download image');
     } finally {
       setIsDownloading(false);
@@ -385,7 +372,6 @@ const GalleryDetail = () => {
           const blob = await response.blob();
           folder.file(`image-${index + 1}.jpg`, blob);
         } catch (error) {
-          console.error(`Error processing image ${photo.id}:`, error);
         }
       });
       
@@ -394,7 +380,6 @@ const GalleryDetail = () => {
       saveAs(content, `${zipName}.zip`);
       toast.success(`Downloaded ${photos.length} images`);
     } catch (error) {
-      console.error('Download error:', error);
       toast.error('Failed to download images');
     } finally {
       setIsDownloading(false);
@@ -454,7 +439,6 @@ const GalleryDetail = () => {
   
       // toast.success(currentLiked ? 'Removed like' : 'Liked photo!');
     } catch (error) {
-      console.error('Error toggling like:', error);
   
       queryClient.invalidateQueries(['gallery', slug]);
   

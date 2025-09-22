@@ -161,31 +161,22 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         logger = logging.getLogger(__name__)
-        logger.info("Starting password reset validation")
         
         try:
             # Decode the uid to get the user
             try:
-                logger.info(f"Decoding UID: {attrs.get('uid')}")
                 uid = force_str(uid_decoder(attrs['uid']))
-                logger.info(f"Decoded UID: {uid}")
                 self.user = User._default_manager.get(pk=uid)
-                logger.info(f"Found user: {self.user.email}")
             except (TypeError, ValueError, OverflowError) as e:
-                logger.error(f"Error decoding UID: {str(e)}")
                 raise ValidationError({'uid': ['Invalid user ID format.']})
             except User.DoesNotExist:
-                logger.error(f"User with UID {uid} does not exist")
                 raise ValidationError({'uid': ['User does not exist.']})
 
             # Check the token before validating password
-            logger.info("Checking reset token")
             if not default_token_generator.check_token(self.user, attrs['token']):
-                logger.error("Invalid or expired token")
                 raise ValidationError({'token': ['Invalid or expired token. Please request a new password reset.']})
 
             # Construct SetPasswordForm instance
-            logger.info("Validating password")
             self.set_password_form = self.set_password_form_class(
                 user=self.user, 
                 data={
@@ -197,21 +188,17 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
             # Validate the form
             if not self.set_password_form.is_valid():
                 errors = self.set_password_form.errors.get_json_data()
-                logger.error(f"Password validation failed: {errors}")
                 # Convert form errors to a more user-friendly format
                 error_messages = {}
                 for field, field_errors in self.set_password_form.errors.items():
                     error_messages[field] = [str(e) for e in field_errors]
                 raise serializers.ValidationError(error_messages)
 
-            logger.info("Password validation successful")
             return attrs
 
         except ValidationError as e:
-            logger.error(f"Validation error in password reset: {str(e.detail) if hasattr(e, 'detail') else str(e)}")
             raise e
         except Exception as e:
-            logger.error(f"Unexpected error in password reset: {str(e)}", exc_info=True)
             raise ValidationError({'non_field_errors': ['An error occurred while processing your request.']})
 
         return attrs

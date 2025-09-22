@@ -29,7 +29,6 @@ const ForgotPassword = () => {
         setEmailSent(true);
         toast.success('Password reset link sent to your email!');
       } catch (error) {
-        console.error('Password reset error:', error);
         // Use the error message from the backend if available, otherwise use a generic message
         const errorMessage = error?.message || error?.detail || 'Failed to send reset email. Please try again.';
         setFieldError('email', errorMessage);

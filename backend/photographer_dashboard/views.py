@@ -118,33 +118,23 @@ class DashboardActivityView(APIView):
     def get(self, request):
         # Get email from query parameters or use authenticated user
         user_email = request.query_params.get('email')
-        print(f"[Activity] Received request from email: {user_email}")
-        print(f"[Activity] Authenticated user: {request.user.email if request.user.is_authenticated else 'Not authenticated'}")
         
         if user_email:
             try:
                 user = CustomUser.objects.get(email=user_email)
-                print(f"[Activity] Found user by email: {user.email}, ID: {user.id}")
             except CustomUser.DoesNotExist:
-                print(f"[Activity] User with email {user_email} not found")
                 return Response(
                     {'error': 'User not found'},
                     status=status.HTTP_404_NOT_FOUND
                 )
         else:
             user = request.user
-            print(f"[Activity] Using authenticated user: {user.email if user.is_authenticated else 'No authenticated user'}")
         
-        # Generate a cache key based on the user
         cache_key = f'dashboard_activity_{user.id}'
-        print(f"[Activity] Using cache key: {cache_key}")
         
-        # Try to get data from cache
         cached_data = cache.get(cache_key)
         if cached_data:
-            print("[Activity] Cache hit - returning cached data")
             return Response(cached_data)
-        print("[Activity] Cache miss - generating new data")
         
         activities = []
         now = timezone.now()
@@ -155,8 +145,6 @@ class DashboardActivityView(APIView):
             created_at__gte=now - timedelta(days=30)
         ).order_by('-created_at')[:5]
         
-        print(f"[Activity] Found {recent_galleries.count()} recent galleries for user {user.email}")
-        
         for gallery in recent_galleries:
             activities.append({
                 'id': f'gallery_{gallery.id}',
@@ -166,7 +154,6 @@ class DashboardActivityView(APIView):
                 'type': 'gallery_created'
             })
         
-        # Get recent photo uploads
         recent_photos = Photo.objects.filter(
             gallery__photographer=request.user,
             created_at__gte=now - timedelta(days=30)
@@ -181,7 +168,6 @@ class DashboardActivityView(APIView):
                 'type': 'photo_uploaded'
             })
         
-        # Get recent payments
         recent_payments = Payment.objects.filter(
             status='completed',
             downloads__photo__gallery__photographer=request.user,
@@ -206,13 +192,10 @@ class DashboardActivityView(APIView):
                     'type': 'payment_received'
                 })
         
-        # Sort all activities by timestamp
         activities.sort(key=lambda x: x['timestamp'], reverse=True)
         
-        # Keep only the 10 most recent activities
         activities = activities[:10]
         
-        # Cache the data for 5 minutes
         cache.set(cache_key, activities, timeout=300)
         
         return Response(activities)

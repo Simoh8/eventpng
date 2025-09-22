@@ -230,7 +230,6 @@ class CustomUserAdmin(BaseUserAdmin):
                 except Exception as e:
                     import logging
                     logger = logging.getLogger(__name__)
-                    logger.warning(f"Could not delete notification preferences for user {getattr(user, 'id', 'unknown')}: {str(e)}")
             
             # Delete other related objects
             for related_obj in related_objects:
@@ -248,7 +247,6 @@ class CustomUserAdmin(BaseUserAdmin):
                 except Exception as e:
                     import logging
                     logger = logging.getLogger(__name__)
-                    logger.warning(f"Could not delete related object {related_obj.name} for user {getattr(user, 'id', 'unknown')}: {str(e)}")
     
     def delete_model(self, request, obj):
         """
@@ -276,7 +274,6 @@ class CustomUserAdmin(BaseUserAdmin):
             # Log the error and show a user-friendly message
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Error deleting user {getattr(obj, 'id', 'unknown')}: {str(e)}", exc_info=True)
             
             from django.contrib import messages
             messages.error(
@@ -297,7 +294,6 @@ class CustomUserAdmin(BaseUserAdmin):
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.error(f"Error deleting user {getattr(user, 'id', 'unknown')}: {str(e)}", exc_info=True)
         
         from django.contrib import messages
         if deleted_count > 0:
