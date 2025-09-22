@@ -15,49 +15,47 @@ export default function LoginPage() {
   // Get the intended destination or default to '/'
   const from = location.state?.from?.pathname || '/';
   
-  // If user is already authenticated, redirect them
+  // If user is already authenticated, redirect them to their dashboard based on role
   useEffect(() => {
     // Only proceed if not loading and not already processing
-    if (isLoading || isProcessing) return;
+    if (isLoading || isProcessing || !isAuthenticated) return;
     
-    // Get the token and check authentication status
-    const token = localStorage.getItem('access');
-    const isUserAuthenticated = isAuthenticated || (token && token !== 'undefined');
-    
-    if (isUserAuthenticated) {
-      // Don't process if we're already on the target page
-      if (location.pathname === from) return;
-      
+    // Only redirect if we're on the login page to prevent infinite loops
+    if (location.pathname === '/login') {
       setIsProcessing(true);
       
-      // Clear any existing timeouts to prevent multiple redirects
-      let timer = setTimeout(() => {
-        navigate(from, { 
+      // Determine the correct dashboard based on user role
+      let dashboardPath = '/';
+      if (user?.is_staff || user?.is_superuser) {
+        dashboardPath = '/admin/dashboard';
+      } else if (user?.is_photographer) {
+        dashboardPath = '/photographer/dashboard';
+      } else {
+        dashboardPath = '/my-gallery';
+      }
+      
+      // Use the from location if it exists and is not the login page
+      const targetPath = (from && from !== '/login') ? from : dashboardPath;
+      
+      const timer = setTimeout(() => {
+        navigate(targetPath, { 
           replace: true,
           state: { from: undefined }
         });
         setIsProcessing(false);
-      }, 0); // Reduced timeout to minimum
+      }, 100);
       
       return () => {
         clearTimeout(timer);
         setIsProcessing(false);
       };
     }
-  }, [isAuthenticated, from, navigate, isLoading, isProcessing, location.pathname]);
+  }, [isAuthenticated, from, navigate, isLoading, isProcessing, location.pathname, user]);
   
-  const handleSuccess = useCallback(() => {
-    
+  const handleSuccess = useCallback((userData) => {
     toast.success('Login successful!');
-    
-    // Small delay to show the success message before redirecting
-    setTimeout(() => {
-      navigate(from, { 
-        replace: true,
-        state: { from: undefined } // Clear the from state to prevent loops
-      });
-    }, 500);
-  }, [from, navigate]);
+    // The handleLoginSuccess in AuthContext will handle the redirection
+  }, []);
 
   // Show loading state only if we're checking initial auth state
   if (isLoading && !isProcessing) {

@@ -6,7 +6,7 @@ import {
   UserCircleIcon,
   ArrowRightOnRectangleIcon,
   ArrowRightIcon,
-  ArrowUpTrayIcon,
+  ArrowUpTrayIcon
 } from '@heroicons/react/24/outline';
 import UserMenu from '../components/UserMenu';
 import { useAuth } from '../context/AuthContext';
@@ -19,53 +19,40 @@ export default function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const handleLogout = () => {
-    logout();
-    navigate('/');
-  };
+  const handleLogout = () => logout();
 
-  // Navigation items (desktop)
-  const navigation = useMemo(() => {
-    return [
-      { name: 'Home', href: '/' },
-      { name: 'Events', href: '/events' },
-      ...(isAuthenticated ? [
-        user?.is_photographer && { name: 'Dashboard', href: '/photographer-dashboard' },
-        user?.is_photographer === false && { name: 'My Gallery', href: '/my-gallery' },
-        (user?.is_staff || user?.is_superuser) && { name: 'Admin', href: '/admin/events' },
-      ].filter(Boolean) : [
-        { name: 'Pricing', href: '/pricing' },
-        { name: 'FAQ', href: '/faq' },
-        { name: 'Contact', href: '/contact' },
-        { name: 'Terms', href: '/terms' },
-      ]),
-    ];
-  }, [isAuthenticated, user]);
+  const navigation = useMemo(() => [
+    { name: 'Home', href: '/' },
+    { name: 'Events', href: '/events' },
+    ...(isAuthenticated ? [
+      user?.is_photographer && { name: 'Dashboard', href: '/photographer-dashboard' },
+      user?.is_photographer === false && { name: 'My Gallery', href: '/my-gallery' },
+      (user?.is_staff || user?.is_superuser) && { name: 'Admin', href: '/admin/events' }
+    ].filter(Boolean) : [
+      { name: 'Pricing', href: '/pricing' },
+      { name: 'FAQ', href: '/faq' },
+      { name: 'Contact', href: '/contact' },
+      { name: 'Terms', href: '/terms' },
+    ])
+  ], [isAuthenticated, user]);
 
-  // Mobile nav
-  const mobileNavigation = useMemo(() => {
-    return [
-      ...navigation,
-      ...(isAuthenticated 
-        ? [
-            user?.is_photographer && { name: 'Create Gallery', href: '/galleries/new' },
-            user?.is_photographer === false && { name: 'My Photos', href: '/my-photos' },
-            user?.is_photographer === false && { name: 'My Orders', href: '/orders' },
-            user?.is_photographer === false && { name: 'Saved', href: '/saved' },
-            { name: 'Account Settings', href: '/settings' },
-            { name: 'Help & Support', href: '/support' },
-          ].filter(Boolean)
-        : [
-            { name: 'Sign In', href: '/login' },
-            { name: 'Create Account', href: '/register' },
-            { name: 'Help & Support', href: '/support' },
-            { name: 'Terms', href: '/terms' },
-          ]
-      ),
-    ];
-  }, [isAuthenticated, user, navigation]);
+  const mobileNavigation = useMemo(() => [
+    ...navigation,
+    ...(isAuthenticated ? [
+      user?.is_photographer && { name: 'Create Gallery', href: '/galleries/new' },
+      user?.is_photographer === false && { name: 'My Photos', href: '/my-photos' },
+      user?.is_photographer === false && { name: 'My Orders', href: '/orders' },
+      user?.is_photographer === false && { name: 'Saved', href: '/saved' },
+      { name: 'Account Settings', href: '/settings' },
+      { name: 'Help & Support', href: '/support' }
+    ].filter(Boolean) : [
+      { name: 'Sign In', href: '/login' },
+      { name: 'Create Account', href: '/register' },
+      { name: 'Help & Support', href: '/support' },
+      { name: 'Terms', href: '/terms' }
+    ])
+  ], [isAuthenticated, user, navigation]);
 
-  // Mobile menu button
   const MobileMenuButton = () => (
     <button
       type="button"
@@ -73,14 +60,7 @@ export default function MainLayout() {
       className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500 lg:hidden"
     >
       <span className="sr-only">Open main menu</span>
-      <svg
-        className="block h-6 w-6"
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        aria-hidden="true"
-      >
+      <svg className="block h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
       </svg>
     </button>
@@ -95,21 +75,15 @@ export default function MainLayout() {
             <div className="flex items-center">
               <div className="flex-shrink-0">
                 <Link to="/" className="flex items-center">
-                  <span className="text-2xl font-bold bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent">
-                    EventPNG
-                  </span>
+                  <span className="text-2xl font-bold bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent">EventPNG</span>
                 </Link>
               </div>
               <nav className="hidden sm:ml-6 sm:flex sm:space-x-8">
-                {navigation.map((item) => (
+                {navigation.map(item => (
                   <Link
                     key={item.name}
                     to={item.href}
-                    className={`px-3 py-2 text-sm font-medium ${
-                      location.pathname === item.href
-                        ? 'text-primary-600 border-b-2 border-primary-500'
-                        : 'text-gray-500 hover:text-gray-700 hover:border-b-2 hover:border-gray-300'
-                    }`}
+                    className={`px-3 py-2 text-sm font-medium ${location.pathname === item.href ? 'text-primary-600 border-b-2 border-primary-500' : 'text-gray-500 hover:text-gray-700 hover:border-b-2 hover:border-gray-300'}`}
                   >
                     {item.name}
                   </Link>
@@ -117,15 +91,11 @@ export default function MainLayout() {
               </nav>
             </div>
 
-            {/* Desktop auth buttons */}
             <div className="hidden lg:flex lg:items-center lg:space-x-4">
               {isAuthenticated ? (
                 <>
                   {user?.is_photographer && (
-                    <Link
-                      to="/galleries/new"
-                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                    >
+                    <Link to="/galleries/new" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700">
                       <ArrowUpTrayIcon className="-ml-1 mr-2 h-5 w-5" />
                       Create Gallery
                     </Link>
@@ -134,24 +104,15 @@ export default function MainLayout() {
                 </>
               ) : (
                 <>
-                  <Link
-                    to="/login"
-                    className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
-                  >
-                    Sign in
-                  </Link>
-                  <Link
-                    to="/register"
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                  >
+                  <Link to="/login" className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900">Sign in</Link>
+                  <Link to="/register" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700">
                     <span>Sign up</span>
                     <ArrowRightIcon className="ml-2 -mr-1 h-5 w-5" />
                   </Link>
                 </>
               )}
             </div>
-            
-            {/* Mobile menu button */}
+
             <div className="lg:hidden">
               <MobileMenuButton />
             </div>
@@ -159,7 +120,7 @@ export default function MainLayout() {
         </div>
       </header>
 
-      {/* Mobile menu */}
+      {/* Mobile Menu */}
       <Transition.Root show={mobileMenuOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50 lg:hidden" onClose={setMobileMenuOpen}>
           <Transition.Child
@@ -192,7 +153,7 @@ export default function MainLayout() {
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     <span className="sr-only">Close sidebar</span>
-                    <XMarkIcon className="h-6 w-6 text-white" aria-hidden="true" />
+                    <XMarkIcon className="h-6 w-6 text-gray-600" aria-hidden="true" />
                   </button>
                 </div>
 
@@ -202,15 +163,11 @@ export default function MainLayout() {
 
                 <div className="mt-5 h-0 flex-1 overflow-y-auto">
                   <nav className="space-y-1 px-2">
-                    {mobileNavigation.map((item) => (
+                    {mobileNavigation.map(item => (
                       <Link
                         key={item.name}
                         to={item.href}
-                        className={`group flex items-center rounded-md px-2 py-2 text-base font-medium ${
-                          location.pathname === item.href
-                            ? 'bg-gray-100 text-gray-900'
-                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                        }`}
+                        className={`group flex items-center rounded-md px-2 py-2 text-base font-medium ${location.pathname === item.href ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
                         onClick={() => setMobileMenuOpen(false)}
                       >
                         {item.name}
@@ -218,7 +175,7 @@ export default function MainLayout() {
                     ))}
                   </nav>
 
-                  {isAuthenticated ? (
+                  {isAuthenticated && (
                     <div className="mt-4 border-t border-gray-200 pt-4">
                       <div className="flex items-center px-4">
                         <div className="flex-shrink-0">
@@ -233,10 +190,7 @@ export default function MainLayout() {
                       </div>
                       <div className="mt-4">
                         <button
-                          onClick={() => {
-                            handleLogout();
-                            setMobileMenuOpen(false);
-                          }}
+                          onClick={() => { handleLogout(); setMobileMenuOpen(false); }}
                           className="flex w-full items-center rounded-md px-4 py-2 text-base font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                         >
                           <ArrowRightOnRectangleIcon className="mr-3 h-5 w-5 text-gray-500" />
@@ -244,31 +198,11 @@ export default function MainLayout() {
                         </button>
                       </div>
                     </div>
-                  ) : (
-                    <div className="mt-6 px-4 space-y-4">
-                      <Link
-                        to="/login"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="flex w-full items-center justify-center rounded-md border border-transparent bg-primary-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-primary-700"
-                      >
-                        Sign in
-                      </Link>
-                      <p className="mt-2 text-center text-sm text-gray-600">
-                        Or{' '}
-                        <Link
-                          to="/register"
-                          onClick={() => setMobileMenuOpen(false)}
-                          className="font-medium text-primary-600 hover:text-primary-500"
-                        >
-                          create an account
-                        </Link>
-                      </p>
-                    </div>
                   )}
                 </div>
               </Dialog.Panel>
             </Transition.Child>
-            <div className="w-14 flex-shrink-0"></div>
+            <div className="w-14 flex-shrink-0" />
           </div>
         </Dialog>
       </Transition.Root>
@@ -280,7 +214,6 @@ export default function MainLayout() {
         </BaseLayout>
       </main>
 
-      {/* Footer */}
       <Footer />
     </div>
   );

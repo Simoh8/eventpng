@@ -4,6 +4,8 @@ import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import * as yup from 'yup';
+import { useAuth } from '../../context/AuthContext';
+
 import authService from '../../services/authService';
 import FormInput from '../forms/FormInput';
 import { FaEye, FaEyeSlash } from 'react-icons/fa'; // Import eye icons
@@ -115,6 +117,7 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
         });
       }
     } catch (err) {
+      console.error('Login error:', err);
       const errorMessage = err.response?.data?.detail || 
                          err.message || 
                          'Invalid email or password. Please try again.';

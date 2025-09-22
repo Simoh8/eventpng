@@ -1,134 +1,98 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import authService from '../services/authService';
 
-// Custom event name for auth state changes
-const AUTH_STATE_CHANGED_EVENT = 'authStateChanged';
-
 const AuthContext = createContext(null);
-
-// Default context value
-const defaultContextValue = {
-  user: null,
-  isAuthenticated: false,
-  isLoading: true,
-  error: null,
-  login: async () => {},
-  logout: () => {},
-  register: async () => {},
-  updateUser: () => {},
-  loginWithGoogle: async () => {}
-};
 
 export const AuthProvider = ({ children }) => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   const [state, setState] = useState(() => {
-    // Initialize state from localStorage if available
     const token = localStorage.getItem('access');
     const storedUser = authService.getStoredUser();
-    
-    // Check if token is valid using the authService method
+
     const isTokenValid = token && (() => {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
         return payload.exp * 1000 > Date.now();
-      } catch (error) {
+      } catch {
         return false;
       }
     })();
-    const isAuthenticated = isTokenValid && storedUser;
-    
 
-    
-    // If token is invalid but exists, clear it
-    if (token && !isTokenValid) {
-      authService.logout();
-      return {
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        error: null
-      };
-    }
-    
+    if (token && !isTokenValid) authService.logout();
+
     return {
-      user: isAuthenticated ? storedUser : null,
-      isAuthenticated: !!isAuthenticated,
-      isLoading: false, // Don't start in loading state
+      user: isTokenValid ? storedUser : null,
+      isAuthenticated: !!(isTokenValid && storedUser),
+      isLoading: false,
       error: null
     };
   });
-  
-  // Effect to handle component unmount
+
+  // Sync across tabs
   useEffect(() => {
-    return () => {
-      // Any cleanup if needed
+    const handleStorageChange = () => {
+      const storedUser = authService.getStoredUser();
+      const token = localStorage.getItem('access');
+      const isAuthenticated = token && storedUser;
+
+      setState(prev => ({
+        ...prev,
+        user: storedUser || null,
+        isAuthenticated: !!isAuthenticated
+      }));
     };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
-
-
 
   const handleLoginSuccess = useCallback((userData) => {
     if (!userData) return;
-  
-    // Store user data in localStorage
+
     localStorage.setItem('user', JSON.stringify(userData));
-  
-    // Decide redirect path
-    const redirectPath = userData.is_staff || userData.is_superuser 
-      ? '/admin/dashboard' 
-      : userData.is_photographer 
-        ? '/photographer/dashboard' 
+
+    const redirectPath = userData.is_staff || userData.is_superuser
+      ? '/admin/dashboard'
+      : userData.is_photographer
+        ? '/photographer/dashboard'
         : '/my-gallery';
-  
+
     const targetPath = location.state?.from?.pathname || redirectPath;
-  
-    // ✅ Update state
+
     setState({
       user: userData,
       isAuthenticated: true,
       isLoading: false,
       error: null
     });
-  
-    // ✅ Update React Query cache
+
     queryClient.setQueryData(['currentUser'], userData);
-  
-    // ✅ Navigate without reload
+
     navigate(targetPath, { replace: true, state: { from: undefined } });
   }, [navigate, location.state, queryClient]);
-  
 
-
-
-  // Handle logout
-  const handleLogout = useCallback(() => {
+  const logout = useCallback(() => {
     authService.logout();
     queryClient.clear();
-    
-    // Clear auth state from localStorage
     localStorage.removeItem('authState');
-    
-    // Update local state
+
     setState({
       user: null,
       isAuthenticated: false,
       isLoading: false,
       error: null
     });
-    
-    // Dispatch storage event to sync across tabs
+
     window.dispatchEvent(new Event('storage'));
-    
     navigate('/login');
   }, [navigate, queryClient]);
 
-  // Handle user update
-  const handleUpdateUser = useCallback((userData) => {
+  const updateUser = useCallback((userData) => {
     setState(prev => ({
       ...prev,
       user: { ...prev.user, ...userData }
@@ -136,197 +100,87 @@ export const AuthProvider = ({ children }) => {
     authService.updateUser(userData);
   }, []);
 
-  // Register function
   const register = useCallback(async (userData) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
-    
     try {
-      // Call the register API
       const response = await authService.register(userData);
-      
-      if (response.success) {
-        // If registration is successful and we have tokens, update auth state
-        if (response.data?.access) {
-          // Store tokens
-          localStorage.setItem('access', response.data.access);
-          if (response.data.refresh) {
-            localStorage.setItem('refresh', response.data.refresh);
-          }
-          
-          // Update auth state with user data
-          if (response.data.user) {
-            const user = response.data.user;
-            localStorage.setItem('user', JSON.stringify(user));
-            
-            // Update context state and handle login success
-            setState(prev => ({
-              ...prev,
-              user,
-              isAuthenticated: true,
-              isLoading: false,
-              error: null
-            }));
-            
-            // Invalidate any existing user queries
-            queryClient.invalidateQueries(['currentUser']);
-            
-            // Handle login success to set up proper redirection
-            handleLoginSuccess(user);
-            
-            return { 
-              success: true, 
-              data: {
-                user,
-                access: response.data.access,
-                refresh: response.data.refresh
-              },
-              message: 'Registration successful!'
-            };
-          }
-        }
-        
-        // If we don't have user data but registration was successful
-        return { 
-          success: true, 
-          message: 'Registration successful! Please log in with your credentials.'
-        };
-      } else {
-        // Handle registration errors
-        throw new Error(response.error || 'Registration failed');
-      }
-    } catch (error) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: error.message || 'Registration failed. Please try again.'
-      }));
-      
-      return { 
-        success: false, 
-        error: error.message || 'Registration failed. Please try again.',
-        errors: error.response?.data || {}
-      };
-    }
-  }, []);
+      if (response.success && response.data?.user) {
+        const user = response.data.user;
+        localStorage.setItem('access', response.data.access);
+        if (response.data.refresh) localStorage.setItem('refresh', response.data.refresh);
+        localStorage.setItem('user', JSON.stringify(user));
 
-  // Login function
+        setState({ user, isAuthenticated: true, isLoading: false, error: null });
+        queryClient.invalidateQueries(['currentUser']);
+        handleLoginSuccess(user);
+
+        return { success: true, data: { user, access: response.data.access, refresh: response.data.refresh } };
+      } else if (response.success) {
+        return { success: true, message: 'Registration successful! Please log in.' };
+      } else throw new Error(response.error || 'Registration failed');
+    } catch (error) {
+      setState(prev => ({ ...prev, isLoading: false, error: error.message || 'Registration failed' }));
+      return { success: false, error: error.message || 'Registration failed', errors: error.response?.data || {} };
+    }
+  }, [handleLoginSuccess, queryClient]);
+
   const login = useCallback(async (credentials) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
-    
     try {
-      // Call the login service (make sure it returns { user, access, refresh })
-      const response = await authService.login(credentials);
-      const { user, access, refresh } = response;
-  
-      if (!user || !access) {
-        throw new Error('Invalid response from server');
-      }
-  
-      // Update state
-      setState({
-        user,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null
-      });
-  
-      // Store in localStorage
+      const { user, access, refresh } = await authService.login(credentials);
+      if (!user || !access) throw new Error('Invalid server response');
+
       localStorage.setItem('access', access);
       if (refresh) localStorage.setItem('refresh', refresh);
       localStorage.setItem('user', JSON.stringify(user));
-  
-      // Update React Query cache
+
+      setState({ user, isAuthenticated: true, isLoading: false, error: null });
       queryClient.setQueryData(['currentUser'], user);
-  
-      // Redirect based on role
-      const redirectPath = user.is_staff || user.is_superuser 
-        ? '/admin/dashboard' 
-        : user.is_photographer 
-          ? '/photographer/dashboard' 
-          : '/my-gallery';
-  
-      const targetPath = location.state?.from?.pathname || redirectPath;
-      navigate(targetPath, { replace: true, state: { from: undefined } });
-  
+
+      handleLoginSuccess(user);
       return { success: true, user };
     } catch (error) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: error.message || 'Login failed. Please check your credentials and try again.'
-      }));
-      return { success: false, error: error.message || 'Login failed. Please check your credentials and try again.' };
+      setState(prev => ({ ...prev, isLoading: false, error: error.message || 'Login failed' }));
+      return { success: false, error: error.message || 'Login failed' };
     }
-  }, [navigate, queryClient, location.state]);
-  
+  }, [handleLoginSuccess, queryClient]);
+
   const loginWithGoogle = useCallback(async (credential) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
-
     try {
       const { access, refresh, user } = await authService.googleAuth(credential);
+      if (!access || !user) throw new Error('Google login failed');
 
-      if (!access || !user) {
-        throw new Error('Authentication failed: No valid token received');
-      }
-
-      // ✅ Save tokens
       localStorage.setItem('access', access);
       if (refresh) localStorage.setItem('refresh', refresh);
       localStorage.setItem('user', JSON.stringify(user));
 
-      // ✅ Update state + redirect
       handleLoginSuccess(user);
-
       return { success: true };
     } catch (error) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: error.message || 'Google login failed. Please try again.'
-      }));
+      setState(prev => ({ ...prev, isLoading: false, error: error.message || 'Google login failed' }));
       return { success: false, error: error.message };
     }
   }, [handleLoginSuccess]);
 
-  
-
-  // Provide the auth context value
-  const contextValue = useMemo(() => ({
+  const value = useMemo(() => ({
     user: state.user,
     isAuthenticated: state.isAuthenticated,
     isLoading: state.isLoading,
     error: state.error,
     login,
-    logout: handleLogout,
+    logout,
     register,
-    updateUser: handleUpdateUser,
+    updateUser,
     loginWithGoogle
-  }), [
-    state.user,
-    state.isAuthenticated,
-    state.isLoading,
-    state.error,
-    login,
-    handleLogout,
-    register,
-    handleUpdateUser,
-    loginWithGoogle
-  ]);
+  }), [state, login, logout, register, updateUser, loginWithGoogle]);
 
-
-  return (
-    <AuthContext.Provider value={contextValue}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// Custom hook to use the auth context
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
 
