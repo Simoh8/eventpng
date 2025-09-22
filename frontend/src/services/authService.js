@@ -238,35 +238,39 @@ const authService = {
   // Google OAuth login
   googleAuth: async function(credential) {
     try {
-      // Get CSRF token from cookies
-      const csrfToken = this.getCSRFToken();
-      if (!csrfToken) {
-        throw new Error('CSRF token not found');
+      
+      // Try to get CSRF token from cookies
+      let csrfToken = this.getCSRFToken();
+      
+      // If no CSRF token found in cookies, try to get it from the meta tag
+      if (!csrfToken && typeof document !== 'undefined') {
+        const metaTag = document.querySelector('meta[name="csrf-token"]');
+        if (metaTag) {
+          csrfToken = metaTag.getAttribute('content');
+        }
       }
 
-      const config = {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-CSRFToken': csrfToken
-        },
-        withCredentials: true
+      // Prepare headers
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
       };
+
+      // Add CSRF token if available
+      if (csrfToken) {
+        headers['X-CSRFToken'] = csrfToken;
+      }
       
       const response = await axios.post(
         `${API_BASE_URL}/api/accounts/google/`,
         { credential },
         {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': authService.getCSRFToken(),
-          },
+          headers,
           withCredentials: true,
         }
       );
       
-      
-      if (response.data && response.data.access && response.data.user) {
+      if (response.data?.access && response.data?.user) {
         const { access, refresh, user } = response.data;
         
         // Store tokens and user data
@@ -284,8 +288,7 @@ const authService = {
           access, 
           refresh, 
           user,
-          // Add these for compatibility with the login flow
-          data: { access, refresh, user }
+          data: { access, refresh, user } // For compatibility with the login flow
         };
       } else {
         throw new Error('Invalid response from Google OAuth');
