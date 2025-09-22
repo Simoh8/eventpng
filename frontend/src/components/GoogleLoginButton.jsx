@@ -1,98 +1,97 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { toast } from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowPathIcon } from '@heroicons/react/24/outline';
-import { API_BASE_URL } from '../config';
 
 const GoogleLoginButton = ({ text = 'Continue with Google', isSignUp = false }) => {
-  const { loginWithGoogle } = useAuth();
+  const { loginWithGoogle, isAuthenticated } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const from = location.state?.from?.pathname || '/';
+  
+  // Check if user is already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate(from, { replace: true });
+    }
+  }, [isAuthenticated, from, navigate]);
 
   const handleSuccess = async (credentialResponse) => {
+    console.log('Google OAuth response:', credentialResponse);
+    
     if (!credentialResponse.credential) {
-      toast.error('Authentication failed: No credential received');
+      const errorMsg = 'Authentication failed: No credential received from Google';
+      console.error(errorMsg);
+      toast.error(errorMsg);
       return;
     }
 
     try {
       setIsLoading(true);
       
-      // Make the API call directly instead of using loginWithGoogle
-      const response = await fetch(`${API_BASE_URL}/api/accounts/google/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-CSRFToken': document.cookie
-            .split('; ')
-            .find(row => row.startsWith('csrftoken='))
-            ?.split('=')[1] || '',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          id_token: credentialResponse.credential,
-        }),
-      });
+      // Show loading message
+      const loadingToast = toast.loading('Signing in with Google...');
       
-      const data = await response.json();
-      
-      if (response.ok && data.access) {
+      try {
+        // Use the loginWithGoogle function from AuthContext which handles redirection
+        const result = await loginWithGoogle(credentialResponse.credential);
         
-        // Store tokens
-        localStorage.setItem('access', data.access);
-        if (data.refresh) {
-          localStorage.setItem('refresh', data.refresh);
-        }
-        
-        // Set auth header for future requests
-        const api = (await import('../services/api')).default;
-        api.defaults.headers.common['Authorization'] = `Bearer ${data.access}`;
-        
-        // Show success message
-        toast.success(
-          isSignUp 
-            ? 'Account created successfully! Welcome!'
-            : 'Logged in successfully!'
-        );
-        
-        // Store user data if available
-        if (data.user) {
-          localStorage.setItem('user', JSON.stringify(data.user));
-          
-          // Use the loginWithGoogle function from AuthContext to update the auth state
-          if (loginWithGoogle) {
-            await loginWithGoogle({
-              access: data.access,
-              refresh: data.refresh,
-              user: data.user,
-              is_new_user: data.is_new_user || false
-            });
-          }
-          
-          // Use window.location.href for a full page reload to ensure auth state is properly set
-          if (data.user.is_photographer) {
-            window.location.href = '/photographer-dashboard';
-          } else {
-            window.location.href = '/my-gallery';
-          }
+        if (result && result.success) {
+          // Dismiss loading and show success message
+          toast.dismiss(loadingToast);
+          toast.success(
+            isSignUp 
+              ? 'Account created successfully! Welcome!'
+              : 'Successfully logged in with Google!',
+            { duration: 3000 }
+          );
         } else {
-          window.location.href = '/my-gallery';
+          throw new Error(result?.error || 'Google login failed');
         }
-      } else {
-        throw new Error(data.detail || 'Authentication failed');
+      } catch (error) {
+        // Dismiss loading and show error
+        toast.dismiss(loadingToast);
+        throw error;
       }
     } catch (error) {
-      toast.error(error.message || 'Authentication failed. Please try again.');
+      console.error('Google login error:', error);
+      
+      // Show error toast with more details
+      const errorMessage = error.message || 'Failed to sign in with Google';
+      toast.error(errorMessage, { duration: 5000 });
+      
+      // If we're not already on the login page, redirect there
+      if (window.location.pathname !== '/login') {
+        navigate('/login', { 
+          state: { 
+            from: from,
+            error: errorMessage
+          },
+          replace: true 
+        });
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleError = () => {
-    toast.error('Failed to sign in with Google. Please try again.');
+  const handleError = (error) => {
+    console.error('Google OAuth error:', error);
+    toast.error('Failed to sign in with Google. Please try again.', { duration: 5000 });
     setIsLoading(false);
+    
+    // If we're not already on the login page, redirect there
+    if (window.location.pathname !== '/login') {
+      navigate('/login', { 
+        state: { 
+          from: from,
+          error: 'Google sign in was cancelled or failed. Please try again.'
+        },
+        replace: true 
+      });
+    }
   };
 
   const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;

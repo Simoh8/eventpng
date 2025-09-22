@@ -8,7 +8,7 @@ import { FaHome } from 'react-icons/fa';
 export default function LoginPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { isAuthenticated, user, isLoading } = useAuth();
+  const { isAuthenticated, user, isLoading, handleLoginSuccess } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   
@@ -17,13 +17,11 @@ export default function LoginPage() {
   
   // If user is already authenticated, redirect them to their dashboard based on role
   useEffect(() => {
-    // Only proceed if not loading and not already processing
-    if (isLoading || isProcessing || !isAuthenticated) return;
-    
+    // Only proceed if not loading and already authenticated
+    if (isLoading || !isAuthenticated) return;
+
     // Only redirect if we're on the login page to prevent infinite loops
     if (location.pathname === '/login') {
-      setIsProcessing(true);
-      
       // Determine the correct dashboard based on user role
       let dashboardPath = '/';
       if (user?.is_staff || user?.is_superuser) {
@@ -33,29 +31,28 @@ export default function LoginPage() {
       } else {
         dashboardPath = '/my-gallery';
       }
-      
+
       // Use the from location if it exists and is not the login page
       const targetPath = (from && from !== '/login') ? from : dashboardPath;
-      
-      const timer = setTimeout(() => {
-        navigate(targetPath, { 
-          replace: true,
-          state: { from: undefined }
-        });
-        setIsProcessing(false);
-      }, 100);
-      
-      return () => {
-        clearTimeout(timer);
-        setIsProcessing(false);
-      };
+
+      console.log('Already authenticated, redirecting to:', targetPath);
+      navigate(targetPath, {
+        replace: true,
+        state: { from: undefined }
+      });
     }
-  }, [isAuthenticated, from, navigate, isLoading, isProcessing, location.pathname, user]);
+  }, [isAuthenticated, from, navigate, isLoading, location.pathname, user]);
   
   const handleSuccess = useCallback((userData) => {
+    // Show success message
     toast.success('Login successful!');
-    // The handleLoginSuccess in AuthContext will handle the redirection
-  }, []);
+    
+    // The handleLoginSuccess in AuthContext will handle the redirection with the user data
+    if (userData) {
+      handleLoginSuccess(userData);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // We don't need to include handleLoginSuccess in deps as it's stable
 
   // Show loading state only if we're checking initial auth state
   if (isLoading && !isProcessing) {
