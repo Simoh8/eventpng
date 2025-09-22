@@ -9,7 +9,7 @@ export default function GalleriesDetail() {
   
   const handleNewGallery = (e) => {
     e.preventDefault();
-    window.location.href = 'http://localhost:3000/galleries/new';
+    navigate('/galleries/new');
   };
   
   const handleViewGallery = (galleryId) => {
