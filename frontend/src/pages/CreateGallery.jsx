@@ -81,7 +81,7 @@ const createGallery = async ({ eventId, photos, title, description, isPublic, is
   }, 500);
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/gallery/galleries/create/`, {
+    const response = await fetch(`${API_BASE_URL}api/gallery/galleries/create/`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -256,7 +256,7 @@ export default function CreateGallery() {
         position: 'top-center',
         duration: 4000,
       });
-      navigate('/dashboard');
+      navigate('/photographer-dashboard');
     },
     onError: (error) => {
       setProcessingProgress(0);
