@@ -41,7 +41,6 @@ const fetchEvents = async () => {
     }
     return [];
   } catch (error) {
-    console.error('Error in fetchEvents:', error);
     throw error;
   }
 };
@@ -93,11 +92,6 @@ const createGallery = async ({ eventId, photos, title, description, isPublic, is
     const responseData = await response.json().catch(() => ({}));
     
     if (!response.ok) {
-      console.error('Failed to create gallery:', {
-        status: response.status,
-        statusText: response.statusText,
-        response: responseData,
-      });
       
       throw new Error(
         responseData.detail || 
@@ -145,7 +139,6 @@ const checkOngoingRequest = async () => {
     const data = await response.json();
     return data.hasOngoingRequest || false;
   } catch (error) {
-    console.error('Error checking ongoing requests:', error);
     return false;
   }
 };

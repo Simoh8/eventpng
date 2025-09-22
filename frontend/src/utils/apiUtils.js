@@ -57,7 +57,6 @@ export const makeRequests = async (requestFns) => {
       const response = await makeRequest(requestFn);
       results.push(response);
     } catch (error) {
-      console.error('Request failed after retries:', error);
       results.push({ error });
     }
     

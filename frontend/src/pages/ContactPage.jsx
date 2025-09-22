@@ -82,7 +82,6 @@ const ContactPage = () => {
         throw new Error('Failed to send message');
       }
     } catch (error) {
-      console.error('Error submitting contact form:', error);
       const errorMessage = error.response?.data ? 
         formatValidationErrors(error.response.data) : 
         'Failed to send message. Please try again.';

@@ -36,7 +36,6 @@ export default function StorageDetail() {
           });
         }
       } catch (error) {
-        console.error('Error fetching storage data:', error);
       } finally {
         setLoading(false);
       }

@@ -46,7 +46,6 @@ class CustomTokenObtainPairView(BaseTokenObtainPairView):
         try:
             serializer.is_valid(raise_exception=True)
         except Exception as e:
-            logger.error(f"Token validation failed: {str(e)}")
             return Response(
                 {"detail": "Invalid credentials"}, 
                 status=status.HTTP_401_UNAUTHORIZED
@@ -150,10 +149,8 @@ class CurrentUserView(APIView):
         try:
             # Log the user making the request
             user = request.user
-            logger.info(f"CurrentUserView - Request from user ID: {user.id}")
             
             # Debug: Log all available user attributes
-            logger.info(f"User model fields: {[f.name for f in user._meta.fields]}")
             
             # Get all field values for debugging
             user_data = {}
@@ -164,12 +161,10 @@ class CurrentUserView(APIView):
                 except Exception as e:
                     user_data[field.name] = f'Error: {str(e)}'
             
-            logger.info(f"CurrentUserView - User data: {user_data}")
             
             # Serialize user data
             serializer = UserSerializer(user, context={'request': request})
             serialized_data = serializer.data
-            logger.info(f"CurrentUserView - Serialized data: {serialized_data}")
             
             # Prepare response
             response_data = {
@@ -191,11 +186,9 @@ class CurrentUserView(APIView):
             response['Access-Control-Allow-Credentials'] = 'true'
             response['Access-Control-Allow-Headers'] = 'Content-Type, X-CSRFToken, Authorization'
             
-            logger.info(f"CurrentUserView - Response prepared with status: {response.status_code}")
             return response
             
         except Exception as e:
-            logger.error(f"Error in CurrentUserView: {str(e)}", exc_info=True)
             return Response(
                 {'error': 'Failed to fetch user data', 'details': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -249,7 +242,6 @@ def create(self, request, *args, **kwargs):
     Create a new user and return authentication tokens.
     """
     # Log the registration attempt
-    logger.info(f"Registration attempt with email: {request.data.get('email', 'No email provided')}")
     
     # Ensure we have a mutable copy of the request data
     data = request.data.copy()
@@ -266,7 +258,6 @@ def create(self, request, *args, **kwargs):
     
     # Validate the serializer data
     if not serializer.is_valid():
-        logger.warning(f"Registration validation errors: {serializer.errors}")
         response = Response(
             {
                 'status': 'error',
@@ -294,7 +285,6 @@ def create(self, request, *args, **kwargs):
         user_serializer = UserSerializer(user, context={'request': request})
         user_data = user_serializer.data
         
-        logger.info(f"User {user.email} registered successfully")
         
         response = Response({
             'status': 'success',
@@ -333,7 +323,6 @@ def create(self, request, *args, **kwargs):
         return response
         
     except Exception as e:
-        logger.error(f"Registration failed: {str(e)}", exc_info=True)
         response = Response(
             {
                 'status': 'error',
@@ -416,7 +405,6 @@ class PasswordResetRequestView(APIView):
             )
             
         except Exception as e:
-            logger.error(f"Error sending password reset email: {str(e)}")
             return Response(
                 {'status': 'error', 'message': 'Failed to send password reset email.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -432,11 +420,9 @@ class PasswordResetConfirmView(APIView):
     permission_classes = [permissions.AllowAny]
     
     def post(self, request, *args, **kwargs):
-        logger.info(f"Password reset request data: {request.data}")
         serializer = PasswordResetConfirmSerializer(data=request.data)
         
         if not serializer.is_valid():
-            logger.error(f"Password reset validation errors: {serializer.errors}")
             return Response(
                 {'status': 'error', 'errors': serializer.errors},
                 status=status.HTTP_400_BAD_REQUEST
@@ -444,19 +430,16 @@ class PasswordResetConfirmView(APIView):
         
         try:
             user = serializer.save()
-            logger.info(f"Password reset successful for user: {user.email}")
             return Response(
                 {'status': 'success', 'message': 'Password has been reset successfully.'},
                 status=status.HTTP_200_OK
             )
         except ValidationError as e:
-            logger.error(f"Password reset validation error: {str(e.detail)}")
             return Response(
                 {'status': 'error', 'errors': e.detail},
                 status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
-            logger.error(f"Error resetting password: {str(e)}", exc_info=True)
             return Response(
                 {'status': 'error', 'message': 'Failed to reset password. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR

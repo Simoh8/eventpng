@@ -37,18 +37,12 @@ export const AuthProvider = ({ children }) => {
         const payload = JSON.parse(atob(token.split('.')[1]));
         return payload.exp * 1000 > Date.now();
       } catch (error) {
-        console.error('Error validating token:', error);
         return false;
       }
     })();
     const isAuthenticated = isTokenValid && storedUser;
     
-    // console.log('1. [AuthProvider] Initializing state', {
-    //   hasStoredUser: !!storedUser,
-    //   hasToken: !!token,
-    //   isTokenValid,
-    //   isAuthenticated
-    // });
+
     
     // If token is invalid but exists, clear it
     if (token && !isTokenValid) {
@@ -76,232 +70,40 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
-  // // Debug log initial state
-  // console.log('AuthProvider mounted', {
-  //   hasToken: !!localStorage.getItem('access'),
-  //   storedUser: authService.getStoredUser(),
 
-  // Fetch user data on mount and when authentication state changes
-  const { data: userData, isLoading: isUserLoading, refetch: refetchUser } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: async () => {
-      
-      // Check if we have an access token
-      const token = localStorage.getItem('access');
-      const storedUser = authService.getStoredUser();
-      
-      // If no token, clear any existing auth state
-      if (!token) {
-        if (storedUser) {
-          authService.logout();
-        }
-        
-        setState(prev => ({
-          ...prev,
-          user: null,
-          isAuthenticated: false,
-          isLoading: false
-        }));
-        return null;
-      }
-      
-      // Check if token is valid
-      const isTokenValid = (() => {
-        try {
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          return payload.exp * 1000 > Date.now();
-        } catch (error) {
-          return false;
-        }
-      })();
-      
-      if (!isTokenValid) {
-        try {
-          // Attempt to refresh the token
-          const refreshToken = localStorage.getItem('refresh');
-          if (refreshToken) {
-            const newTokens = await authService.refreshToken();
-            if (newTokens && newTokens.access) {
-              // Set the new token and try to get the profile again
-              localStorage.setItem('access', newTokens.access);
-              if (newTokens.refresh) {
-                localStorage.setItem('refresh', newTokens.refresh);
-              }
-              // Continue with getting the profile
-              const user = await authService.getProfile();
-              if (user) {
-                console.log('2.3. [useQuery] Successfully refreshed user data');
-                setState(prev => ({
-                  ...prev,
-                  user,
-                  isAuthenticated: true,
-                  isLoading: false
-                }));
-                return user;
-              }
-            }
-          }
-        } catch (refreshError) {
-          console.error('2.4. [useQuery] Token refresh failed:', refreshError);
-        }
-        
-        authService.logout();
-        setState(prev => ({
-          ...prev,
-          user: null,
-          isAuthenticated: false,
-          isLoading: false
-        }));
-        return null;
-      }
-      
-      // Set auth header
-      authService.setAuthHeader(token);
-      
-      // If we have a valid user in localStorage and token is valid, use it
-      if (storedUser) {
-        setState(prev => ({
-          ...prev,
-          user: storedUser,
-          isAuthenticated: true,
-          isLoading: false
-        }));
-        
-        authService.getProfile().then(freshUser => {
-          if (freshUser) {
-            setState(prev => ({
-              ...prev,
-              user: freshUser,
-              isAuthenticated: true
-            }));
-          }
-        }).catch(error => {
-          console.error('3.3. [useQuery] Error fetching fresh user data:', error);
-        });
-        
-        return storedUser;
-      }
-      
-      try {
-        const user = await authService.getProfile();
-        
-        if (!user) {
-          authService.logout();
-          setState(prev => ({
-            ...prev,
-            user: null,
-            isAuthenticated: false,
-            isLoading: false
-          }));
-          return null;
-        }
-        
-        // Update local storage with fresh user data
-        localStorage.setItem('user', JSON.stringify(user));
-        
-        // Update the auth state with the new user data
-        setState(prev => ({
-          ...prev,
-          user,
-          isAuthenticated: true,
-          isLoading: false
-        }));
-        
-        return user;
-      } catch (error) {
-        console.error('6. [useQuery] Error fetching user data:', error);
-        if (error.response?.status === 401) {
-          console.log('7. [useQuery] 401 Unauthorized, clearing auth');
-          authService.logout();
-        }
-        return null;
-      }
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    retry: 1,
-    refetchOnWindowFocus: false,
-    retry: (failureCount, error) => {
-      if (error?.response?.status === 401) return false;
-      return failureCount < 2; // Retry other errors up to 2 times
-    },
-    onSuccess: (data) => {
-      if (!data) {
-        authService.logout();
-        setState(prev => ({
-          ...prev,
-          user: null,
-          isAuthenticated: false,
-          isLoading: false,
-          error: 'Session expired. Please log in again.'
-        }));
-        return;
-      }
-      
-      setState(prev => ({
-        ...prev,
-        user: data,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null
-      }));
-    },
-    onError: (error) => {
-      console.error('9. [useQuery onError] Error in user query:', error);
-      
-      // Clear auth state on 401
-      if (error?.response?.status === 401) {
-        authService.logout();
-      }
-      
-      setState(prev => ({
-        ...prev,
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        error: error.response?.data?.message || 'Failed to load user data. Please try again.'
-      }));
-    },
-    onSettled: () => {
-      setState(prev => ({
-        ...prev,
-        isLoading: false
-      }));
-    }
-  });
 
-  // Handle successful login with full page refresh
   const handleLoginSuccess = useCallback((userData) => {
-    if (!userData) {
-      console.error('No userData provided to handleLoginSuccess');
-      return;
-    }
-    
+    if (!userData) return;
+  
     // Store user data in localStorage
     localStorage.setItem('user', JSON.stringify(userData));
-    
-    // Determine redirect path based on user role - simplified logic
+  
+    // Decide redirect path
     const redirectPath = userData.is_staff || userData.is_superuser 
       ? '/admin/dashboard' 
       : userData.is_photographer 
         ? '/photographer/dashboard' 
         : '/my-gallery';
-    
+  
     const targetPath = location.state?.from?.pathname || redirectPath;
-    
-    // Single state update with all changes
+  
+    // ✅ Update state
     setState({
       user: userData,
       isAuthenticated: true,
       isLoading: false,
       error: null
     });
-    
-    // Batch React Query updates
+  
+    // ✅ Update React Query cache
     queryClient.setQueryData(['currentUser'], userData);
-    
-    // Force a full page refresh to ensure all components are properly initialized
-    window.location.href = targetPath;
+  
+    // ✅ Navigate without reload
+    navigate(targetPath, { replace: true, state: { from: undefined } });
   }, [navigate, location.state, queryClient]);
+  
+
+
 
   // Handle logout
   const handleLogout = useCallback(() => {
@@ -393,7 +195,6 @@ export const AuthProvider = ({ children }) => {
         throw new Error(response.error || 'Registration failed');
       }
     } catch (error) {
-      console.error('Registration error:', error);
       setState(prev => ({
         ...prev,
         isLoading: false,
@@ -413,80 +214,71 @@ export const AuthProvider = ({ children }) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
     try {
-      // Call the login service
-      const { user } = await authService.login(credentials);
-      
-      // Immediately update the state with the new user data
-      if (user) {
-        const newState = {
-          user,
-          isAuthenticated: true,
-          isLoading: false,
-          error: null
-        };
-        
-        setState(newState);
-        
-        // Update the query cache
-        queryClient.setQueryData(['currentUser'], user);
-        
-        // Determine redirect path based on user role
-        const redirectPath = user.is_staff || user.is_superuser 
-          ? '/admin/dashboard' 
-          : user.is_photographer 
-            ? '/photographer-dashboard' 
-            : '/my-gallery';
-        
-        const targetPath = location.state?.from?.pathname || redirectPath;
-        
-        // Store auth data in localStorage for cross-tab sync
-        localStorage.setItem('authState', JSON.stringify({
-          isAuthenticated: true,
-          user: user
-        }));
-        
-        // Navigate to the target path
-        navigate(targetPath, { 
-          replace: true,
-          state: { from: undefined }
-        });
-        
-        // Dispatch auth state change event
-        window.dispatchEvent(new Event('storage'));
-        
-        return { success: true, user };
-      } else {
-        throw new Error('No user data received from server');
+      // Call the login service (make sure it returns { user, access, refresh })
+      const response = await authService.login(credentials);
+      const { user, access, refresh } = response;
+  
+      if (!user || !access) {
+        throw new Error('Invalid response from server');
       }
+  
+      // Update state
+      setState({
+        user,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null
+      });
+  
+      // Store in localStorage
+      localStorage.setItem('access', access);
+      if (refresh) localStorage.setItem('refresh', refresh);
+      localStorage.setItem('user', JSON.stringify(user));
+  
+      // Update React Query cache
+      queryClient.setQueryData(['currentUser'], user);
+  
+      // Redirect based on role
+      const redirectPath = user.is_staff || user.is_superuser 
+        ? '/admin/dashboard' 
+        : user.is_photographer 
+          ? '/photographer/dashboard' 
+          : '/my-gallery';
+  
+      const targetPath = location.state?.from?.pathname || redirectPath;
+      navigate(targetPath, { replace: true, state: { from: undefined } });
+  
+      return { success: true, user };
     } catch (error) {
-      console.error('Login error:', error);
       setState(prev => ({
         ...prev,
         isLoading: false,
         error: error.message || 'Login failed. Please check your credentials and try again.'
       }));
-      return { 
-        success: false, 
-        error: error.message || 'Login failed. Please check your credentials and try again.'
-      };
+      return { success: false, error: error.message || 'Login failed. Please check your credentials and try again.' };
     }
   }, [navigate, queryClient, location.state]);
-
+  
   const loginWithGoogle = useCallback(async (credential) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
-  
+
     try {
       const { access, refresh, user } = await authService.googleAuth(credential);
-  
+
       if (!access || !user) {
         throw new Error('Authentication failed: No valid token received');
       }
-  
-      handleLoginSuccess(user); // updates context state + redirects
-  
+
+      // ✅ Save tokens
+      localStorage.setItem('access', access);
+      if (refresh) localStorage.setItem('refresh', refresh);
+      localStorage.setItem('user', JSON.stringify(user));
+
+      // ✅ Update state + redirect
+      handleLoginSuccess(user);
+
       return { success: true };
     } catch (error) {
-      console.error('[loginWithGoogle] Error:', error);
       setState(prev => ({
         ...prev,
         isLoading: false,
@@ -495,7 +287,7 @@ export const AuthProvider = ({ children }) => {
       return { success: false, error: error.message };
     }
   }, [handleLoginSuccess]);
-  
+
   
 
   // Provide the auth context value

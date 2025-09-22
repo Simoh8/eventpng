@@ -40,7 +40,6 @@ class AccountSettingsView(APIView):
             return response
             
         except Exception as e:
-            logger.error(f"Error in AccountSettingsView GET: {str(e)}")
             return Response(
                 {'error': 'Failed to fetch account settings'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR

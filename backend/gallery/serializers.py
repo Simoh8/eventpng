@@ -406,7 +406,6 @@ class GalleryCreateSerializer(serializers.ModelSerializer):
                 # If image processing fails, log the error but don't fail the entire request
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.error(f"Error processing image {photo_data.name}: {str(e)}")
         
         return gallery
 

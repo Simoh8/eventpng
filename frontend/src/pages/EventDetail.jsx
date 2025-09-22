@@ -39,7 +39,6 @@ const getEventCache = () => {
     const cache = localStorage.getItem(CACHE_CONFIG.EVENT_CACHE_KEY);
     return cache ? JSON.parse(cache) : {};
   } catch (error) {
-    console.error('Error reading event cache:', error);
     return {};
   }
 };
@@ -48,7 +47,6 @@ const setEventCache = (cache) => {
   try {
     localStorage.setItem(CACHE_CONFIG.EVENT_CACHE_KEY, JSON.stringify(cache));
   } catch (error) {
-    console.error('Error writing event cache:', error);
     // If storage is full, try to clean up old items
     cleanupCache();
   }
@@ -71,7 +69,6 @@ const cleanupCache = () => {
     
     setEventCache(validEntries);
   } catch (error) {
-    console.error('Error cleaning up cache:', error);
   }
 };
 
@@ -145,7 +142,6 @@ const fetchEvent = async (slug) => {
     } catch (error) {
       // If 404 and we have a numeric slug, try by ID
       if (error.response?.status === 404 && !isNaN(slug)) {
-        console.log('Event not found by slug, trying by ID...');
         try {
           const eventDetailResponse = await makeRequest(() => 
             axios.get(`${API_BASE_URL}api/gallery/public/events/${slug}/`, {
@@ -160,7 +156,6 @@ const fetchEvent = async (slug) => {
             return processedData;
           }
         } catch (idError) {
-          console.error('Error fetching event by ID:', idError);
           // Re-throw the slug error to be handled by the outer catch
           throw error;
         }
@@ -173,7 +168,6 @@ const fetchEvent = async (slug) => {
     throw new Error(`Event '${slug}' not found`);
     
   } catch (error) {
-    console.error('Error in fetchEvent:', error);
     throw new Error(`Failed to load event: ${error.message}`);
   }
 };
@@ -268,7 +262,6 @@ const EventDetail = () => {
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
       lightboxRef.current?.requestFullscreen?.().catch(err => {
-        console.error('Error enabling fullscreen:', err);
       });
       setIsFullscreen(true);
     } else {
@@ -753,7 +746,6 @@ const EventDetail = () => {
                                     className="max-w-full max-h-full object-cover transition-transform duration-500 group-hover:scale-105"
                                     effect="opacity"
                                     onError={(e) => {
-                                      console.error('Error loading image:', e.target.src);
                                       e.target.onerror = null;
                                       e.target.src = 'https://via.placeholder.com/300?text=Image+Not+Found';
                                     }}

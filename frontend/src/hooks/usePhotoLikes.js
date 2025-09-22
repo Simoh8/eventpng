@@ -49,7 +49,6 @@ export const usePhotoLikes = (galleryId) => {
           ? response.data.map((photo) => photo.id)
           : [];
       } catch (error) {
-        console.error('Error fetching liked photos:', error);
         return [];
       }
     },
@@ -89,7 +88,6 @@ export const usePhotoLikes = (galleryId) => {
       return { previousGallery, previousLikes };
     },
     onError: (error, photoId, context) => {
-      console.error('Error toggling like:', error);
       rollback(context);
       toast.error('Failed to update like');
     },

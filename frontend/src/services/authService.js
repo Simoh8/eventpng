@@ -1,6 +1,9 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
 
+
+
+
 // Create axios instance with base URL
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -79,7 +82,7 @@ api.interceptors.response.use(
           return api(originalRequest); // retry the failed request
         }
       } catch (refreshError) {
-        console.error('[Axios] Token refresh failed:', refreshError);
+        // console.error('[Axios] Token refresh failed:', refreshError);
         processQueue(refreshError, null);
         authService.logout();
       } finally {
@@ -214,7 +217,6 @@ const authService = {
       };
       
     } catch (error) {
-      console.error('Registration error:', error);
       
       // Handle different types of errors
       if (error.response) {
@@ -261,32 +263,25 @@ const authService = {
 
   // Login user
   login: async function(credentials) {
-    try {
-      // Clear any existing auth data
-      this.logout();
-      
-      const response = await api.post('/api/accounts/token/', {
-        email: credentials.email,
-        password: credentials.password
-      });
-      
-      const { access, refresh, user } = response.data;
-      
-      if (access && user) {
-        localStorage.setItem('access', access);
-        if (refresh) {
-          localStorage.setItem('refresh', refresh);
-        }
-        localStorage.setItem('user', JSON.stringify(user));
-        this.setAuthHeader(access);
-        return user;
-      }
-      
-      throw new Error('Invalid response from server');
-    } catch (error) {
-      throw error;
+    this.logout();
+    const response = await api.post('/api/accounts/token/', {
+      email: credentials.email,
+      password: credentials.password
+    });
+    
+    const { access, refresh, user } = response.data;
+    
+    if (access && user) {
+      localStorage.setItem('access', access);
+      if (refresh) localStorage.setItem('refresh', refresh);
+      localStorage.setItem('user', JSON.stringify(user));
+      this.setAuthHeader(access);
+      return { user, access, refresh }; // ✅ return everything
     }
+    
+    throw new Error('Invalid response from server');
   },
+  
 
   // Logout user
   logout: function() {
@@ -299,11 +294,8 @@ const authService = {
   // Refresh access token
   refreshToken: async function() {
     try {
-      console.log('[authService] Starting token refresh');
-      
       const refreshToken = localStorage.getItem('refresh');
       if (!refreshToken) {
-        console.error('[authService] No refresh token available');
         throw new Error('No refresh token available');
       }
       
@@ -335,7 +327,6 @@ const authService = {
       // Update tokens in localStorage
       localStorage.setItem('access', access);
       if (newRefreshToken) {
-        console.log('[authService] New refresh token received');
         localStorage.setItem('refresh', newRefreshToken);
       }
       
@@ -348,24 +339,11 @@ const authService = {
       };
       
     } catch (error) {
-      console.error('[authService] Token refresh failed:', error);
-      
-      // Log detailed error information
-      if (error.response) {
-        console.error('[authService] Response status:', error.response.status);
-        console.error('[authService] Response data:', error.response.data);
-        
-        // If we get a 401, the refresh token is invalid or expired
-        if (error.response.status === 401) {
-          console.log('[authService] Refresh token is invalid or expired');
-          // Clear all auth data
-          this.logout();
-          throw new Error('Session expired. Please log in again.');
-        }
-      } else if (error.request) {
-        console.error('[authService] No response received:', error.request);
-      } else {
-        console.error('[authService] Request setup error:', error.message);
+      // If we get a 401, the refresh token is invalid or expired
+      if (error.response?.status === 401) {
+        // Clear all auth data
+        this.logout();
+        throw new Error('Session expired. Please log in again.');
       }
       
       // Don't logout for network errors, just throw
@@ -377,7 +355,6 @@ const authService = {
       throw error;
     }
   },
-
   // Get current user
   getCurrentUser: function() {
     return getStoredUser();

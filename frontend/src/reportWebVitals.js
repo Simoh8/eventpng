@@ -8,10 +8,8 @@ const reportWebVitals = onPerfEntry => {
         getLCP(onPerfEntry);
         getTTFB(onPerfEntry);
       } catch (error) {
-        console.error('Error in web-vitals:', error);
       }
     }).catch(error => {
-      console.error('Error importing web-vitals:', error);
     });
   }
 };

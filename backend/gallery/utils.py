@@ -102,4 +102,3 @@ def process_image(photo):
         # Log the error but don't fail the request
         import logging
         logger = logging.getLogger(__name__)
-        logger.error(f"Error processing image {photo.id}: {str(e)}")

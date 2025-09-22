@@ -395,7 +395,6 @@ class Photo(models.Model):
             # If there's an error, log it and return the original image
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Error serving protected image {self.id}: {str(e)}")
             
             # Fall back to serving the original image
             return FileResponse(open(self.image.path, 'rb'), 

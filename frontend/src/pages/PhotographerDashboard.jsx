@@ -215,7 +215,6 @@ export default function PhotographerDashboard() {
         setFilteredActivities(formattedActivities);
       }
     } catch (err) {
-      console.error('Error fetching dashboard data:', err);
       const errorMessage = err.response?.data?.detail || 'Failed to load dashboard data. Please try again later.';
       setError(errorMessage);
       toast.error(errorMessage);

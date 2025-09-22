@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useMemo } from 'react';
+import { Fragment, useState, useMemo } from 'react';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Dialog, Transition } from '@headlessui/react';
 import { 
@@ -15,128 +15,47 @@ import Footer from '../components/Footer';
 
 export default function MainLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { isAuthenticated, user, isLoading, logout } = useAuth();
+  const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-
-  // Local auth state that syncs with context and localStorage
-  const [authState, setAuthState] = useState({
-    isAuthenticated: false,
-    user: null
-  });
-
-  // Sync auth state with context and localStorage
-  useEffect(() => {
-    // Try to get auth state from localStorage first
-    const storedAuth = localStorage.getItem('authState');
-    if (storedAuth) {
-      try {
-        const { isAuthenticated, user } = JSON.parse(storedAuth);
-        setAuthState({
-          isAuthenticated,
-          user: user?.data || user || null
-        });
-        return;
-      } catch (e) {
-        console.error('Error parsing stored auth state', e);
-      }
-    }
-    
-    // Fall back to context if no stored state
-    setAuthState({
-      isAuthenticated,
-      user: user?.data || user || null
-    });
-    
-    setMobileMenuOpen(false);
-  }, [isAuthenticated, user]);
-  
-  // Listen for storage events to sync auth state across tabs
-  useEffect(() => {
-    const handleStorageChange = (event) => {
-      if (event.key === 'authState') {
-        try {
-          const storedAuth = localStorage.getItem('authState');
-          if (storedAuth) {
-            const { isAuthenticated, user } = JSON.parse(storedAuth);
-            setAuthState({
-              isAuthenticated,
-              user: user?.data || user || null
-            });
-          } else {
-            setAuthState({
-              isAuthenticated: false,
-              user: null
-            });
-          }
-        } catch (e) {
-          console.error('Error handling storage event', e);
-        }
-      }
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
 
   const handleLogout = () => {
     logout();
     navigate('/');
   };
-    
-  // Navigation items based on authentication and role
+
+  // Navigation items (desktop)
   const navigation = useMemo(() => {
-    const userData = authState.user || {};
-    
     return [
       { name: 'Home', href: '/' },
       { name: 'Events', href: '/events' },
-      ...(authState.isAuthenticated ? [
-        // Photographer specific navigation
-        ...(userData?.is_photographer ? [
-          { name: 'Dashboard', href: '/photographer-dashboard' },
-        ] : []),
-        // Customer specific navigation
-        ...(userData?.is_photographer === false ? [
-          { name: 'My Gallery', href: '/my-gallery' },
-        ] : []),
-        // Admin specific navigation
-        ...((userData?.is_staff || userData?.is_superuser) ? [
-          { name: 'Admin', href: '/admin/events' },
-        ] : []),
-      ] : [
-        // Public navigation
+      ...(isAuthenticated ? [
+        user?.is_photographer && { name: 'Dashboard', href: '/photographer-dashboard' },
+        user?.is_photographer === false && { name: 'My Gallery', href: '/my-gallery' },
+        (user?.is_staff || user?.is_superuser) && { name: 'Admin', href: '/admin/events' },
+      ].filter(Boolean) : [
         { name: 'Pricing', href: '/pricing' },
         { name: 'FAQ', href: '/faq' },
         { name: 'Contact', href: '/contact' },
         { name: 'Terms', href: '/terms' },
       ]),
     ];
-  }, [authState.isAuthenticated, authState.user]);
-  
-  // Mobile navigation items
+  }, [isAuthenticated, user]);
+
+  // Mobile nav
   const mobileNavigation = useMemo(() => {
-    const userData = authState.user || {};
-    
     return [
       ...navigation,
-      ...(authState.isAuthenticated 
+      ...(isAuthenticated 
         ? [
-            // Photographer specific mobile navigation
-            ...(authState.user?.is_photographer ? [
-              { name: 'Create Gallery', href: '/galleries/new' },
-            ] : []),
-            // User menu items
-            ...(authState.user?.is_photographer === false ? [
-              { name: 'My Photos', href: '/my-photos' },
-              { name: 'My Orders', href: '/orders' },
-              { name: 'Saved', href: '/saved' },
-            ] : []),
+            user?.is_photographer && { name: 'Create Gallery', href: '/galleries/new' },
+            user?.is_photographer === false && { name: 'My Photos', href: '/my-photos' },
+            user?.is_photographer === false && { name: 'My Orders', href: '/orders' },
+            user?.is_photographer === false && { name: 'Saved', href: '/saved' },
             { name: 'Account Settings', href: '/settings' },
             { name: 'Help & Support', href: '/support' },
-          ]
+          ].filter(Boolean)
         : [
-            // Public mobile navigation
             { name: 'Sign In', href: '/login' },
             { name: 'Create Account', href: '/register' },
             { name: 'Help & Support', href: '/support' },
@@ -144,9 +63,9 @@ export default function MainLayout() {
           ]
       ),
     ];
-  }, [authState.isAuthenticated, authState.user, navigation]);
-  
-  // Mobile menu button component
+  }, [isAuthenticated, user, navigation]);
+
+  // Mobile menu button
   const MobileMenuButton = () => (
     <button
       type="button"
@@ -200,9 +119,9 @@ export default function MainLayout() {
 
             {/* Desktop auth buttons */}
             <div className="hidden lg:flex lg:items-center lg:space-x-4">
-              {authState.isAuthenticated ? (
+              {isAuthenticated ? (
                 <>
-                  {authState.user?.is_photographer && (
+                  {user?.is_photographer && (
                     <Link
                       to="/galleries/new"
                       className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
@@ -211,7 +130,7 @@ export default function MainLayout() {
                       Create Gallery
                     </Link>
                   )}
-                  <UserMenu user={authState.user} onLogout={handleLogout} />
+                  <UserMenu user={user} onLogout={handleLogout} />
                 </>
               ) : (
                 <>

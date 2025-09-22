@@ -85,7 +85,6 @@ export default function SessionsDetail() {
         });
       }
     } catch (error) {
-      console.error('Error fetching sessions:', error);
     } finally {
       setLoading(false);
     }

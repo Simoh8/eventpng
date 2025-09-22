@@ -49,7 +49,6 @@ export default function EarningsDetail() {
           });
         }
       } catch (error) {
-        console.error('Error fetching earnings:', error);
       } finally {
         setLoading(false);
       }
