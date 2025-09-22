@@ -2,18 +2,14 @@ import axios from 'axios';
 import { API_BASE_URL } from '../config';
 
 
-
-
-// Create axios instance with base URL
 const api = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  timeout: 10000, // Add timeout to prevent hanging requests
+  headers: { 'Content-Type': 'application/json' },
+  timeout: 10000,
+  withCredentials: true, 
 });
 
-// Flag to prevent multiple simultaneous token refresh attempts
+
 let isRefreshing = false;
 let failedQueue = [];
 
@@ -28,10 +24,8 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
-// Add a request interceptor to include the auth token in requests
 api.interceptors.request.use(
   (config) => {
-    // Don't intercept refresh token request to prevent infinite loops
     if (config.url.includes('/token/refresh/')) {
       return config;
     }
@@ -47,7 +41,6 @@ api.interceptors.request.use(
   }
 );
 
-// Add a response interceptor to handle token refresh
 api.interceptors.response.use(
   response => response,
   async (error) => {
@@ -266,9 +259,9 @@ const authService = {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-CSRFToken': this.getCSRFToken(),
+            'X-CSRFToken': authService.getCSRFToken(),
           },
-          withCredentials: true, // ✅ important for cross-site cookies
+          withCredentials: true,
         }
       );
       
