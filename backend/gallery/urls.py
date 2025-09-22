@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 from .views_photo import ProtectedImageView
-from .views import StatsView, RecentGalleriesView, event_stats, LikePhotoView, UnlikePhotoView, UserLikedPhotosView
+from .views import StatsView, RecentGalleriesView, event_stats, LikePhotoView, UnlikePhotoView, UserLikedPhotosView,OngoingGalleriesView
 
 app_name = 'gallery'
 
@@ -44,11 +44,16 @@ urlpatterns = [
     path('photos/<uuid:photo_id>/like/', LikePhotoView.as_view(), name='like-photo'),
     path('photos/<uuid:photo_id>/unlike/', UnlikePhotoView.as_view(), name='unlike-photo'),
     path('users/me/likes/', UserLikedPhotosView.as_view(), name='user-liked-photos'),
+
+        # Ongoing galleries endpoint
+    path('galleries/ongoing/', views.OngoingGalleriesView.as_view(), name='ongoing-galleries'),
+
     
     # Direct endpoints (for backward compatibility)
     path('', include([
         path('stats/', StatsView.as_view(), name='direct-stats'),
         path('recent/', RecentGalleriesView.as_view(), name='recent-galleries'),
+
     ])),
 ]
 

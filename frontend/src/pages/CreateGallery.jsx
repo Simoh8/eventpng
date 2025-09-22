@@ -13,7 +13,7 @@ const fetchEvents = async () => {
   const token = localStorage.getItem('access');
   
   try {
-    const response = await fetch(`${API_BASE_URL}/api/gallery/events/`, {
+    const response = await fetch(`${API_BASE_URL}api/gallery/events/`, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
@@ -126,7 +126,7 @@ const checkOngoingRequest = async () => {
   if (!token) return false;
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/gallery/galleries/ongoing/`, {
+    const response = await fetch(`${API_BASE_URL}api/gallery/galleries/ongoing/`, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',

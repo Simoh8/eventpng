@@ -214,6 +214,30 @@ class RecentGalleriesView(ListAPIView):
             is_active=True
         ).select_related('event', 'photographer').order_by('-created_at')[:10]  # Get 10 most recent
 
+
+class OngoingGalleriesView(ListAPIView):
+    """
+    API endpoint that returns currently ongoing public galleries.
+    Ongoing galleries are defined as galleries that are:
+    - Public
+    - Active
+    - Associated with an event that is happening today or in the future
+    """
+    serializer_class = GalleryListSerializer
+    permission_classes = [permissions.AllowAny]
+    
+    def get_queryset(self):
+        # Get current date for comparison (without time)
+        today = timezone.now().date()
+        
+        # Return public, active galleries with events that are today or in the future
+        return Gallery.objects.filter(
+            is_public=True,
+            is_active=True,
+            event__isnull=False,  # Only galleries with events
+            event__date__gte=today  # Event is today or in the future
+        ).select_related('event', 'photographer').order_by('event__date')  # Order by event date
+
 class GalleryListView(generics.ListAPIView):
     """View for listing galleries."""
     serializer_class = serializers.GalleryListSerializer
