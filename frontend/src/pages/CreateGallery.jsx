@@ -69,7 +69,6 @@ const createGallery = async ({ eventId, photos, title, description, isPublic, is
     formData.append('photos', photo);
   });
   
-  console.log('Sending to server - cover_photo_index:', finalCoverPhotoIndex, 'total photos:', photos.length);
 
   // Start processing simulation
   let processingProgress = 0;
@@ -338,9 +337,6 @@ export default function CreateGallery() {
       return;
     }
     
-    // Log the cover photo index for debugging
-    console.log('Submitting with cover photo index:', coverPhotoIndex);
-    
     setHasOngoingRequest(true);
     setIsProcessing(true);
     
@@ -356,7 +352,6 @@ export default function CreateGallery() {
       coverPhotoIndex: coverPhotoIndex !== null ? coverPhotoIndex : 0 // Default to first photo if none selected
     };
     
-    console.log('Submitting gallery data:', galleryData);
     
     // Submit the gallery data
     createGalleryMutation.mutate(galleryData, {

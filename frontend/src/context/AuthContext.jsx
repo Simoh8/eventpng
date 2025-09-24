@@ -80,7 +80,6 @@ export const AuthProvider = ({ children }) => {
     queryClient.setQueryData(['currentUser'], userData);
 
     // Perform the navigation
-    console.log('Redirecting to:', targetPath);
     navigate(targetPath, { 
       replace: true, 
       state: { from: undefined } // Clear the from state to prevent loops
@@ -159,7 +158,6 @@ export const AuthProvider = ({ children }) => {
   const loginWithGoogle = useCallback(async (credential) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     try {
-      console.log('Starting Google OAuth flow with credential');
       
       // Call the auth service to authenticate with Google
       const { access, refresh, user } = await authService.googleAuth(credential);
@@ -168,7 +166,6 @@ export const AuthProvider = ({ children }) => {
         throw new Error('Google login failed: No access token or user data received');
       }
 
-      console.log('Google OAuth successful, user:', user);
       
       // Update React Query cache
       queryClient.setQueryData(['currentUser'], user);
@@ -195,7 +192,6 @@ export const AuthProvider = ({ children }) => {
         ? fromPath 
         : redirectPath;
 
-      console.log('Google login successful, redirecting to:', targetPath);
       
       // Ensure we're not on the login page before navigating
       if (window.location.pathname === '/login') {
