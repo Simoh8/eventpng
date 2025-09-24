@@ -75,96 +75,62 @@ const RecentGalleryCard = ({ gallery }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Get all available images for the gallery
-  const galleryImages = React.useMemo(() => {
+  // Log gallery data when component mounts or gallery changes
+  useEffect(() => {
+    console.log('Gallery Data:', gallery);
+    if (gallery.images) {
+    }
+    if (gallery.cover_image) {
+    }
+  }, [gallery]);
+  
+  // Get the primary image for the gallery, prioritizing the cover_photo
+  const getPrimaryImage = React.useMemo(() => {
     try {
-      // console.log('Processing gallery data:', gallery);
-      const images = [];
-      
-      // Helper function to extract image URL
-      const getImageUrl = (img) => {
-        if (!img) return null;
-        
-        // Handle string URLs
-        if (typeof img === 'string') {
-          return img.startsWith('http') ? img : null;
-        }
-        
-        // Handle image objects
-        if (typeof img === 'object') {
-          // Try different possible properties that might contain the image URL
-          return (
-            img.image || 
-            img.url || 
-            (img.media_file && img.media_file.url) ||
-            (img.original && (img.original.url || img.original.image)) ||
-            null
-          );
-        }
-        
-        return null;
+      const getFullImageUrl = (path) => {
+        if (!path) return null;
+        if (path.startsWith('http')) return path;
+        return `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}${path}`;
       };
       
-      // Add cover image if exists
+      // First try to get cover_photo
+      if (gallery.cover_photo) {
+        const coverImage = getFullImageUrl(gallery.cover_photo);
+        if (coverImage) return coverImage;
+      }
+      
+      // If no cover_photo, check for cover_image (for backward compatibility)
       if (gallery.cover_image) {
-        const coverImage = getImageUrl(gallery.cover_image);
-        if (coverImage) images.push(coverImage);
+        const coverImage = getFullImageUrl(
+          typeof gallery.cover_image === 'string' 
+            ? gallery.cover_image 
+            : (gallery.cover_image.url || gallery.cover_image.image)
+        );
+        if (coverImage) return coverImage;
       }
       
-      // Add featured images if available
-      if (gallery.images && Array.isArray(gallery.images)) {
-        gallery.images.forEach(img => {
-          if (!img) return;
-          try {
-            const imgUrl = getImageUrl(img);
-            if (imgUrl && !images.includes(imgUrl)) {
-              images.push(imgUrl);
-            }
-          } catch (e) {
-          }
-        });
-      }
+      // Return default image if no images found
+      return `data:image/svg+xml,${encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" fill="none">' +
+        '<rect width="400" height="300" fill="%23f0f0f0"/>' +
+        '<rect x="150" y="100" width="100" height="100" fill="%23ddd" rx="2"/>' +
+        '<path d="M200 120L185 150H200L185 180H215L200 150H215L200 120Z" fill="%23aaa"/>' +
+        '</svg>'
+      )}`;
       
-      
-      // If no images found, use a simple SVG placeholder
-      if (images.length === 0) {
-        return [
-          `data:image/svg+xml,${encodeURIComponent(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" fill="none">' +
-            '<rect width="400" height="300" fill="%23f0f0f0"/>' +
-            '<rect x="150" y="100" width="100" height="100" fill="%23ddd" rx="2"/>' +
-            '<path d="M200 120L185 150H200L185 180H215L200 150H215L200 120Z" fill="%23aaa"/>' +
-            '</svg>'
-          )}`
-        ];
-      }
-      
-      return images;
     } catch (error) {
-      // Return a simple SVG as fallback
-      return [
-        `data:image/svg+xml,${encodeURIComponent(
-          '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" fill="none">' +
-          '<rect width="400" height="300" fill="%23f0f0f0"/>' +
-          '<rect x="150" y="100" width="100" height="100" fill="%23ddd" rx="2"/>' +
-          '<path d="M200 120L185 150H200L185 180H215L200 150H215L200 120Z" fill="%23aaa"/>' +
-          '</svg>'
-        )}`
-      ];
+      console.error('Error getting primary image:', error);
+      // Return default image on error
+      return `data:image/svg+xml,${encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" fill="none">' +
+        '<rect width="400" height="300" fill="%23f0f0f0"/>' +
+        '<rect x="150" y="100" width="100" height="100" fill="%23ddd" rx="2"/>' +
+        '<path d="M200 120L185 150H200L185 180H215L200 150H215L200 120Z" fill="%23aaa"/>' +
+        '</svg>'
+      )}`;
     }
   }, [gallery]);
 
-  // Auto-rotate images when hovered
-  React.useEffect(() => {
-    if (!isHovered || galleryImages.length <= 1) return;
-    
-    const interval = setInterval(() => {
-      setCurrentImageIndex(prev => (prev + 1) % galleryImages.length);
-    }, 3000); // Rotate every 3 seconds
-    
-    return () => clearInterval(interval);
-  }, [isHovered, galleryImages.length]);
-  
   // Handle image load state
   const handleImageLoad = () => {
     setIsLoading(false);
@@ -181,6 +147,7 @@ const RecentGalleryCard = ({ gallery }) => {
       '</svg>'
     )}`;
     e.target.onerror = null; // Prevent infinite loop if the fallback also fails
+    setIsLoading(false);
   };
   
   const stats = [
@@ -199,11 +166,6 @@ const RecentGalleryCard = ({ gallery }) => {
     }
   ];
 
-  const handleClick = () => {
-    const gallerySlug = gallery.slug || gallery.id;
-    navigate(`/gallery/${gallerySlug}`);
-  };
-
   // Format the date to be more readable
   const formattedDate = gallery.created_at 
     ? new Date(gallery.created_at).toLocaleDateString('en-US', { 
@@ -215,9 +177,10 @@ const RecentGalleryCard = ({ gallery }) => {
       })
     : 'Date not available';
 
-  // Handle manual navigation between images
-  const goToImage = (index) => {
-    setCurrentImageIndex(index);
+  // Handle click on the card
+  const handleClick = () => {
+    const gallerySlug = gallery.slug || gallery.id;
+    navigate(`/gallery/${gallerySlug}`);
   };
 
   return (
@@ -227,15 +190,15 @@ const RecentGalleryCard = ({ gallery }) => {
       onMouseLeave={() => setIsHovered(false)}
       onClick={handleClick}
     >
-      {/* Gallery Cover Image with Slideshow */}
+      {/* Gallery Cover Image */}
       <div className="h-48 bg-gradient-to-br from-gray-50 to-gray-100 relative overflow-hidden">
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
             <div className="flex space-x-2">
               {[1, 2, 3].map((i) => (
                 <div 
                   key={i} 
-                  className="h-2 w-2 bg-gray-300 rounded-full animate-bounce"
+                  className="h-2 w-2 bg-blue-400 rounded-full animate-bounce"
                   style={{ animationDelay: `${i * 0.15}s` }}
                 />
               ))}
@@ -244,50 +207,18 @@ const RecentGalleryCard = ({ gallery }) => {
         )}
         
         <div className="relative w-full h-full">
-          {galleryImages.map((image, index) => (
-            <motion.div
-              key={index}
-              className="absolute inset-0 w-full h-full"
-              initial={{ opacity: 0 }}
-              animate={{
-                opacity: index === currentImageIndex ? 1 : 0,
-                scale: isHovered ? 1.05 : 1,
-                transition: { duration: 0.5, ease: 'easeInOut' }
-              }}
-            >
-              <img 
-                src={image} 
-                alt={`${gallery.title || 'Gallery'} ${index + 1}`}
-                className={`w-full h-full object-cover transition-opacity duration-300 ${
-                  index === currentImageIndex ? 'opacity-100' : 'opacity-0'
-                }`}
-                onLoad={handleImageLoad}
-                onError={handleImageError}
-                loading="lazy"
-              />
-            </motion.div>
-          ))}
-          
-          {/* Navigation Dots */}
-          {galleryImages.length > 1 && (
-            <div className="absolute bottom-3 left-0 right-0 flex justify-center space-x-2 z-10 px-2">
-              {galleryImages.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCurrentImageIndex(index);
-                  }}
-                  className={`h-1.5 rounded-full transition-all duration-300 ${
-                    index === currentImageIndex 
-                      ? 'w-6 bg-white shadow-sm' 
-                      : 'w-3 bg-white/60 hover:bg-white/80'
-                  }`}
-                  aria-label={`View image ${index + 1} of ${galleryImages.length}`}
-                />
-              ))}
-            </div>
-          )}
+          <img 
+            src={getPrimaryImage}
+            alt={`${gallery.title || 'Gallery'} cover`}
+            className={`w-full h-full object-cover transition-transform duration-500 ${isLoading ? 'opacity-0' : 'opacity-100'}`}
+            style={{
+              transform: isHovered ? 'scale(1.05)' : 'scale(1)',
+              transition: 'transform 0.5s ease-in-out, opacity 0.3s ease-in-out',
+            }}
+            onLoad={handleImageLoad}
+            onError={handleImageError}
+            loading="lazy"
+          />
         </div>
         
         {/* Title Overlay */}

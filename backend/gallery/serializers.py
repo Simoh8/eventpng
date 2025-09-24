@@ -363,18 +363,29 @@ class GalleryCreateSerializer(serializers.ModelSerializer):
         required=True,
         help_text="Event ID this gallery belongs to"
     )
+    cover_photo_index = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        write_only=True,
+        help_text="Index of the photo to use as cover (0-based)"
+    )
     
     class Meta:
         model = Gallery
-        fields = ['title', 'description', 'is_public', 'price', 'event', 'photos']
+        fields = ['title', 'description', 'is_public', 'price', 'event', 'photos', 'cover_photo_index']
         read_only_fields = ['photographer']
     
     def create(self, validated_data):
         from .utils import process_image
+        import logging
         
-        # Extract photos and event from validated data
+        # Get logger instance
+        logger = logging.getLogger(__name__)
+        
+        # Extract photos, event, and cover_photo_index from validated data
         photos_data = validated_data.pop('photos', [])
         event = validated_data.pop('event', None)
+        cover_photo_index = validated_data.pop('cover_photo_index', 0)  # Default to 0 if not provided
         
         # Ensure is_public is True by default if not provided
         if 'is_public' not in validated_data:
@@ -383,32 +394,62 @@ class GalleryCreateSerializer(serializers.ModelSerializer):
         # Set the photographer to the current user
         validated_data['photographer'] = self.context['request'].user
         
-        # Create the gallery with the event
-        gallery = super().create(validated_data)
-        
-        # Set the event after creation to avoid M2M issues
-        if event:
-            gallery.event = event
-            gallery.save()
-        
-        # Create and process each photo
-        for photo_data in photos_data:
-            photo = Photo.objects.create(
-                gallery=gallery,
-                image=photo_data,
-                uploaded_by=self.context['request'].user
-            )
+        try:
+            # Create the gallery
+            gallery = super().create(validated_data)
             
-            # Process the image (add watermark, optimize, etc.)
-            try:
-                process_image(photo)
-                photo.save()
-            except Exception as e:
-                # If image processing fails, log the error but don't fail the entire request
-                import logging
-                logger = logging.getLogger(__name__)
-        
-        return gallery
+            # Set the event after creation to avoid M2M issues
+            if event:
+                gallery.event = event
+                gallery.save()
+            
+            # Create and process each photo
+            processed_photos = []
+            
+            for index, photo_data in enumerate(photos_data):
+                try:
+                    # Create the photo
+                    photo = Photo.objects.create(
+                        gallery=gallery,
+                        image=photo_data,
+                        uploaded_by=self.context['request'].user
+                    )
+                    
+                    # Process the image (add watermark, optimize, etc.)
+                    process_image(photo)
+                    photo.save()
+                    
+                    # Add to our list of processed photos
+                    processed_photos.append(photo)
+                    
+                except Exception as e:
+                    # If image processing fails, log the error but continue with other photos
+                    logger.error(f"Error processing image {getattr(photo_data, 'name', 'unknown')}: {str(e)}")
+            
+            # Now set the cover photo based on the cover_photo_index
+            if processed_photos:
+                try:
+                    # Ensure the index is within bounds
+                    valid_index = min(max(0, int(cover_photo_index or 0)), len(processed_photos) - 1)
+                    cover_photo = processed_photos[valid_index]
+                    
+                    # Set the cover_photo to the Photo instance, not the image field
+                    gallery.cover_photo = cover_photo
+                    gallery.save()
+                    
+                    logger.info(f"Set cover photo for gallery {gallery.id} to photo ID {cover_photo.id} (index: {valid_index})")
+                except Exception as e:
+                    logger.error(f"Error setting cover photo for gallery {gallery.id}: {str(e)}")
+                    # Fallback to first photo if there's an error
+                    if processed_photos:
+                        gallery.cover_photo = processed_photos[0]
+                        gallery.save()
+            
+            return gallery
+            
+        except Exception as e:
+            logger.error(f"Error in GalleryCreateSerializer.create: {str(e)}")
+            raise
 
 
 class GalleryCreateUpdateSerializer(serializers.ModelSerializer):

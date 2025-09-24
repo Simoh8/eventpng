@@ -96,7 +96,6 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
         throw new Error('No user data received from server');
       }
       
-      console.log('Login successful, user:', response.user);
       
       // Call onSuccess callback with user data which will handle the navigation
       if (onSuccess) {
@@ -110,7 +109,6 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
         });
       }
     } catch (err) {
-      console.error('Login error:', err);
       const errorMessage = err.response?.data?.detail || 
                          err.message || 
                          'Invalid email or password. Please try again.';

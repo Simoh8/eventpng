@@ -1,120 +1,48 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import api from '../services/api';
-import { toast } from 'react-hot-toast';
-import { useAuth } from '../context/AuthContext';
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import api from "../services/api";
+import toast from "react-hot-toast";
 
 export const usePhotoLikes = (galleryId) => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const navigate = useNavigate();
 
-  // ---------------- Helpers ----------------
-  const getGallery = () => queryClient.getQueryData(['gallery', galleryId]);
-  const getLikes = () => queryClient.getQueryData(['likedPhotos', galleryId]) || [];
-
-  const updateGalleryCache = (photoId, updater) => {
-    queryClient.setQueryData(['gallery', galleryId], (oldData) => {
-      if (!oldData?.photos) return oldData;
-      return {
-        ...oldData,
-        photos: oldData.photos.map((photo) =>
-          photo.id === photoId ? updater(photo) : photo
-        ),
-      };
-    });
-  };
-
-  const updateLikesCache = (photoId, isLiked) => {
-    queryClient.setQueryData(['likedPhotos', galleryId], (prev = []) =>
-      isLiked ? [...new Set([...prev, photoId])] : prev.filter((id) => id !== photoId)
-    );
-  };
-
-  const rollback = (context) => {
-    if (context?.previousGallery) {
-      queryClient.setQueryData(['gallery', galleryId], context.previousGallery);
-    }
-    if (context?.previousLikes) {
-      queryClient.setQueryData(['likedPhotos', galleryId], context.previousLikes);
-    }
-  };
-
-  // ---------------- Query ----------------
-  const { data: likedPhotos = [] } = useQuery({
-    queryKey: ['likedPhotos', galleryId],
-    queryFn: async () => {
-      if (!user) return [];
-      try {
-        const response = await api.get('/api/gallery/users/me/likes/');
-        return Array.isArray(response.data)
-          ? response.data.map((photo) => photo.id)
-          : [];
-      } catch (error) {
-        return [];
-      }
-    },
-    enabled: !!user,
-  });
-
-  const { mutate: toggleLike } = useMutation({
-    mutationFn: async (photoId) => {
-      const response = await api.post(`/api/gallery/photos/${photoId}/like/`);
-      return { 
-        ...response.data.photo, 
-        action: response.data.action,
-        photoId 
-      };
-    },
-    onMutate: async (photoId) => {
-      await queryClient.cancelQueries({ queryKey: ['gallery', galleryId] });
-      await queryClient.cancelQueries({ queryKey: ['likedPhotos', galleryId] });
-
-      const previousGallery = getGallery();
-      const previousLikes = getLikes();
-      const currentPhoto = previousGallery?.photos?.find((p) => p.id === photoId);
-      const isLiked = previousLikes.includes(photoId);
-      const currentLikeCount = currentPhoto?.like_count || 0;
-
-      // 🔥 Optimistic update
-      updateGalleryCache(photoId, (photo) => ({
-        ...photo,
-        like_count: isLiked 
-          ? Math.max(0, currentLikeCount - 1) 
-          : currentLikeCount + 1,
-        is_liked: !isLiked,
-      }));
-
-      updateLikesCache(photoId, !isLiked);
-
-      return { previousGallery, previousLikes };
-    },
-    onError: (error, photoId, context) => {
-      rollback(context);
-      toast.error('Failed to update like');
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['gallery', galleryId], refetchType: 'inactive' });
-      queryClient.invalidateQueries({ queryKey: ['likedPhotos', galleryId], refetchType: 'inactive' });
-    },
-  });
-
-  // ---------------- Public API ----------------
+  // Check if a photo is liked
   const isLiked = (photoId) => {
-    const galleryData = getGallery();
-    const photo = galleryData?.photos?.find((p) => p.id === photoId);
-    if (typeof photo?.is_liked === 'boolean') return photo.is_liked;
-    return Array.isArray(likedPhotos) ? likedPhotos.includes(photoId) : false;
+    const gallery = queryClient.getQueryData(["gallery", galleryId]);
+    if (!gallery?.photos) return false;
+    return gallery.photos.some((p) => p.id === photoId && p.is_liked);
   };
 
-  const getLikeCount = (photoId) => {
-    const galleryData = getGallery();
-    const photo = galleryData?.photos?.find((p) => p.id === photoId);
-    return photo?.like_count ?? 0;
-  };
+  // Mutation for toggling like
+// In usePhotoLikes.js
+const { mutateAsync: toggleLike, isLoading } = useMutation({
+  mutationFn: async ({ photoId, currentLiked }) => {
+    if (!user) {
+      const currentPath = window.location.pathname;
+      navigate('/login', { 
+        state: { from: currentPath },
+        replace: true 
+      });
+      throw new Error('User not authenticated');
+    }
 
-  return {
-    likedPhotos: new Set(likedPhotos || []),
-    isLiked,
-    getLikeCount,
-    toggleLike,
-  };
+    if (currentLiked) {
+      await api.delete(`/api/gallery/photos/${photoId}/like/`);
+    } else {
+      await api.post(`/api/gallery/photos/${photoId}/like/`);
+    }
+  },
+  onError: (err) => {
+    // Only show error toast if it's not an auth error
+    if (err.message !== 'User not authenticated') {
+      toast.error("Failed to update like status");
+    }
+  },
+  // ... rest of the code
+});
+
+  return { isLiked, toggleLike, isLoading };
 };

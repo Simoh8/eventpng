@@ -16,12 +16,12 @@ from django.core.cache import cache
 from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
-from .models import Event, Gallery, Photo, Download, Like
+from gallery.models import Event, Gallery, Photo, Download, Like
 
 # Get the custom user model
 User = get_user_model()
-from .serializers import GalleryListSerializer, LikeSerializer
-from . import serializers
+from gallery.serializers import GalleryListSerializer, LikeSerializer
+from gallery import serializers
 from accounts.permissions import IsOwnerOrReadOnly, IsPhotographer, IsStaffOrSuperuser
 
 class StatsView(APIView):
