@@ -604,8 +604,23 @@ const GalleryDetail = () => {
           Back to event
         </button>
 
-        {/* Gallery Header */}
-        <div className="mb-8 bg-white p-6 rounded-xl shadow-md border border-gray-100">
+        {/* Cover Photo */}
+      {gallery.cover_image && (
+        <div className="mb-8 rounded-xl overflow-hidden shadow-lg border border-gray-200">
+          <img
+            src={gallery.cover_image}
+            alt={`${gallery.title} cover`}
+            className="w-full h-64 md:h-96 object-cover"
+            onError={(e) => {
+              e.target.onerror = null;
+              e.target.src = 'https://images.unsplash.com/photo-1516450360452-1f389e6b5cef?auto=format&fit=crop&w=1470&q=80';
+            }}
+          />
+        </div>
+      )}
+
+      {/* Gallery Header */}
+      <div className="mb-8 bg-white p-6 rounded-xl shadow-md border border-gray-100">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">{gallery.title}</h1>
