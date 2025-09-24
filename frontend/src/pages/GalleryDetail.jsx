@@ -773,7 +773,7 @@ const GalleryDetail = () => {
               <PhotoControls
                 photoId={selectedPhoto.id}
                 isSelected={selectedPhotos.has(selectedPhoto.id)}
-                isLiked={isLiked}
+                isLiked={isLiked(selectedPhoto.id)}  // Call the function with photoId
                 likeCount={selectedPhoto.like_count}
                 onToggleSelect={togglePhotoSelection}
                 onToggleLike={handleLikeToggle}

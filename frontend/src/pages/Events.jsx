@@ -35,7 +35,12 @@ const setCachedPin = (slug, pin) => {
 };
 
 // Process events
-const processEvents = (eventsData) => Array.isArray(eventsData) ? eventsData : [];
+const processEvents = (eventsData) => {
+  if (!eventsData) return [];
+  // Handle both array and object with results property
+  const events = Array.isArray(eventsData) ? eventsData : (eventsData.results || []);
+  return events;
+};
 
 const Events = () => {
   const navigate = useNavigate();
@@ -52,19 +57,25 @@ const Events = () => {
 
   // Debounce search
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 500);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+    }, 500);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
   // Fetch events
   const { data: eventsData, error, status, isFetching } = useQuery({
-    queryKey: generateCacheKey(debouncedSearch, selectedCategory),
+    queryKey: ['events', { search: debouncedSearch, category: selectedCategory }],
     queryFn: async ({ signal }) => {
-      const params = {
-        search: debouncedSearch || undefined,
-        category: selectedCategory !== 'All' ? selectedCategory : undefined,
-      };
-      const response = await api.get('api/gallery/public/events/', { params, signal, timeout: 10000 });
+      const params = new URLSearchParams();
+      if (debouncedSearch) params.append('search', debouncedSearch);
+      if (selectedCategory && selectedCategory !== 'All') params.append('category', selectedCategory);
+      
+      const response = await api.get('/api/gallery/public/events/', { 
+        params,
+        signal, 
+        timeout: 10000 
+      });
       return response.data;
     },
     staleTime: 2 * 60 * 1000,
@@ -86,7 +97,15 @@ const Events = () => {
   // Categories
   const categories = useMemo(() => {
     const allCats = new Set(['All']);
-    if (eventsData?.length) eventsData.forEach(e => e.category && allCats.add(e.category.trim()));
+    const events = eventsData?.results || eventsData || [];
+    if (events.length) {
+      events.forEach(e => {
+        if (e.category) {
+          const category = e.category.trim();
+          if (category) allCats.add(category);
+        }
+      });
+    }
     return Array.from(allCats).sort();
   }, [eventsData]);
 

@@ -714,18 +714,57 @@ class PublicEventListView(generics.ListAPIView):
     """
     View for listing all events (no authentication required).
     Shows all events but hides private event details until PIN is verified.
+    
+    Search Parameters:
+    - search: Search term to filter events by name, description, or location (case-insensitive partial match)
+    - category: Filter events by category (exact match)
     """
     serializer_class = serializers.PublicEventSerializer
     authentication_classes = []  # Disable all authentication
     permission_classes = [permissions.AllowAny]  # Explicitly allow any user
     pagination_class = None
     
-    # Ensure this view is excluded from any authentication checks
-    # by setting authentication_classes to an empty list
-    
     def get_queryset(self):
-        """Return all events, ordered by date (newest first)."""
-        return Event.objects.all().order_by('-date')
+        """Return filtered and ordered events."""
+        queryset = Event.objects.all()
+        
+        # Get search parameters
+        search_query = self.request.query_params.get('search', '').strip()
+        category = self.request.query_params.get('category', '').strip()
+        
+        # Apply search filter if search query is provided
+        if search_query:
+            # Split the search query into individual words
+            search_terms = search_query.split()
+            
+            # Create a list to hold all the Q objects
+            q_objects = []
+            
+            # For each search term, create a Q object that searches in all relevant fields
+            for term in search_terms:
+                q_objects.append(
+                    Q(name__icontains=term) |
+                    Q(description__icontains=term) |
+                    Q(location__icontains=term)
+                )
+            
+            # Combine all Q objects with AND operator to find events that match all search terms
+            # This means an event must contain all search terms (in any field) to be included
+            if q_objects:
+                # Start with the first Q object
+                combined_q = q_objects[0]
+                # Add remaining Q objects with AND operator
+                for q in q_objects[1:]:
+                    combined_q &= q
+                # Apply the combined Q object to the queryset
+                queryset = queryset.filter(combined_q)
+        
+        # Apply category filter if provided
+        if category and category.lower() != 'all':
+            queryset = queryset.filter(category__iexact=category)
+        
+        # Order by date (newest first) and then by name
+        return queryset.order_by('-date', 'name')
     
     def get_serializer_context(self):
         """Add request to serializer context."""

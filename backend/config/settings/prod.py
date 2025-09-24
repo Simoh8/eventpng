@@ -3,6 +3,8 @@ import os
 
 DEBUG = False
 
+
+
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "eventpng.ledgerctrl.com").split(",")
 
 # --- Security settings ---
@@ -44,9 +46,13 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
 ] + MIDDLEWARE
 
+# Frontend URL for password reset and other redirects
+FRONTEND_URL = os.getenv("FRONTEND_URL")
+SITE_URL = os.getenv("SITE_URL")
+
 CORS_ALLOWED_ORIGINS = [
-    "https://eventpng.vercel.app",        # your frontend
-    "https://eventpng.ledgerctrl.com",   # backend domain (optional but safe)
+    FRONTEND_URL,
+    SITE_URL,
 ]
 
 CORS_ALLOW_CREDENTIALS = True
