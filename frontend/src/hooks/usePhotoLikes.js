@@ -17,32 +17,52 @@ export const usePhotoLikes = (galleryId) => {
   };
 
   // Mutation for toggling like
-// In usePhotoLikes.js
-const { mutateAsync: toggleLike, isLoading } = useMutation({
-  mutationFn: async ({ photoId, currentLiked }) => {
-    if (!user) {
-      const currentPath = window.location.pathname;
-      navigate('/login', { 
-        state: { from: currentPath },
-        replace: true 
-      });
-      throw new Error('User not authenticated');
-    }
+  const { mutateAsync: toggleLike, isLoading } = useMutation({
+    mutationFn: async ({ photoId, currentLiked }) => {
+      if (!user) throw new Error("User not authenticated");
 
-    if (currentLiked) {
-      await api.delete(`/api/gallery/photos/${photoId}/like/`);
-    } else {
-      await api.post(`/api/gallery/photos/${photoId}/like/`);
-    }
-  },
-  onError: (err) => {
-    // Only show error toast if it's not an auth error
-    if (err.message !== 'User not authenticated') {
-      toast.error("Failed to update like status");
-    }
-  },
-  // ... rest of the code
-});
+      if (currentLiked) {
+        await api.delete(`/api/gallery/photos/${photoId}/like/`);
+      } else {
+        await api.post(`/api/gallery/photos/${photoId}/like/`);
+      }
+    },
+    onMutate: async ({ photoId, currentLiked }) => {
+      await queryClient.cancelQueries(["gallery", galleryId]);
+
+      const prevData = queryClient.getQueryData(["gallery", galleryId]);
+
+      queryClient.setQueryData(["gallery", galleryId], (old) => {
+        if (!old?.photos) return old;
+        return {
+          ...old,
+          photos: old.photos.map((p) =>
+            p.id === photoId
+              ? {
+                  ...p,
+                  is_liked: !currentLiked,
+                  like_count: (p.like_count || 0) + (currentLiked ? -1 : 1),
+                }
+              : p
+          ),
+        };
+      });
+
+      return { prevData };
+    },
+    onError: (err, _, context) => {
+      queryClient.setQueryData(["gallery", galleryId], context?.prevData);
+      if (err.message === "User not authenticated") {
+        navigate("/login");
+        toast("Please log in to like photos", { icon: "🔒" });
+      } else {
+        toast.error("Failed to update like status");
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries(["gallery", galleryId]);
+    },
+  });
 
   return { isLiked, toggleLike, isLoading };
 };
