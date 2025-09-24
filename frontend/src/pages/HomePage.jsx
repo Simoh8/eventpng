@@ -79,22 +79,17 @@ const RecentGalleryCard = ({ gallery }) => {
   useEffect(() => {
     console.log('Gallery Data:', gallery);
     if (gallery.images) {
-      console.log('Gallery Images:', gallery.images);
     }
     if (gallery.cover_image) {
-      console.log('Cover Image:', gallery.cover_image);
     }
   }, [gallery]);
   
   // Get the primary image for the gallery, prioritizing the cover_photo
   const getPrimaryImage = React.useMemo(() => {
     try {
-      // Helper function to construct full URL for media files
       const getFullImageUrl = (path) => {
         if (!path) return null;
-        // If it's already a full URL, return as is
         if (path.startsWith('http')) return path;
-        // Otherwise, construct the full URL by prepending the API base URL
         return `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}${path}`;
       };
       

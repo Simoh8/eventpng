@@ -60,14 +60,16 @@ const createGallery = async ({ eventId, photos, title, description, isPublic, is
   formData.append('is_active', isActive);
   formData.append('price', price);
   
+  // Always include the cover_photo_index (default to 0 if not set)
+  const finalCoverPhotoIndex = coverPhotoIndex !== null && !isNaN(coverPhotoIndex) ? coverPhotoIndex : 0;
+  formData.append('cover_photo_index', finalCoverPhotoIndex);
+  
   // Append each photo to the form data
-  photos.forEach((photo, index) => {
+  photos.forEach((photo) => {
     formData.append('photos', photo);
-    // If this is the cover photo, add a flag
-    if (index === coverPhotoIndex) {
-      formData.append('cover_photo_index', index);
-    }
   });
+  
+  console.log('Sending to server - cover_photo_index:', finalCoverPhotoIndex, 'total photos:', photos.length);
 
   // Start processing simulation
   let processingProgress = 0;
@@ -336,17 +338,34 @@ export default function CreateGallery() {
       return;
     }
     
+    // Log the cover photo index for debugging
+    console.log('Submitting with cover photo index:', coverPhotoIndex);
+    
     setHasOngoingRequest(true);
     setIsProcessing(true);
-    createGalleryMutation.mutate({
+    
+    // Prepare the data to send
+    const galleryData = {
       eventId: selectedEvent,
       photos,
-      title,
-      description,
+      title: title.trim() || null, // Use null instead of empty string for the backend
+      description: description.trim() || null,
       isPublic,
       isActive,
       price: priceValue.toFixed(2),
       coverPhotoIndex: coverPhotoIndex !== null ? coverPhotoIndex : 0 // Default to first photo if none selected
+    };
+    
+    console.log('Submitting gallery data:', galleryData);
+    
+    // Submit the gallery data
+    createGalleryMutation.mutate(galleryData, {
+      onError: (error) => {
+        console.error('Error creating gallery:', error);
+        toast.error(error.message || 'Failed to create gallery. Please try again.');
+        setHasOngoingRequest(false);
+        setIsProcessing(false);
+      }
     });
   };
   
