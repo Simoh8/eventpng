@@ -1,48 +1,46 @@
 import React from 'react';
-import { FaHeart, FaRegHeart, FaCheck } from 'react-icons/fa';
+import { FaCheck } from 'react-icons/fa';
 
 const PhotoControls = ({
   photoId,
   isSelected,
-  isLiked,
-  likeCount,
   onToggleSelect,
-  onToggleLike,
   className = ''
 }) => {
   return (
     <div className={`absolute top-4 left-4 flex items-center gap-4 z-10 ${className}`}>
-      {/* Selection checkbox */}
       <div
         onClick={(e) => {
           e.stopPropagation();
-          onToggleSelect(photoId);
+          onToggleSelect?.(photoId);
         }}
-        className="cursor-pointer"
+        className={`
+          relative w-9 h-9 flex items-center justify-center rounded-full cursor-pointer 
+          border-2 transition-all duration-300 ease-out
+          ${isSelected
+            ? 'bg-blue-500 border-blue-600 text-white shadow-lg'
+            : 'bg-white border-gray-300 text-gray-400 shadow-md hover:border-blue-400 hover:text-blue-500 hover:shadow-lg'
+          }
+          group
+        `}
       >
-        <div className={`w-8 h-8 flex items-center justify-center rounded-full ${
-          isSelected ? 'bg-blue-600' : 'bg-white bg-opacity-80'
-        }`}>
-          {isSelected && <FaCheck className="w-5 h-5 text-white" />}
-        </div>
+        {/* Always show the checkmark, just change color and weight */}
+        <FaCheck className={`
+          w-4 h-4 transition-all duration-300
+          ${isSelected 
+            ? 'opacity-100 scale-100' 
+            : 'opacity-60 scale-90 group-hover:opacity-100'
+          }
+        `} />
+        
+        {/* Subtle background pattern for unselected */}
+        <div className={`
+          absolute inset-0 rounded-full bg-gradient-to-br from-transparent to-gray-100 opacity-60
+          transition-opacity duration-300
+          ${isSelected ? 'opacity-0' : 'opacity-60'}
+        `} />
       </div>
-
-      {/* Like button */}
-      <button
-        onClick={(e) => onToggleLike(photoId, e)}
-        className="flex items-center gap-1 text-white hover:text-red-400 transition-colors bg-black bg-opacity-60 hover:bg-opacity-80 rounded-full p-2 group"
-      >
-        {isLiked(photoId) ? (
-          <FaHeart className="text-red-500 text-xl group-hover:scale-110 transition-transform" />
-        ) : (
-          <FaRegHeart className="text-white text-xl group-hover:scale-110 transition-transform" />
-        )}
-        <span className="text-white text-sm font-medium ml-1">
-          {likeCount || 0}
-        </span>
-      </button>
     </div>
   );
 };
-
 export default PhotoControls;

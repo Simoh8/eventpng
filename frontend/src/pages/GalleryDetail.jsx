@@ -460,45 +460,15 @@ const GalleryDetail = () => {
 
   const handleLikeToggle = async (photoId, e) => {
     e.stopPropagation();
-
     try {
-      const currentLiked = isLiked(photoId);
-
-      queryClient.setQueryData(['gallery', slug], oldData => {
-        if (!oldData) return oldData;
-
-        return {
-          ...oldData,
-          photos: oldData.photos.map(photo =>
-            photo.id === photoId
-              ? {
-                ...photo,
-                is_liked: !currentLiked,
-                like_count: photo.like_count + (currentLiked ? -1 : 1),
-              }
-              : photo
-          ),
-        };
+      await toggleLike({ 
+        photoId, 
+        currentLiked: isLiked(photoId) 
       });
-
-      await toggleLike(photoId, currentLiked);
-
-      queryClient.invalidateQueries(['gallery', slug]);
-
-      // toast.success(currentLiked ? 'Removed like' : 'Liked photo!');
     } catch (error) {
 
-      queryClient.invalidateQueries(['gallery', slug]);
-
-      if (error.message === 'User not authenticated') {
-        navigate('/login', { state: { from: window.location.pathname } });
-        toast('Please log in to like photos', { icon: '🔒', duration: 3000 });
-      } else {
-        toast.error(error.response?.data?.error || 'Failed to update like status');
-      }
     }
   };
-
 
   // Close fullscreen
   const handleCloseFullscreen = () => {
@@ -741,19 +711,23 @@ const GalleryDetail = () => {
 
                 {/* Like button overlay */}
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation(); // prevent opening modal
-                    toggleLike(photo.id); // 🚀 instantly simulates like/unlike
-                  }}
-                  className="absolute top-2 right-2 flex items-center gap-1 bg-gray-900 bg-opacity-60 text-white rounded-full px-2 py-1 text-sm hover:bg-opacity-80 transition"
-                >
-                  {isLiked(photo.id) ? (
-                    <FaHeart className="text-red-500" />
-                  ) : (
-                    <FaRegHeart className="text-white" />
-                  )}
-                  <span>{photo.like_count}</span>
-                </button>
+                      onClick={(e) => handleLikeToggle(photo.id, e)}
+                      className={`absolute top-2 right-2 flex items-center gap-1 rounded-full px-2 py-1 text-sm transition
+                        ${isLiked(photo.id) 
+                          ? 'bg-red-600 text-white hover:bg-red-700'   // active (liked)
+                          : 'bg-gray-900 bg-opacity-60 text-white hover:bg-opacity-80'} // inactive
+                      `}
+                    >
+                      {isLiked(photo.id) ? (
+                        <FaHeart className="text-white" />
+                      ) : (
+                        <FaRegHeart />
+                      )}
+                      <span>{photo.like_count}</span>
+                    </button>
+
+
+
               </div>
             ))}
 

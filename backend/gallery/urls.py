@@ -11,11 +11,11 @@ urlpatterns = [
     path('galleries/create/', GalleryCreateView.as_view(), name='gallery-create'),
     path('galleries/<int:pk>/', GalleryDetailView.as_view(), name='gallery-detail'),
     
-    # Photo endpoints
+    # Photo endpoints - using UUID for photo_id
     path('galleries/<int:gallery_id>/photos/', PhotoListView.as_view(), name='photo-list'),
-    path('galleries/<int:gallery_id>/photos/<int:photo_id>/', PhotoDetailView.as_view(), name='photo-detail'),
-    path('photos/<int:photo_id>/download/', DownloadPhotoView.as_view(), name='download-photo'),
-    path('photos/<int:photo_id>/protected/', ProtectedImageView.as_view(), name='protected-photo'),
+    path('galleries/<int:gallery_id>/photos/<uuid:photo_id>/', PhotoDetailView.as_view(), name='photo-detail'),
+    path('photos/<uuid:photo_id>/download/', DownloadPhotoView.as_view(), name='download-photo'),
+    path('photos/<uuid:photo_id>/protected/', ProtectedImageView.as_view(), name='protected-photo'),
     
     # Public endpoints (no authentication required)
     path('public/galleries/', PublicGalleryListView.as_view(), name='public-gallery-list'),
@@ -41,9 +41,9 @@ urlpatterns = [
     # Event stats endpoint
     path('events/<int:event_id>/stats/', event_stats, name='event-stats'),
     
-    # Like endpoints
-    path('photos/<int:photo_id>/like/', LikePhotoView.as_view(), name='like-photo'),
-    path('photos/<int:photo_id>/unlike/', UnlikePhotoView.as_view(), name='unlike-photo'),
+    # Like endpoints - using UUID for photo_id
+    path('photos/<uuid:photo_id>/like/', LikePhotoView.as_view(), name='like-photo'),
+    path('photos/<uuid:photo_id>/unlike/', UnlikePhotoView.as_view(), name='unlike-photo'),
     path('user/liked-photos/', UserLikedPhotosView.as_view(), name='user-liked-photos'),
     
     # Recent galleries endpoint
