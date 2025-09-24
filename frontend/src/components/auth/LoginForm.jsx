@@ -139,7 +139,6 @@ const LoginForm = ({ onSuccess, redirectTo = '/' }) => {
               ? '/photographer-dashboard'
               : '/my-gallery';
           
-          console.log('Google login successful, navigating to:', targetPath);
           
           // Add a small delay to ensure all state updates are processed
           setTimeout(() => {

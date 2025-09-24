@@ -77,7 +77,6 @@ const RecentGalleryCard = ({ gallery }) => {
   
   // Log gallery data when component mounts or gallery changes
   useEffect(() => {
-    console.log('Gallery Data:', gallery);
     if (gallery.images) {
     }
     if (gallery.cover_image) {

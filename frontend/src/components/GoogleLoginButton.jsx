@@ -19,7 +19,6 @@ const GoogleLoginButton = ({ text = 'Continue with Google', isSignUp = false }) 
   }, [isAuthenticated, from, navigate]);
 
   const handleSuccess = async (credentialResponse) => {
-    console.log('Google OAuth response:', credentialResponse);
     
     if (!credentialResponse.credential) {
       const errorMsg = 'Authentication failed: No credential received from Google';

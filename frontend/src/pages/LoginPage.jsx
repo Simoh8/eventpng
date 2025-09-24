@@ -35,7 +35,6 @@ export default function LoginPage() {
       // Use the from location if it exists and is not the login page
       const targetPath = (from && from !== '/login') ? from : dashboardPath;
 
-      console.log('Already authenticated, redirecting to:', targetPath);
       navigate(targetPath, {
         replace: true,
         state: { from: undefined }
