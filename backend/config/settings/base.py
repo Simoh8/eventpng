@@ -43,7 +43,6 @@ INSTALLED_APPS = [
     "allauth.socialaccount.providers.google",
     "drf_spectacular",
     "storages",
-
     # Local apps
     "accounts",
     "gallery",
@@ -53,6 +52,23 @@ INSTALLED_APPS = [
 ]
 
 SITE_ID = 1
+
+# Celery Configuration
+CELERY_BROKER_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Cache configuration
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': os.getenv('REDIS_URL', 'redis://localhost:6379/1'),
+    }
+}
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

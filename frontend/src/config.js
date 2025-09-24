@@ -20,7 +20,7 @@ export const API_ENDPOINTS = {
   EVENTS: `${API_BASE_URL}api/gallery/events/`,
   PUBLIC_EVENTS: `${API_BASE_URL}api/gallery/public/events/`,
   STATS: `${API_BASE_URL}api/gallery/stats/`,
-  RECENT_GALLERIES: `${API_BASE_URL}api/gallery/recent/`,
+  RECENT_GALLERIES: `${API_BASE_URL}api/gallery/recent-galleries/`,
   
   // Event endpoints
   EVENT_DETAIL: (slug) => `${API_BASE_URL}api/gallery/public/events/slug/${slug}/`,

@@ -7,14 +7,18 @@ import { API_BASE_URL } from '../config';
 import { useAuth } from '../context/AuthContext';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import { FaHeart, FaRegHeart, FaDownload, FaArrowLeft, FaLock, FaCalendar, FaUser, FaClock, FaCheck, FaShareAlt } from 'react-icons/fa';
+import { FaShareAlt, FaHeart, FaRegHeart, FaUser, FaCalendar, FaClock, FaArrowLeft , FaLock, FaDownload} from 'react-icons/fa';
+import DownloadButton from '../components/gallery/DownloadButton';
+import NavigationArrows from '../components/gallery/NavigationArrows';
+import PhotoViewer from '../components/gallery/PhotoViewer';
+import PhotoControls from '../components/gallery/PhotoControls';
 
 const GalleryDetail = () => {
   const { id: slug } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  
+
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -27,41 +31,41 @@ const GalleryDetail = () => {
     queryKey: ['gallery', slug],
     queryFn: async () => {
       const isVerified = sessionStorage.getItem(`gallery_${slug}_verified`) === 'true';
-      
+
       const headers = {};
       if (isVerified) {
         headers['X-Gallery-Verification'] = sessionStorage.getItem(`gallery_${slug}_token`) || '';
       }
-      
+
       let url;
       if (!isNaN(slug)) {
-        url = `${API_BASE_URL}/api/gallery/public/galleries/by-id/${slug}/`;
+        url = `${API_BASE_URL}api/gallery/public/galleries/by-id/${slug}/`;
       } else {
-        url = `${API_BASE_URL}/api/gallery/public/galleries/${slug}/`;
+        url = `${API_BASE_URL}api/gallery/public/galleries/${slug}/`;
       }
-      
+
       try {
         const response = await fetch(url, { headers });
-        
+
         if (response.status === 403) {
           const errorData = await response.json().catch(() => ({}));
           if (errorData.requires_pin) {
             return { is_private: true, requires_pin: true };
           }
         }
-        
+
         if (!response.ok) throw new Error('Gallery not found');
-        
+
         const data = await response.json();
-        
+
         if (data.slug && data.slug !== slug) {
           window.history.replaceState({}, '', `/gallery/${data.slug}`);
         }
-        
+
         if (data.is_private && !isVerified) {
           return { ...data, requires_pin: true };
         }
-        
+
         return data;
       } catch (err) {
         throw new Error('Failed to load gallery. Please try again later.');
@@ -73,7 +77,7 @@ const GalleryDetail = () => {
 
   // Photo likes hook
   const { isLiked, toggleLike, isLoading: isLikeLoading } = usePhotoLikes(gallery?.id);
-  
+
   // Debug: Log gallery data when it changes
   useEffect(() => {
     if (gallery?.photos) {
@@ -148,14 +152,14 @@ const GalleryDetail = () => {
   // Photo navigation in fullscreen
   const navigatePhoto = (direction) => {
     if (!selectedPhoto || !gallery?.photos) return;
-    
+
     const currentIndex = gallery.photos.findIndex(photo => photo.id === selectedPhoto.id);
     if (currentIndex === -1) return;
-    
-    const newIndex = direction === 'next' 
+
+    const newIndex = direction === 'next'
       ? (currentIndex + 1) % gallery.photos.length
       : (currentIndex - 1 + gallery.photos.length) % gallery.photos.length;
-    
+
     setSelectedPhoto(gallery.photos[newIndex]);
   };
 
@@ -171,10 +175,10 @@ const GalleryDetail = () => {
   // Select all photos
   const selectAllPhotos = () => {
     if (!gallery?.photos) return;
-    
-    setSelectedPhotos(prev => 
-      prev.size === gallery.photos.length 
-        ? new Set() 
+
+    setSelectedPhotos(prev =>
+      prev.size === gallery.photos.length
+        ? new Set()
         : new Set(gallery.photos.map(photo => photo.id))
     );
   };
@@ -185,25 +189,25 @@ const GalleryDetail = () => {
       toast.error('No gallery specified');
       return false;
     }
-    
+
     setIsVerifying(true);
-    
+
     try {
       const galleryResponse = await fetch(`${API_BASE_URL}/api/gallery/public/galleries/${slug}/`);
       if (!galleryResponse.ok) throw new Error('Failed to fetch gallery details');
-      
+
       const galleryData = await galleryResponse.json();
       if (!galleryData.event?.slug) throw new Error('Gallery not associated with an event');
-      
+
       const response = await fetch(`${API_BASE_URL}/api/gallery/events/${galleryData.event.slug}/verify-pin/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ pin })
       });
-      
+
       const responseData = await response.json().catch(() => ({}));
-      
+
       if (response.ok && responseData.success) {
         sessionStorage.setItem(`event_${galleryData.event.slug}_verified`, 'true');
         setShowPinModal(false);
@@ -223,54 +227,92 @@ const GalleryDetail = () => {
   };
 
   // Add watermark to image
-  const addWatermark = (imageUrl, text = ' EventPNG') => {
-    return new Promise((resolve) => {
+  const addWatermark = (imageUrl, text = 'EventPNG') => {
+    return new Promise((resolve, reject) => {
       const img = new Image();
-      img.crossOrigin = 'Anonymous';
-      img.src = imageUrl;
       
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        
-        ctx.drawImage(img, 0, 0, img.width, img.height);
-        
-        const fontSize = Math.max(img.width * 0.03, 20);
-        ctx.font = `${fontSize}px Arial`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        
-        const textWidth = ctx.measureText(text).width;
-        const spacing = textWidth * 1.5;
-        const angle = -20 * Math.PI / 180;
-        
-        ctx.save();
-        ctx.translate(canvas.width / 2, canvas.height / 2);
-        ctx.rotate(angle);
-        
-        for (let x = -canvas.width; x < canvas.width * 2; x += spacing) {
-          for (let y = -canvas.height; y < canvas.height * 2; y += spacing * 2) {
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-            ctx.shadowBlur = 5;
-            ctx.shadowOffsetX = 1;
-            ctx.shadowOffsetY = 1;
-            
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-            ctx.lineWidth = 2;
-            ctx.strokeText(text, x, y);
-            
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-            ctx.fillText(text, x, y);
-            
-            ctx.shadowColor = 'transparent';
+      // Add timestamp to prevent caching issues
+      const timestamp = new Date().getTime();
+      const urlWithTimestamp = `${imageUrl}${imageUrl.includes('?') ? '&' : '?'}t=${timestamp}`;
+      
+      // Set crossOrigin to anonymous to handle CORS
+      img.crossOrigin = 'Anonymous';
+      
+      // Create a canvas for the watermark text to measure it
+      const textCanvas = document.createElement('canvas');
+      const textCtx = textCanvas.getContext('2d');
+      
+      img.onload = function() {
+        try {
+          // Create main canvas with the same dimensions as the image
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          
+          // Draw the original image
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          
+          // Set text style
+          const fontSize = Math.max(canvas.width * 0.04, 24);
+          const fontFamily = 'Arial, sans-serif';
+          ctx.font = `600 ${fontSize}px ${fontFamily}`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          
+          // Calculate text metrics
+          const textWidth = ctx.measureText(text).width;
+          const spacing = textWidth * 2;
+          const angle = -20 * Math.PI / 180;
+          
+          // Move to center of canvas
+          ctx.save();
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          ctx.rotate(angle);
+          
+          // Draw watermark pattern
+          for (let x = -canvas.width; x < canvas.width * 2; x += spacing) {
+            for (let y = -canvas.height; y < canvas.height * 2; y += spacing * 1.5) {
+              // Draw text shadow
+              ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+              ctx.shadowBlur = 8;
+              ctx.shadowOffsetX = 1;
+              ctx.shadowOffsetY = 1;
+              
+              // Draw outline
+              ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+              ctx.lineWidth = 2;
+              ctx.strokeText(text, x, y);
+              
+              // Draw main text
+              ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+              ctx.fillText(text, x, y);
+              
+              // Reset shadow
+              ctx.shadowColor = 'transparent';
+            }
           }
+          
+          ctx.restore();
+          
+          // Convert to data URL and resolve
+          const watermarkedImage = canvas.toDataURL('image/jpeg', 0.9);
+          resolve(watermarkedImage);
+        } catch (error) {
+          console.error('Error adding watermark:', error);
+          // If there's an error, return the original image
+          resolve(imageUrl);
         }
-        
-        ctx.restore();
-        resolve(canvas.toDataURL('image/jpeg', 0.9));
       };
+      
+      // Set up error handling
+      img.onerror = function() {
+        console.error('Error loading image for watermarking');
+        resolve(imageUrl); // Return original URL if image fails to load
+      };
+      
+      // Start loading the image
+      img.src = urlWithTimestamp;
     });
   };
 
@@ -279,7 +321,7 @@ const GalleryDetail = () => {
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
-      
+
       // Make sure photoId is treated as a string (UUID)
       const response = await fetch(`${API_BASE_URL}/api/gallery/photos/${String(photoId)}/download/`, {
         method: 'POST',
@@ -289,24 +331,24 @@ const GalleryDetail = () => {
         },
         credentials: 'include'
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         return;
       }
-      
+
       // Update the photo's download count in the local state
       queryClient.setQueryData(['gallery', slug], (oldData) => {
         if (!oldData?.photos) return oldData;
-        
+
         return {
           ...oldData,
-          photos: oldData.photos.map(photo => 
+          photos: oldData.photos.map(photo =>
             photo.id === photoId
-              ? { 
-                  ...photo, 
-                  download_count: (typeof photo.download_count === 'number' ? photo.download_count : 0) + 1 
-                }
+              ? {
+                ...photo,
+                download_count: (typeof photo.download_count === 'number' ? photo.download_count : 0) + 1
+              }
               : photo
           )
         };
@@ -318,30 +360,36 @@ const GalleryDetail = () => {
 
   // Download single image
   const downloadImage = async (photo) => {
-    if (isDownloading || !user) {
-      if (!user) {
-        navigate('/login', { state: { from: window.location.pathname } });
-        toast.info('Please log in to download images');
-      }
+    if (isDownloading) return;
+
+    // If user is not logged in, ask them to log in first
+    if (!user) {
+      navigate('/login', { state: { from: window.location.pathname } });
+      toast.info('Please log in to download images');
       return;
     }
-    
+
     setIsDownloading(true);
-    
+
     try {
       // First record the download
       await recordDownload(photo.id);
-      
-      // Then proceed with the download
-      const watermarkedImage = await addWatermark(photo.image);
+
+      // Create a temporary link for downloading the original image (no watermark)
       const link = document.createElement('a');
-      link.href = watermarkedImage;
+      
+      // Use the original image URL for download
+      link.href = photo.image;
       link.download = `eventpix-${gallery.title}-${photo.id}.jpg`;
+      
+      // Trigger the download
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      toast.success('Image downloaded with watermark');
+      
+      toast.success('Image downloaded without watermark');
     } catch (error) {
+      console.error('Download error:', error);
       toast.error('Failed to download image');
     } finally {
       setIsDownloading(false);
@@ -355,15 +403,15 @@ const GalleryDetail = () => {
       toast.info('Please log in to download images');
       return;
     }
-    
+
     try {
       setIsDownloading(true);
       const zip = new JSZip();
       const folder = zip.folder(zipName);
-      
+
       // Record all downloads first
       await Promise.all(photos.map(photo => recordDownload(photo.id)));
-      
+
       // Then process the images for download
       const imagePromises = photos.map(async (photo, index) => {
         try {
@@ -374,7 +422,7 @@ const GalleryDetail = () => {
         } catch (error) {
         }
       });
-      
+
       await Promise.all(imagePromises);
       const content = await zip.generateAsync({ type: 'blob' });
       saveAs(content, `${zipName}.zip`);
@@ -392,7 +440,7 @@ const GalleryDetail = () => {
       toast.error('Please select at least one image');
       return;
     }
-    
+
     const selectedPhotoObjects = gallery.photos.filter(photo => selectedPhotos.has(photo.id));
     await downloadImagesAsZip(selectedPhotoObjects, `eventpix-${gallery.title}-selected`);
     setSelectedPhotos(new Set());
@@ -412,36 +460,36 @@ const GalleryDetail = () => {
 
   const handleLikeToggle = async (photoId, e) => {
     e.stopPropagation();
-    
+
     try {
       const currentLiked = isLiked(photoId);
-  
+
       queryClient.setQueryData(['gallery', slug], oldData => {
         if (!oldData) return oldData;
-  
+
         return {
           ...oldData,
           photos: oldData.photos.map(photo =>
             photo.id === photoId
               ? {
-                  ...photo,
-                  is_liked: !currentLiked,
-                  like_count: photo.like_count + (currentLiked ? -1 : 1),
-                }
+                ...photo,
+                is_liked: !currentLiked,
+                like_count: photo.like_count + (currentLiked ? -1 : 1),
+              }
               : photo
           ),
         };
       });
-  
+
       await toggleLike(photoId, currentLiked);
-  
+
       queryClient.invalidateQueries(['gallery', slug]);
-  
+
       // toast.success(currentLiked ? 'Removed like' : 'Liked photo!');
     } catch (error) {
-  
+
       queryClient.invalidateQueries(['gallery', slug]);
-  
+
       if (error.message === 'User not authenticated') {
         navigate('/login', { state: { from: window.location.pathname } });
         toast('Please log in to like photos', { icon: '🔒', duration: 3000 });
@@ -450,7 +498,7 @@ const GalleryDetail = () => {
       }
     }
   };
-  
+
 
   // Close fullscreen
   const handleCloseFullscreen = () => {
@@ -482,7 +530,7 @@ const GalleryDetail = () => {
             <h2 className="mt-3 text-2xl font-bold text-gray-900">Private Gallery</h2>
             <p className="mt-2 text-gray-500">Please enter the PIN to access this gallery</p>
           </div>
-          
+
           <form onSubmit={async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
@@ -507,7 +555,7 @@ const GalleryDetail = () => {
               {isVerifying ? 'Verifying...' : 'Access Gallery'}
             </button>
           </form>
-          
+
           <div className="mt-5 text-center">
             <button
               onClick={() => navigate(-1)}
@@ -548,14 +596,14 @@ const GalleryDetail = () => {
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-50">
       <div className="container mx-auto px-4 py-8">
         {/* Back button */}
-        <button 
+        <button
           onClick={() => navigate(-1)}
           className="mb-6 flex items-center text-blue-600 hover:text-blue-800 font-medium transition-colors group"
         >
           <FaArrowLeft className="w-4 h-4 mr-2 transition-transform group-hover:-translate-x-1" />
           Back to event
         </button>
-        
+
         {/* Gallery Header */}
         <div className="mb-8 bg-white p-6 rounded-xl shadow-md border border-gray-100">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
@@ -567,13 +615,13 @@ const GalleryDetail = () => {
                 </p>
               )}
             </div>
-            
+
             <div className="flex items-center gap-4">
               <div className="bg-gradient-to-r from-blue-100 to-purple-100 text-blue-800 px-5 py-3 rounded-xl border border-blue-200">
                 <div className="text-sm font-medium">Total Photos</div>
                 <div className="text-2xl font-bold">{gallery.photos?.length || 0}</div>
               </div>
-              
+
               <button
                 onClick={() => handleShare()}
                 className="flex items-center gap-2 px-4 py-3 bg-white text-blue-600 rounded-xl border border-blue-200 hover:bg-blue-50 transition-colors shadow-sm"
@@ -584,38 +632,38 @@ const GalleryDetail = () => {
               </button>
             </div>
           </div>
-          
+
           {gallery.photographer && (
             <div className="flex items-center text-gray-600 mb-3">
               <FaUser className="w-4 h-4 mr-2 text-gray-400" />
               <span>Photographer: {gallery.photographer.first_name || gallery.photographer.username}</span>
             </div>
           )}
-          
+
           {gallery.created_at && (
             <div className="flex items-center text-gray-600 mb-3">
               <FaCalendar className="w-4 h-4 mr-2 text-gray-400" />
-              <span>Created on {new Date(gallery.created_at).toLocaleDateString('en-US', { 
-                year: 'numeric', 
-                month: 'long', 
+              <span>Created on {new Date(gallery.created_at).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
                 day: 'numeric',
                 hour: '2-digit',
                 minute: '2-digit'
               })}</span>
             </div>
           )}
-          
+
           {gallery.updated_at && (
             <div className="flex items-center text-gray-600 mb-4">
               <FaClock className="w-4 h-4 mr-2 text-gray-400" />
-              <span>Last updated: {new Date(gallery.updated_at).toLocaleDateString('en-US', { 
-                year: 'numeric', 
-                month: 'short', 
+              <span>Last updated: {new Date(gallery.updated_at).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
                 day: 'numeric'
               })}</span>
             </div>
           )}
-          
+
           {gallery.description && (
             <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
               <h3 className="text-sm font-medium text-blue-700 mb-2">Gallery Description</h3>
@@ -627,7 +675,7 @@ const GalleryDetail = () => {
         {/* Selection and Download Controls */}
         <div className="mb-6 flex flex-wrap justify-between items-center gap-3">
           <h2 className="text-xl font-semibold text-gray-800">Gallery Photos</h2>
-          
+
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-600">
               {selectedPhotos.size} {selectedPhotos.size === 1 ? 'image' : 'images'} selected
@@ -664,35 +712,35 @@ const GalleryDetail = () => {
         {/* Photos Grid */}
         {gallery.photos && gallery.photos.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {gallery.photos.map((photo) => (
-                <div 
-                  key={photo.id}
-                  className="relative group cursor-pointer rounded-lg overflow-hidden shadow hover:shadow-lg transition"
-                  onClick={() => handlePhotoClick(photo)}
-                >
-                  <img 
-                    src={photo.image} 
-                    alt={photo.caption || 'Photo'} 
-                    className="w-full h-48 object-cover"
-                  />
+            {gallery.photos.map((photo) => (
+              <div
+                key={photo.id}
+                className="relative group cursor-pointer rounded-lg overflow-hidden shadow hover:shadow-lg transition"
+                onClick={() => handlePhotoClick(photo)}
+              >
+                <img
+                  src={photo.image}
+                  alt={photo.caption || 'Photo'}
+                  className="w-full h-48 object-cover"
+                />
 
-                  {/* Like button overlay */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation(); // prevent opening modal
-                      toggleLike(photo.id); // 🚀 instantly simulates like/unlike
-                    }}
-                    className="absolute top-2 right-2 flex items-center gap-1 bg-gray-900 bg-opacity-60 text-white rounded-full px-2 py-1 text-sm hover:bg-opacity-80 transition"
-                  >
-                    {isLiked(photo.id) ? (
-                      <FaHeart className="text-red-500" />
-                    ) : (
-                      <FaRegHeart className="text-white" />
-                    )}
-                    <span>{photo.like_count}</span>
-                  </button>
-                </div>
-              ))}
+                {/* Like button overlay */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation(); // prevent opening modal
+                    toggleLike(photo.id); // 🚀 instantly simulates like/unlike
+                  }}
+                  className="absolute top-2 right-2 flex items-center gap-1 bg-gray-900 bg-opacity-60 text-white rounded-full px-2 py-1 text-sm hover:bg-opacity-80 transition"
+                >
+                  {isLiked(photo.id) ? (
+                    <FaHeart className="text-red-500" />
+                  ) : (
+                    <FaRegHeart className="text-white" />
+                  )}
+                  <span>{photo.like_count}</span>
+                </button>
+              </div>
+            ))}
 
           </div>
         ) : (
@@ -707,12 +755,12 @@ const GalleryDetail = () => {
 
       {/* Fullscreen Photo View */}
       {isFullscreen && selectedPhoto && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-95 z-50 flex items-center justify-center p-4"
           onClick={handleCloseFullscreen}
         >
           <div className="relative max-w-5xl w-full max-h-[90vh] flex items-center justify-center">
-            <button 
+            <button
               onClick={(e) => {
                 e.stopPropagation();
                 handleCloseFullscreen();
@@ -723,109 +771,39 @@ const GalleryDetail = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-            
-            {/* Navigation arrows */}
-            {gallery.photos.length > 1 && (
-              <>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigatePhoto('prev');
-                  }}
-                  className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white hover:text-gray-300 z-10 bg-gray-900 bg-opacity-50 rounded-full p-3 transition-colors"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigatePhoto('next');
-                  }}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white hover:text-gray-300 z-10 bg-gray-900 bg-opacity-50 rounded-full p-3 transition-colors"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              </>
-            )}
-            
-            <div className="relative max-w-full max-h-full">
-              <img
-                src={selectedPhoto.image}
-                alt={selectedPhoto.caption || 'Selected photo'}
-                className="max-w-full max-h-[80vh] object-contain rounded-sm"
-                style={{
-                  WebkitUserSelect: 'none',
-                  MozUserSelect: 'none',
-                  msUserSelect: 'none',
-                  userSelect: 'none',
-                  pointerEvents: 'none'
-                }}
+
+            <NavigationArrows 
+              onNavigate={navigatePhoto} 
+              totalPhotos={gallery.photos.length} 
+            />
+
+            <PhotoViewer 
+              photo={selectedPhoto} 
+              showWatermark={!user} // Show watermark for non-logged in users
+            >
+              <PhotoControls
+                photoId={selectedPhoto.id}
+                isSelected={selectedPhotos.has(selectedPhoto.id)}
+                isLiked={isLiked}
+                likeCount={selectedPhoto.like_count}
+                onToggleSelect={togglePhotoSelection}
+                onToggleLike={handleLikeToggle}
               />
-              
-              {/* Controls overlay */}
-              <div className="absolute top-4 left-4 flex items-center gap-4 z-10">
-                {/* Selection checkbox */}
-                <div 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    togglePhotoSelection(selectedPhoto.id);
-                  }}
-                >
-                  <div className={`w-8 h-8 flex items-center justify-center rounded-full ${
-                    selectedPhotos.has(selectedPhoto.id) ? 'bg-blue-600' : 'bg-white bg-opacity-80'
-                  }`}>
-                    {selectedPhotos.has(selectedPhoto.id) && (
-                      <FaCheck className="w-5 h-5 text-white" />
-                    )}
-                  </div>
-                </div>
-                
-                {/* Like button */}
-                <button
-                  onClick={(e) => handleLikeToggle(selectedPhoto.id, e)}
-                  className="flex items-center gap-1 text-white hover:text-red-400 transition-colors bg-gray-900 bg-opacity-50 rounded-full p-2"
-                >
-                  {isLiked(selectedPhoto.id) ? (
-                    <FaHeart className="text-red-500 text-xl" />
-                  ) : (
-                    <FaRegHeart className="text-white text-xl" />
-                  )}
-                  <span className="text-white text-sm font-medium ml-1">
-                    {selectedPhoto.like_count || 0}
-                  </span>
-                </button>
-              </div>
-              
+
               {/* Download button */}
-              {user ? (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    downloadImage(selectedPhoto);
-                  }}
-                  className="absolute top-4 right-16 text-white hover:text-gray-300 z-10 bg-gray-900 bg-opacity-50 rounded-full p-2 transition-colors"
-                  title="Download Image"
-                >
-                  <FaDownload className="h-6 w-6" />
-                </button>
-              ) : (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate('/login', { state: { from: window.location.pathname } });
-                  }}
-                  className="absolute top-4 right-16 text-white hover:text-gray-300 z-10 bg-gray-900 bg-opacity-50 rounded-full p-2 transition-colors"
-                  title="Login to Download"
-                >
-                  Login
-                </button>
-              )}
-            </div>
+              <DownloadButton 
+                photo={selectedPhoto} 
+                onDownload={downloadImage}
+                className="absolute top-4 right-16 z-10"
+              />
+            </PhotoViewer>
+
             
+
+
+
+            
+
             {selectedPhoto.caption && (
               <div className="mt-4 text-white text-center text-lg font-medium">
                 {selectedPhoto.caption}

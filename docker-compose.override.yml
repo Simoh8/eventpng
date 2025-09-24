@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: ./docker/backend/Dockerfile
+    command: celery -A config worker --loglevel=info
+    volumes:
+      - ./backend:/app/backend
+    env_file:
+      - .env
+    environment:
+      - C_FORCE_ROOT=1
+    depends_on:
+      - redis
+      - db
+    networks:
+      - app-network
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: ./docker/backend/Dockerfile
+    command: celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - ./backend:/app/backend
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - db
+      - celery-worker
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  redis_data:
