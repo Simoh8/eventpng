@@ -31,7 +31,6 @@ def send_gallery_notification(gallery):
         'site_url': getattr(settings, 'SITE_URL', 'https://eventpng.com'),  # Keep for backward compatibility
     }
 
-    text_content = render_to_string('emails/new_gallery_notification.txt', context)
     html_content = render_to_string('emails/new_gallery_notification.html', context)
 
     # Send to each user
@@ -39,7 +38,7 @@ def send_gallery_notification(gallery):
         try:
             send_mail(
                 subject=subject,
-                message=text_content,
+                message=html_content,
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[user.email],
                 html_message=html_content,
