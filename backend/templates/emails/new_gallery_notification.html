@@ -75,12 +75,16 @@
     </div>
     
     <!-- Footer -->
-    <div style="padding: 20px; text-align: center; background-color: #f9fafb; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280;">
-      <p style="margin: 0 0 6px;">
-        <a href="{{ frontend_url }}/terms" style="color: #2563eb; text-decoration: none;">Privacy Policy</a>
-      </p>
-      <p style="margin: 0;">&copy; {% now "Y" %} {{ site_name }}. All rights reserved.</p>
-      <p style="margin: 0;">This is an automated message, please do not reply directly.</p>
+    <div class="footer">
+        <div class="footer-links">
+            <a href="{{ protocol }}://{{ domain }}/contact" target="_blank" class="blue-link">Help Center</a>
+            <a href="{{ protocol }}://{{ domain }}/target" target="_blank" class="blue-link">Privacy Policy</a>
+            <a href="{{ protocol }}://{{ domain }}/terms" target="_blank" class="blue-link">Terms of Service</a>
+        </div>
+        <div class="copyright">
+            © {% now "Y" %} EventPNG. All rights reserved.<br>
+            This is an automated message, please do not reply directly to this email.
+        </div>
     </div>
   </div>
 </body>
