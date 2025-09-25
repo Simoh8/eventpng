@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "allauth.socialaccount.providers.google",
     "drf_spectacular",
     "storages",
+    "model_utils",
     # Local apps
     "accounts",
     "gallery",
@@ -219,6 +220,6 @@ SIMPLE_JWT = {
 }
 
 CORS_ALLOW_HEADERS = list(default_headers) + ["pragma"]
-ROOT_URLCONF = "config.urls"   # 👈 FIX
+ROOT_URLCONF = "config.urls"   
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"

@@ -1,0 +1,10 @@
+Hello,
+
+We're excited to let you know that a new gallery "{{ gallery.title }}" has been posted{% if event %} for the event "{{ event.name }}"{% endif %}!
+
+Check it out at: {{ site_url }}/gallery/{{ gallery.slug }}/
+
+{{ gallery.description|default:"" }}
+
+Thanks,
+The {{ site_name }} Team
