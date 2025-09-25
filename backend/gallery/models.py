@@ -9,6 +9,7 @@ from django.core.validators import FileExtensionValidator
 from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 from django.core.files.storage import default_storage
+from model_utils import FieldTracker
 
 def generate_pin():
     """Generate a random 6-digit PIN."""
@@ -232,6 +233,9 @@ class Gallery(models.Model):
         pass
         
     photo_count = property(_get_photo_count, _set_photo_count)
+    
+    # Track changes to is_public field for notifications
+    tracker = FieldTracker(fields=['is_public'])
 
 
 class Photo(models.Model):
@@ -449,7 +453,6 @@ class Payment(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    metadata = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ['-created_at']
