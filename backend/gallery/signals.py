@@ -26,8 +26,9 @@ def send_gallery_notification(gallery):
     context = {
         'gallery': gallery,
         'event': gallery.event,
-        'site_name': getattr(settings, 'SITE_NAME', 'EventPhoto'),
-        'site_url': getattr(settings, 'SITE_URL', 'https://youreventphoto.com'),
+        'site_name': 'EvenPng',  # Fixed site name
+        'frontend_url': getattr(settings, 'FRONTEND_URL', 'https://eventpng.com'),  # Frontend URL
+        'site_url': getattr(settings, 'SITE_URL', 'https://eventpng.com'),  # Keep for backward compatibility
     }
 
     text_content = render_to_string('emails/new_gallery_notification.txt', context)
