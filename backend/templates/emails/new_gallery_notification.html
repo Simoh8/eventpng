@@ -41,25 +41,28 @@
         </div>
         
         <div style="padding: 20px; background: #ffffff;">
-          <h3 style="margin: 0 0 12px; font-size: 18px; color: #111827;">{{ gallery.title }}</h3>
-          
-          {% if gallery.description %}
-          <p style="margin: 0 0 16px; color: #4b5563;">{{ gallery.description }}</p>
-          {% endif %}
-          
-          <!-- Preview Placeholder -->
-          <div style="margin: 20px 0; border-radius: 6px; background: #f3f4f6; border: 1px solid #e5e7eb; padding: 20px; text-align: center; color: #9ca3af; font-size: 14px;">
-            Gallery Preview
+  
+            <!-- Gallery Title -->
+            <h3 style="margin: 0 0 12px; font-size: 18px; color: #111827;">{{ gallery.title }}</h3>
+            
+            <!-- Gallery Description -->
+            {% if gallery.description %}
+            <h4 style="margin: 0 0 8px; font-size: 15px; font-weight: bold; color: #111827;">About this Gallery</h4>
+            <p style="margin: 0 0 16px; color: #4b5563;">{{ gallery.description }}</p>
+            {% endif %}
+            
+
+            
+            <!-- Call to Action -->
+            <h4 style="margin: 0 0 12px; font-size: 15px; font-weight: bold; color: #111827; text-align: center;">Take a Look</h4>
+            <div style="text-align: center; margin: 15px 0 10px;">
+              <a href="{{ frontend_url }}/gallery/{{ gallery.slug }}" 
+                 style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: bold; font-size: 16px;">
+                View Gallery
+              </a>
+            </div>
           </div>
           
-          <!-- CTA Button -->
-          <div style="text-align: center; margin: 25px 0 10px;">
-            <a href="{{ frontend_url }}/gallery/{{ gallery.slug }}" 
-               style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: bold; font-size: 16px;">
-              View Gallery
-            </a>
-          </div>
-        </div>
       </div>
       
       <!-- Section: Note -->
@@ -67,21 +70,25 @@
       <div style="background: #fef3c7; border: 1px solid #fcd34d; padding: 12px 16px; border-radius: 4px; font-size: 14px; color: #92400e; margin-bottom: 25px;">
         If you weren’t expecting this update, you can safely ignore this email.
       </div>
-      
-      <!-- Section: Closing -->
-      <h2 style="font-size: 16px; color: #111827; margin: 0 0 10px;">🤝 Stay Connected</h2>
-      <p style="margin: 0 0 5px;">Best regards,</p>
-      <p style="margin: 0; font-weight: bold;">The {{ site_name }} Team</p>
+
+    
+<!-- Footer -->
+<div style="text-align: center; padding: 20px; background: #f9fafb; font-size: 13px; color: #6b7280; border-top: 1px solid #e5e7eb;">
+  
+    <!-- Footer Links -->
+    <div style="margin-bottom: 10px;">
+      <a href="{{ protocol }}://{{ domain }}/contact" target="_blank" style="margin: 0 8px; color: #2563eb; text-decoration: none;">Help Center</a>
+      <a href="{{ protocol }}://{{ domain }}/privacy" target="_blank" style="margin: 0 8px; color: #2563eb; text-decoration: none;">Privacy Policy</a>
+      <a href="{{ protocol }}://{{ domain }}/terms" target="_blank" style="margin: 0 8px; color: #2563eb; text-decoration: none;">Terms of Service</a>
     </div>
     
-    <!-- Footer -->
-    <div style="padding: 20px; text-align: center; background-color: #f9fafb; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280;">
-      <p style="margin: 0 0 6px;">
-        <a href="{{ frontend_url }}/terms" style="color: #2563eb; text-decoration: none;">Privacy Policy</a>
-      </p>
-      <p style="margin: 0;">&copy; {% now "Y" %} {{ site_name }}. All rights reserved.</p>
-      <p style="margin: 0;">This is an automated message, please do not reply directly.</p>
+    <!-- Copyright -->
+    <div style="font-size: 12px; color: #9ca3af; line-height: 1.5;">
+      © {% now "Y" %} EventPNG. All rights reserved.<br>
+      This is an automated message, please do not reply directly to this email.
     </div>
+  </div>
+  
   </div>
 </body>
 </html>
