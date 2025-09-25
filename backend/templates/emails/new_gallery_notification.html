@@ -1,22 +1,30 @@
-{% extends 'emails/base.html' %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>New Gallery Available - {{ site_name }}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f5f5f5; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: none; width: 100% !important; font-family: Arial, sans-serif; line-height: 1.6; color: #333333;">
+    <!-- Email Container -->
+    <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 0; overflow: hidden;">
+        <!-- Header -->
+        <div style="padding: 25px 20px; text-align: center; background-color: #1a1a1a; color: #ffffff;">
+            <div style="font-size: 24px; font-weight: bold; margin-bottom: 5px;">{{ site_name }}</div>
+            <h1 style="margin: 0; font-size: 20px; font-weight: normal; color: #ffffff;">New Gallery Available</h1>
+        </div>
 
-{% block content %}
-<div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border: 1px solid #e5e7eb;">
-    <!-- Header -->
-    <div style="padding: 30px 20px; text-align: center; border-bottom: 1px solid #e5e7eb;">
-        <div style="font-size: 24px; font-weight: 600; color: #111827; margin-bottom: 10px;">{{ site_name }}</div>
-        <h1 style="margin: 0; font-size: 20px; font-weight: 600; color: #111827;">New Gallery Available</h1>
-    </div>
+        <!-- Content -->
+        <div style="padding: 30px;">
+            <p style="margin: 0 0 20px; color: #4b5563; line-height: 1.6;">Hello {{ user.first_name|default:'there' }},</p>
+            
+            <p style="margin: 0 0 25px; color: #4b5563; line-height: 1.6;">
+                We're excited to let you know that a new gallery has been added to the event:
+            </p>
 
-    <!-- Content -->
-    <div style="padding: 30px;">
-        <p style="margin: 0 0 20px; color: #4b5563; line-height: 1.6;">Hello {{ user.first_name|default:'there' }},</p>
-        
-        <p style="margin: 0 0 25px; color: #4b5563; line-height: 1.6;">
-            We're excited to let you know that a new gallery has been added to the event:
-        </p>
-
-        <!-- Event Card -->
+            <!-- Event Card -->
         <div style="border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 25px;">
             <div style="padding: 16px 20px; border-bottom: 1px solid #e5e7eb; background-color: #f9fafb;">
                 <h2 style="margin: 0 0 8px; font-size: 18px; color: #111827;">{{ event.name }}</h2>
@@ -46,34 +54,29 @@
                     </div>
                 </div>
                 
-                <div style="text-align: center; margin: 25px 0 10px;">
-                    <a href="{{ frontend_url }}/gallery/{{ gallery.slug }}" style="display: inline-flex; align-items: center; justify-content: center; background: #2563eb; color: white !important; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 500; font-size: 15px; transition: background-color 0.2s;">
-                        View Gallery
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="margin-left: 8px;">
-                            <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" fill="currentColor"/>
-                        </svg>
+                <div style="text-align: center; margin: 30px 0 10px;">
+                    <a href="{{ frontend_url }}/gallery/{{ gallery.slug }}" style="display: inline-block; background: #e74c3c; color: #ffffff !important; text-decoration: none; padding: 12px 30px; border-radius: 4px; font-weight: bold; font-size: 16px; border: none; cursor: pointer;">
+                        VIEW GALLERY
                     </a>
                 </div>
             </div>
         </div>
 
-        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px; line-height: 1.6;">
+        <div style="margin: 30px 0; padding: 20px 0; border-top: 1px solid #eeeeee; color: #666666; font-size: 14px; text-align: center;">
             <p style="margin: 0 0 5px;">Best regards,</p>
-            <p style="margin: 0; font-weight: 600; color: #111827;">{{ site_name }} Team</p>
+            <p style="margin: 0; font-weight: bold; color: #333333;">{{ site_name }} Team</p>
         </div>
     </div>
 
     <!-- Footer -->
-    <div style="padding: 20px; text-align: center; background-color: #f9fafb; border-top: 1px solid #e5e7eb; font-size: 13px; color: #6b7280;">
-        <div style="margin-bottom: 15px;">
-            <a href="{{ frontend_url }}/help" style="color: #3b82f6; text-decoration: none; margin: 0 10px;">Help Center</a>
-            <a href="{{ frontend_url }}/privacy" style="color: #3b82f6; text-decoration: none; margin: 0 10px;">Privacy Policy</a>
-            <a href="{{ frontend_url }}/terms" style="color: #3b82f6; text-decoration: none; margin: 0 10px;">Terms of Service</a>
+    <div style="padding: 20px; text-align: center; background-color: #f5f5f5; border-top: 1px solid #e0e0e0;">
+        <div style="margin-bottom: 10px;">
+            <a href="{{ frontend_url }}/terms" style="color: #666666; text-decoration: none; margin: 0 10px; font-size: 12px;">Privacy Policy</a>
         </div>
-        <div style="margin-top: 15px; font-size: 12px; color: #9ca3af;">
-            © {% now "Y" %} {{ site_name }}. All rights reserved.<br>
+        <div style="font-size: 12px; color: #999999;">
+            &copy; {% now "Y" %} {{ site_name }}. All rights reserved.<br>
             This is an automated message, please do not reply directly.
         </div>
     </div>
-</div>
-{% endblock %}
+</body>
+</html>
