@@ -41,25 +41,32 @@
         </div>
         
         <div style="padding: 20px; background: #ffffff;">
-          <h3 style="margin: 0 0 12px; font-size: 18px; color: #111827;">{{ gallery.title }}</h3>
-          
-          {% if gallery.description %}
-          <p style="margin: 0 0 16px; color: #4b5563;">{{ gallery.description }}</p>
-          {% endif %}
-          
-          <!-- Preview Placeholder -->
-          <div style="margin: 20px 0; border-radius: 6px; background: #f3f4f6; border: 1px solid #e5e7eb; padding: 20px; text-align: center; color: #9ca3af; font-size: 14px;">
-            Gallery Preview
+  
+            <!-- Gallery Title -->
+            <h3 style="margin: 0 0 12px; font-size: 18px; color: #111827;">{{ gallery.title }}</h3>
+            
+            <!-- Gallery Description -->
+            {% if gallery.description %}
+            <h4 style="margin: 0 0 8px; font-size: 15px; font-weight: bold; color: #111827;">About this Gallery</h4>
+            <p style="margin: 0 0 16px; color: #4b5563;">{{ gallery.description }}</p>
+            {% endif %}
+            
+            <!-- Gallery Preview -->
+            <h4 style="margin: 0 0 8px; font-size: 15px; font-weight: bold; color: #111827;">Preview</h4>
+            <div style="margin: 12px 0 20px; border-radius: 6px; background: #f3f4f6; border: 1px solid #e5e7eb; padding: 20px; text-align: center; color: #9ca3af; font-size: 14px;">
+              Gallery Preview
+            </div>
+            
+            <!-- Call to Action -->
+            <h4 style="margin: 0 0 12px; font-size: 15px; font-weight: bold; color: #111827; text-align: center;">Take a Look</h4>
+            <div style="text-align: center; margin: 15px 0 10px;">
+              <a href="{{ frontend_url }}/gallery/{{ gallery.slug }}" 
+                 style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: bold; font-size: 16px;">
+                View Gallery
+              </a>
+            </div>
           </div>
           
-          <!-- CTA Button -->
-          <div style="text-align: center; margin: 25px 0 10px;">
-            <a href="{{ frontend_url }}/gallery/{{ gallery.slug }}" 
-               style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: bold; font-size: 16px;">
-              View Gallery
-            </a>
-          </div>
-        </div>
       </div>
       
       <!-- Section: Note -->
