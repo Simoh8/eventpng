@@ -9,6 +9,7 @@ import HomePage from './pages/HomePage';
 import Events from './pages/Events';
 import EventDetail from './pages/EventDetail';
 import GalleryDetail from './pages/GalleryDetail';
+import TicketsPage from './pages/TicketsPage';
 import PricingPage from './pages/PricingPage';
 import FaqPage from './pages/FaqPage';
 import TermsAndPrivacy from './pages/TermsAndPrivacy';
@@ -149,6 +150,7 @@ function AppContent() {
         <Route index element={<HomePage />} />
         <Route path="events" element={<Events />} />
         <Route path="events/:slug" element={<EventDetail />} />
+        <Route path="tickets" element={<TicketsPage />} />
         <Route path="gallery/:id" element={<GalleryDetail />} />
         <Route path="pricing" element={<PricingPage />} />
         <Route path="faq" element={<FaqPage />} />

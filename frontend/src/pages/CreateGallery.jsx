@@ -5,7 +5,7 @@ import { PhotoIcon, XMarkIcon, ChevronUpDownIcon, CheckIcon } from '@heroicons/r
 import { Listbox, Transition } from '@headlessui/react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL, API_ENDPOINTS } from '../config';
 import { getProtectedImageUrl } from '../utils/imageUtils';
 
 // Fetch events for the current photographer
@@ -13,7 +13,7 @@ const fetchEvents = async () => {
   const token = localStorage.getItem('access');
   
   try {
-    const response = await fetch(`${API_BASE_URL}api/gallery/events/`, {
+    const response = await fetch(`${API_ENDPOINTS.EVENTS}`, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',

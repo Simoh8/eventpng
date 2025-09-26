@@ -24,6 +24,7 @@ export default function MainLayout() {
   const navigation = useMemo(() => [
     { name: 'Home', href: '/' },
     { name: 'Events', href: '/events' },
+    { name: 'Tickets', href: '/tickets' },
     ...(isAuthenticated ? [
       user?.is_photographer && { name: 'Dashboard', href: '/photographer-dashboard' },
       user?.is_photographer === false && { name: 'My Gallery', href: '/my-gallery' },
