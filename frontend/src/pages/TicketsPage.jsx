@@ -3,53 +3,210 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { API_BASE_URL } from '../config';
-import { FaTicketAlt, FaCalendarAlt, FaMapMarkerAlt, FaInfoCircle } from 'react-icons/fa';
+import { FaTicketAlt, FaCalendarAlt, FaMapMarkerAlt, FaInfoCircle, FaPlus, FaMinus, FaChevronDown, FaChevronUp } from 'react-icons/fa';
+
+// Component to display a collapsible event section
+const EventSection = ({ event, tickets, selectedTickets, onSelectTicket, onDeselectTicket }) => {
+  const [isExpanded, setIsExpanded] = useState(true);
+  
+  // Group tickets by type
+  const ticketsByType = tickets.reduce((groups, ticket) => {
+    const type = ticket.ticket_type_name || 'General Admission';
+    if (!groups[type]) {
+      groups[type] = [];
+    }
+    groups[type].push(ticket);
+    return groups;
+  }, {});
+
+  return (
+    <div className="mb-8 bg-white rounded-lg shadow-md overflow-hidden">
+      <div 
+        className="p-4 bg-gray-50 border-b border-gray-200 cursor-pointer flex justify-between items-center"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div>
+          <h3 className="text-xl font-semibold text-gray-900">{event.name}</h3>
+          <div className="flex items-center mt-1 text-sm text-gray-600">
+            <FaCalendarAlt className="mr-1" />
+            <span className="mr-4">{format(parseISO(event.date), 'MMMM d, yyyy')}</span>
+            <FaMapMarkerAlt className="mr-1" />
+            <span>{event.location}</span>
+          </div>
+        </div>
+        {isExpanded ? <FaChevronUp /> : <FaChevronDown />}
+      </div>
+      
+      {isExpanded && (
+        <div className="p-4">
+          {Object.entries(ticketsByType).map(([type, typeTickets]) => (
+            <div key={type} className="mb-6">
+              <h4 className="text-lg font-medium text-gray-800 mb-3">{type} Tickets</h4>
+              <div className="space-y-4">
+                {typeTickets.map(ticket => (
+                  <div key={ticket.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 border rounded-lg hover:bg-gray-50">
+                    <div className="mb-3 sm:mb-0 sm:mr-4">
+                      <h5 className="font-medium text-gray-900">{ticket.ticket_type_name || 'General Admission'}</h5>
+                      <p className="text-sm text-gray-600">{ticket.ticket_type_description || 'Standard event ticket'}</p>
+                      <div className="mt-1 text-sm text-gray-500">
+                        {ticket.remaining_quantity !== null ? (
+                          <span>{ticket.remaining_quantity} of {ticket.quantity_available} remaining</span>
+                        ) : (
+                          <span>Unlimited tickets available</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-end sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
+                      <div className="text-xl font-bold text-primary-600">
+                        ${Number(ticket.price).toFixed(2)}
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeselectTicket(ticket.id);
+                          }}
+                          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full"
+                          disabled={!selectedTickets[ticket.id]}
+                        >
+                          <FaMinus />
+                        </button>
+                        <span className="w-8 text-center">
+                          {selectedTickets[ticket.id] || 0}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectTicket(ticket);
+                          }}
+                          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full"
+                          disabled={ticket.remaining_quantity !== null && (selectedTickets[ticket.id] || 0) >= ticket.remaining_quantity}
+                        >
+                          <FaPlus />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const TicketsPage = () => {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
-  const [selectedEvent, setSelectedEvent] = useState(null);
-  const [selectedTickets, setSelectedTickets] = useState({});
-  const [isLoading, setIsLoading] = useState(false);
+  
+  // State for selected tickets with localStorage persistence
+  const [selectedTickets, setSelectedTickets] = useState(() => {
+    // Load cart from localStorage on initial render
+    if (typeof window !== 'undefined') {
+      const savedCart = localStorage.getItem('eventTicketsCart');
+      return savedCart ? JSON.parse(savedCart) : {};
+    }
+    return {};
+  });
 
-  // Fetch events with tickets
-  const { data: events = [], isLoading: isLoadingEvents } = useQuery({
-    queryKey: ['events-with-tickets'],
-    queryFn: async () => {
-      const response = await fetch(`${API_BASE_URL}api/gallery/events/with-tickets/`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch events');
+  // Save cart to localStorage whenever it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('eventTicketsCart', JSON.stringify(selectedTickets));
+    }
+  }, [selectedTickets]);
+
+  // Helper function to update selected tickets and persist to localStorage
+  const updateSelectedTickets = (updater) => {
+    setSelectedTickets(prev => {
+      const newTickets = typeof updater === 'function' ? updater(prev) : updater;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('eventTicketsCart', JSON.stringify(newTickets));
       }
-      return response.json();
+      return newTickets;
+    });
+  };
+
+  // Fetch available tickets
+  const { data: ticketsData = { results: [] }, isLoading: isLoadingTickets } = useQuery({
+    queryKey: ['available-tickets'],
+    queryFn: async () => {
+      try {
+        console.log('Fetching available tickets from:', `${API_BASE_URL}api/gallery/tickets/available/`);
+        const response = await fetch(`${API_BASE_URL}api/gallery/tickets/available/`);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error('Error response:', errorData);
+          throw new Error(errorData.detail || 'Failed to fetch available tickets');
+        }
+        const data = await response.json();
+        console.log('Available tickets:', data);
+        return data;
+      } catch (error) {
+        console.error('Error fetching tickets:', error);
+        throw error;
+      }
     },
     onError: (error) => {
+      console.error('Query error:', error);
       toast.error(error.message);
     }
   });
+  
+  const tickets = ticketsData.results || [];
+  
+  // Group tickets by event
+  const ticketsByEvent = tickets.reduce((groups, ticket) => {
+    const eventKey = ticket.event_id || 'general';
+    if (!groups[eventKey]) {
+      groups[eventKey] = {
+        id: ticket.event_id,
+        name: ticket.event_name,
+        date: ticket.event_date,
+        location: ticket.event_location,
+        tickets: []
+      };
+    }
+    groups[eventKey].tickets.push(ticket);
+    return groups;
+  }, {});
 
-  const handleEventSelect = (event) => {
-    setSelectedEvent(event);
-    // Reset selected tickets when changing events
-    setSelectedTickets({});
+  const handleTicketSelect = (ticket) => {
+    updateSelectedTickets(prev => ({
+      ...prev,
+      [ticket.id]: (prev[ticket.id] || 0) + 1
+    }));
+  };
+  
+  const handleTicketDeselect = (ticketId) => {
+    updateSelectedTickets(prev => {
+      const newTickets = { ...prev };
+      if (newTickets[ticketId] > 0) {
+        newTickets[ticketId]--;
+        if (newTickets[ticketId] === 0) {
+          delete newTickets[ticketId];
+        }
+      }
+      return newTickets;
+    });
   };
 
-  const handleTicketQuantityChange = (ticketId, quantity) => {
-    setSelectedTickets(prev => ({
-      ...prev,
-      [ticketId]: Math.max(0, parseInt(quantity) || 0)
-    }));
+  const clearCart = () => {
+    updateSelectedTickets({});
   };
 
   const calculateTotal = () => {
-    if (!selectedEvent) return 0;
-    
     return Object.entries(selectedTickets).reduce((total, [ticketId, quantity]) => {
       if (quantity > 0) {
-        const ticket = selectedEvent.tickets.find(t => t.id === parseInt(ticketId));
+        // Flatten all tickets from all events to find the ticket
+        const allTickets = Object.values(ticketsByEvent).flatMap(event => event.tickets);
+        const ticket = allTickets.find(t => t.id === parseInt(ticketId));
         if (ticket) {
-          return total + (ticket.price * quantity);
+          return total + (Number(ticket.price) * quantity);
         }
       }
       return total;
@@ -58,11 +215,12 @@ const TicketsPage = () => {
 
   const handleCheckout = () => {
     if (!isAuthenticated) {
-      navigate('/login', { state: { from: '/tickets' } });
+      // Save the current URL to redirect back after login
+      const returnTo = window.location.pathname + window.location.search;
+      navigate('/login', { state: { from: returnTo } });
       return;
     }
 
-    // Filter out tickets with 0 quantity
     const ticketsToPurchase = Object.entries(selectedTickets)
       .filter(([_, quantity]) => quantity > 0)
       .map(([ticketId, quantity]) => ({
@@ -76,13 +234,20 @@ const TicketsPage = () => {
     }
 
     console.log('Proceeding to checkout with tickets:', ticketsToPurchase);
+    
+    // Clear the cart after successful checkout
+    clearCart();
+    
+    // Here you would typically redirect to a checkout page or show a checkout modal
+    // For now, we'll just show a success message
     toast.success('Proceeding to checkout');
   };
 
-  if (isLoadingEvents) {
+  if (isLoadingTickets) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+        <span className="ml-4">Loading available tickets...</span>
       </div>
     );
   }
@@ -100,146 +265,105 @@ const TicketsPage = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Events List */}
+          {/* Your Selection */}
           <div className="lg:col-span-1">
-            <div className="bg-white shadow rounded-lg overflow-hidden">
+            <div className="bg-white shadow rounded-lg overflow-hidden sticky top-4">
               <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-medium text-gray-900">Upcoming Events</h2>
+                <h2 className="text-lg font-medium text-gray-900">Your Selection</h2>
               </div>
-              <div className="divide-y divide-gray-200">
-                {events.length > 0 ? (
-                  events.map((event) => (
-                    <button
-                      key={event.id}
-                      onClick={() => handleEventSelect(event)}
-                      className={`w-full text-left px-6 py-4 hover:bg-gray-50 transition-colors duration-150 ${selectedEvent?.id === event.id ? 'bg-blue-50' : ''}`}
-                    >
-                      <h3 className="text-lg font-medium text-gray-900">{event.name}</h3>
-                      <div className="mt-1 flex items-center text-sm text-gray-500">
-                        <FaCalendarAlt className="flex-shrink-0 mr-1.5 h-4 w-4" />
-                        <span>{format(new Date(event.date), 'MMMM d, yyyy')}</span>
-                        {event.end_date && (
-                          <span className="mx-1">- {format(new Date(event.end_date), 'MMMM d, yyyy')}</span>
-                        )}
-                      </div>
-                      {event.location && (
-                        <div className="mt-1 flex items-center text-sm text-gray-500">
-                          <FaMapMarkerAlt className="flex-shrink-0 mr-1.5 h-4 w-4" />
-                          <span>{event.location}</span>
+              <div className="p-4">
+                {Object.keys(selectedTickets).length > 0 ? (
+                  <div className="space-y-4">
+                    {Object.entries(selectedTickets).map(([ticketId, quantity]) => {
+                      // Flatten all tickets to find the selected one
+                      const allTickets = Object.values(ticketsByEvent).flatMap(event => event.tickets);
+                      const ticket = allTickets.find(t => t.id === parseInt(ticketId));
+                      if (!ticket) return null;
+                      
+                      return (
+                        <div key={ticketId} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                          <div>
+                            <h3 className="font-medium">{ticket.event_name}</h3>
+                            <p className="text-sm text-gray-600">{ticket.ticket_type_name}</p>
+                            <p className="text-sm font-medium">${Number(ticket.price).toFixed(2)} × {quantity}</p>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleTicketDeselect(ticket.id);
+                              }}
+                              className="p-1 text-gray-500 hover:text-gray-700"
+                            >
+                              <FaMinus />
+                            </button>
+                            <span>{quantity}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleTicketSelect(ticket);
+                              }}
+                              className="p-1 text-gray-500 hover:text-gray-700"
+                              disabled={ticket.remaining_quantity !== null && quantity >= ticket.remaining_quantity}
+                            >
+                              <FaPlus />
+                            </button>
+                          </div>
                         </div>
-                      )}
-                    </button>
-                  ))
+                      );
+                    })}
+                    <div className="border-t border-gray-200 pt-4 mt-4">
+                      <div className="flex justify-between font-medium">
+                        <span>Total:</span>
+                        <span>${calculateTotal().toFixed(2)}</span>
+                      </div>
+                      <button
+                        onClick={handleCheckout}
+                        className="w-full mt-4 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                      >
+                        Proceed to Checkout
+                      </button>
+                    </div>
+                  </div>
                 ) : (
-                  <div className="px-6 py-4 text-center text-gray-500">
-                    No upcoming events with tickets available.
+                  <div className="text-center py-8">
+                    <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-gray-100">
+                      <FaTicketAlt className="h-6 w-6 text-gray-400" />
+                    </div>
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">No tickets selected</h3>
+                    <p className="mt-1 text-sm text-gray-500">Select tickets from the list to get started.</p>
                   </div>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Ticket Selection */}
+          {/* Available Tickets */}
           <div className="lg:col-span-2">
-            {selectedEvent ? (
-              <div className="bg-white shadow rounded-lg overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <h2 className="text-lg font-medium text-gray-900">
-                    {selectedEvent.name} - Ticket Selection
-                  </h2>
-                  <div className="mt-1 text-sm text-gray-500">
-                    {format(new Date(selectedEvent.date), 'MMMM d, yyyy')}
-                    {selectedEvent.location && ` • ${selectedEvent.location}`}
-                  </div>
-                </div>
-
-                {selectedEvent.description && (
-                  <div className="px-6 py-4 border-b border-gray-200">
-                    <p className="text-gray-700">{selectedEvent.description}</p>
-                  </div>
-                )}
-
-                <div className="divide-y divide-gray-200">
-                  {selectedEvent.tickets && selectedEvent.tickets.length > 0 ? (
-                    selectedEvent.tickets.map((ticket) => (
-                      <div key={ticket.id} className="p-6">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center">
-                              <FaTicketAlt className="h-5 w-5 text-blue-600 mr-2" />
-                              <h3 className="text-lg font-medium text-gray-900">
-                                {ticket.ticket_type.name}
-                              </h3>
-                            </div>
-                            <p className="mt-1 text-sm text-gray-500">
-                              {ticket.ticket_type.description}
-                            </p>
-                            <div className="mt-2">
-                              <span className="text-2xl font-bold text-gray-900">
-                                ${ticket.price.toFixed(2)}
-                              </span>
-                              {ticket.quantity_available !== null && (
-                                <span className="ml-2 text-sm text-gray-500">
-                                  ({ticket.remaining_quantity} of {ticket.quantity_available} remaining)
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="mt-4 md:mt-0 flex items-center">
-                            <input
-                              type="number"
-                              min="0"
-                              max={ticket.quantity_available || 10}
-                              value={selectedTickets[ticket.id] || ''}
-                              onChange={(e) => handleTicketQuantityChange(ticket.id, e.target.value)}
-                              className="w-20 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                              placeholder="0"
-                              disabled={ticket.quantity_available === 0}
-                            />
-                            {ticket.quantity_available === 0 && (
-                              <span className="ml-2 text-sm text-red-600">Sold out</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="p-6 text-center text-gray-500">
-                      No tickets available for this event.
+            <div className="space-y-6">
+              {Object.keys(ticketsByEvent).length > 0 ? (
+                Object.values(ticketsByEvent).map(event => (
+                  <EventSection
+                    key={event.id}
+                    event={event}
+                    tickets={event.tickets}
+                    selectedTickets={selectedTickets}
+                    onSelectTicket={handleTicketSelect}
+                    onDeselectTicket={handleTicketDeselect}
+                  />
+                ))
+              ) : (
+                <div className="bg-white shadow rounded-lg overflow-hidden">
+                  <div className="p-6 text-center">
+                    <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-gray-100">
+                      <FaTicketAlt className="h-6 w-6 text-gray-400" />
                     </div>
-                  )}
-                </div>
-
-                <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <div className="text-lg font-medium text-gray-900">
-                      Total: ${calculateTotal().toFixed(2)}
-                    </div>
-                    <button
-                      onClick={handleCheckout}
-                      disabled={calculateTotal() === 0}
-                      className={`px-6 py-2 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${calculateTotal() === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      Proceed to Checkout
-                    </button>
-                  </div>
-                  <div className="mt-4 flex items-center text-sm text-gray-500">
-                    <FaInfoCircle className="flex-shrink-0 mr-1.5 h-4 w-4 text-blue-500" />
-                    <span>You'll be able to review your order before payment</span>
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">No events with tickets available</h3>
+                    <p className="mt-1 text-sm text-gray-500">Check back later for upcoming events.</p>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="bg-white shadow rounded-lg overflow-hidden">
-                <div className="p-8 text-center">
-                  <FaTicketAlt className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-lg font-medium text-gray-900">No event selected</h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Select an event from the list to view available tickets.
-                  </p>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>

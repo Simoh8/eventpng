@@ -96,25 +96,76 @@ class Event(models.Model):
         return str(self.name) if self.name is not None else f"Event {self.id}"
         
     def save(self, *args, **kwargs):
+        # Track if has_tickets is being changed
+        has_tickets_changed = False
+        if not self._state.adding:
+            try:
+                old_instance = Event.objects.get(pk=self.pk)
+                has_tickets_changed = (old_instance.has_tickets != self.has_tickets)
+                if has_tickets_changed:
+                    self._has_tickets_changed = True
+            except Event.DoesNotExist:
+                pass
+        
+        # Generate slug from name if not provided
         if not self.slug:
             self.slug = slugify(self.name)
-            
             # Ensure slug is unique
-            original_slug = self.slug
-            counter = 1
-            while Event.objects.filter(slug=self.slug).exclude(pk=self.pk).exists():
-                self.slug = f"{original_slug}-{counter}"
-                counter += 1
+            if Event.objects.filter(slug=self.slug).exclude(pk=self.pk if self.pk else None).exists():
+                self.slug = f"{self.slug}-{self.date.strftime('%Y%m%d')}"
                 
-        # Generate PIN for private events if not set
+        # Set end date to match start date if not provided
+        if not self.end_date:
+            self.end_date = self.date
+            
+        # If this is a private event, generate a PIN if not set
         if self.privacy == 'private' and not self.pin:
             self.pin = generate_pin()
-        elif self.privacy == 'public':
-            self.pin = None
-                
+        
+        # Save the event
         super().save(*args, **kwargs)
         
-    @property
+        # Schedule ticket creation after the transaction is committed
+        if getattr(self, '_has_tickets_changed', False) or (self.has_tickets and has_tickets_changed):
+            from django.db import transaction
+            transaction.on_commit(lambda: self._create_default_ticket() if self.has_tickets else None)
+    
+    def _create_default_ticket(self):
+        """Create a default ticket for the event."""
+        from .ticket_models.models import TicketType, EventTicket
+        
+        # Check if a default ticket already exists
+        if hasattr(self, 'tickets') and self.tickets.exists():
+            return
+            
+        try:
+            # Try to get a default ticket type, create one if it doesn't exist
+            try:
+                ticket_type = TicketType.objects.get(name='General Admission')
+            except TicketType.DoesNotExist:
+                # Create a default ticket type if it doesn't exist
+                ticket_type = TicketType.objects.create(
+                    name='General Admission',
+                    description='General admission ticket',
+                    is_active=True
+                )
+            
+            # Create the default ticket
+            EventTicket.objects.create(
+                event=self,
+                ticket_type=ticket_type,
+                price=0.00,  # Default to free
+                quantity_available=100,  # Default quantity
+                is_active=True,
+                sale_start=timezone.now(),
+                sale_end=self.date  # Default to event date
+            )
+        except Exception as e:
+            # Log the error but don't fail the event save
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to create default ticket for event {self.id}: {str(e)}")
+    
     def cover_images(self):
         """Return all cover images for this event, ordered by display order."""
         return self.covers.all().order_by('order')

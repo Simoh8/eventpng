@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "accounts",
     "gallery",
     "payments",
+    "tickets",
     "contact",
     "customer_dashboard",
 ]

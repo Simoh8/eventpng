@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   FaArrowLeft, 
   FaCheck, 
   FaShoppingCart, 
+  FaTicketAlt,
   FaTimes, 
   FaChevronLeft, 
   FaChevronRight, 
@@ -17,7 +18,8 @@ import {
   FaMapMarkerAlt,
   FaHeart,
   FaShare,
-  FaInfoCircle
+  FaInfoCircle,
+  FaArrowRight
 } from 'react-icons/fa';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
 import 'react-lazy-load-image-component/src/effects/opacity.css';
@@ -173,6 +175,8 @@ const fetchEvent = async (slug) => {
 };
 
 const processEventData = (eventData) => {
+  console.log('Raw event data from API:', JSON.parse(JSON.stringify(eventData)));
+  
   const allPhotos = [];
   
   if (eventData.galleries && Array.isArray(eventData.galleries)) {
@@ -190,8 +194,12 @@ const processEventData = (eventData) => {
     });
   }
   
-  return {
+  // Ensure has_tickets is a boolean
+  const hasTickets = Boolean(eventData.has_tickets);
+  
+  const processedData = {
     ...eventData,
+    has_tickets: hasTickets, // Ensure it's a boolean
     photos: {
       results: allPhotos,
       count: allPhotos.length,
@@ -199,6 +207,9 @@ const processEventData = (eventData) => {
       previous: null
     }
   };
+  
+  console.log('Processed event data:', JSON.parse(JSON.stringify(processedData)));
+  return processedData;
 };
 
 const EventDetail = () => {
@@ -231,7 +242,16 @@ const EventDetail = () => {
     retry: false,
     staleTime: 30 * 60 * 1000, // 30 minutes - consider data fresh for this long
     cacheTime: 60 * 60 * 1000, // 1 hour - keep in cache for this long
+    onSuccess: (data) => {
+      console.log('Event data loaded successfully:', {
+        eventId: data?.id,
+        eventName: data?.name,
+        has_tickets: data?.has_tickets,
+        raw_has_tickets: data?.has_tickets
+      });
+    },
     onError: (error) => {
+      console.error('Error loading event:', error);
       setErrorState(error);
       // Clear cache if there's an error to force refetch next time
       clearCachedEvent(slug);
@@ -686,6 +706,27 @@ const EventDetail = () => {
                   </dt>
                   <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:w-3/4">
                     {event.location}
+                  </dd>
+                </div>
+              )}
+              {console.log('Rendering Buy Tickets section - has_tickets:', event?.has_tickets, 'for event:', event?.name) || 
+              event.has_tickets && (
+                <div className="flex flex-col sm:flex-row">
+                  <dt className="text-sm font-medium text-gray-500 flex items-center gap-2 sm:w-1/4">
+                    <FaTicketAlt className="text-green-500" />
+                    Tickets
+                  </dt>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:w-3/4">
+                    <Link 
+                      to="/tickets" 
+                      state={{ eventId: event.id }}
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors"
+                    >
+                      Buy Tickets <FaArrowRight className="ml-2" />
+                    </Link>
+                    <p className="mt-2 text-sm text-gray-500">
+                      Secure your spot at this event
+                    </p>
                   </dd>
                 </div>
               )}

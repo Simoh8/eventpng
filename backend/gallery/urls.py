@@ -6,7 +6,8 @@ from .views.ticket_views import (
     EventWithTicketsViewSet,
     TicketViewSet,
     PublicTicketViewSet,
-    TicketPurchaseViewSet
+    TicketPurchaseViewSet,
+    AvailableTicketsViewSet
 )
 
 app_name = 'gallery'
@@ -46,6 +47,7 @@ urlpatterns = [
     
     # Ticket endpoints
     path('events/with-tickets/', EventWithTicketsViewSet.as_view({'get': 'list'}), name='events-with-tickets'),
+    path('tickets/available/', AvailableTicketsViewSet.as_view({'get': 'list'}), name='available-tickets'),
     path('events/<int:event_pk>/tickets/', TicketViewSet.as_view({
         'get': 'list',
         'post': 'create'

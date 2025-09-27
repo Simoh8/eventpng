@@ -26,6 +26,24 @@ class EventTicketSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'remaining_quantity']
 
 
+class EventTicketListSerializer(serializers.ModelSerializer):
+    """Serializer for listing tickets with event information."""
+    event_name = serializers.CharField(source='event.name', read_only=True)
+    event_date = serializers.DateField(source='event.date', read_only=True)
+    event_location = serializers.CharField(source='event.location', read_only=True)
+    ticket_type_name = serializers.CharField(source='ticket_type.name', read_only=True)
+    ticket_type_description = serializers.CharField(source='ticket_type.description', read_only=True)
+    
+    class Meta:
+        model = EventTicket
+        fields = [
+            'id', 'price', 'quantity_available', 'sale_start', 'sale_end', 'is_active',
+            'event_name', 'event_date', 'event_location', 'ticket_type_name', 'ticket_type_description',
+            'remaining_quantity'
+        ]
+        read_only_fields = ['remaining_quantity']
+
+
 class EventWithTicketsSerializer(serializers.ModelSerializer):
     """Serializer for events with their available tickets."""
     tickets = EventTicketSerializer(many=True, read_only=True, source='event_tickets')

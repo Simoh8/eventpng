@@ -129,7 +129,7 @@ class EventTicket(models.Model):
         verbose_name_plural = _('Event Tickets')
 
     def __str__(self):
-        return f"{self.event.name} - {self.ticket_type} - {self.available_quantity} available"
+        return f"{self.event.name} - {self.ticket_type} - {self.remaining_quantity if self.remaining_quantity is not None else 'Unlimited'} available"
 
     @property
     def name(self):

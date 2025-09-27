@@ -11,7 +11,8 @@ from ..ticket_models.models import EventTicket, TicketType
 from ..serializers import (
     TicketTypeSerializer,
     EventTicketSerializer,
-    EventWithTicketsSerializer
+    EventWithTicketsSerializer,
+    EventTicketListSerializer
 )
 
 class TicketViewSet(viewsets.ModelViewSet):
@@ -186,3 +187,23 @@ class EventWithTicketsViewSet(viewsets.ReadOnlyModelViewSet):
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
+
+
+class AvailableTicketsViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint for listing all available tickets across events.
+    """
+    serializer_class = EventTicketListSerializer
+    permission_classes = [permissions.AllowAny]
+    
+    def get_queryset(self):
+        """Return all available tickets for future events."""
+        now = timezone.now()
+        
+        return EventTicket.objects.filter(
+            is_active=True,
+            event__has_tickets=True,
+            event__date__gte=now.date(),  # Only future events
+            sale_start__lte=now,  # Sale has started
+            sale_end__gte=now,    # Sale hasn't ended
+        ).select_related('event', 'ticket_type').order_by('event__date')

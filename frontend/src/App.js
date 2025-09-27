@@ -33,6 +33,9 @@ import AccountSettingsPage from './pages/AccountSettingsPage';
 import HelpAndSupportPage from './pages/HelpAndSupportPage';
 import ContactPage from './pages/ContactPage';
 import NotFoundPage from './pages/NotFoundPage';
+import CheckoutPage from './pages/CheckoutPage';
+import TicketDetail from './pages/TicketDetail';
+import TicketSuccess from './pages/TicketSuccess';
 
 
 // Dashboard Redirect Component
@@ -151,6 +154,21 @@ function AppContent() {
         <Route path="events" element={<Events />} />
         <Route path="events/:slug" element={<EventDetail />} />
         <Route path="tickets" element={<TicketsPage />} />
+        <Route path="tickets/:id" element={
+          <ProtectedRoute>
+            <TicketDetail />
+          </ProtectedRoute>
+        } />
+        <Route path="checkout" element={
+          <ProtectedRoute>
+            <CheckoutPage />
+          </ProtectedRoute>
+        } />
+        <Route path="ticket/success" element={
+          <ProtectedRoute>
+            <TicketSuccess />
+          </ProtectedRoute>
+        } />
         <Route path="gallery/:id" element={<GalleryDetail />} />
         <Route path="pricing" element={<PricingPage />} />
         <Route path="faq" element={<FaqPage />} />
