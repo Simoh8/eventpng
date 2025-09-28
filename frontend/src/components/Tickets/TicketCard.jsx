@@ -4,7 +4,7 @@ import TicketImage from './TicketImage';
 import TicketDetails from './TicketDetails';
 import TicketStatusPanel from './TicketStatusPanel';
 
-const TicketCard = ({ ticket, borderColor, bgColor, sidePanelBg, secondaryText, onViewDetails }) => {
+const TicketCard = ({ ticket, borderColor, bgColor, sidePanelBg, secondaryText, onViewDetails = () => {} }) => {
   return (
     <Card variant="outline" borderColor={borderColor} overflow="hidden" bg={bgColor}>
       <CardBody p={0}>
