@@ -9,11 +9,18 @@ import {
   QuestionMarkCircleIcon,
   ArrowUpTrayIcon,
   ArrowRightOnRectangleIcon,
-  PhotoIcon
+  PhotoIcon,
+  TicketIcon
 } from '@heroicons/react/24/outline';
 
 const UserMenu = ({ user, onLogout }) => {
   const userNavigation = [
+    { 
+      name: 'My Tickets', 
+      href: '/tickets/my-tickets', 
+      icon: TicketIcon,
+      description: 'View and manage your event tickets'
+    },
     { 
       name: 'My Photos', 
       href: '/my-photos', 

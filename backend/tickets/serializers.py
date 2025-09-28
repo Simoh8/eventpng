@@ -262,3 +262,31 @@ class UserTicketSerializer(serializers.ModelSerializer):
             'id', 'status', 'quantity', 'total_price',
             'created_at', 'qr_code'
         ]  # <-- only the actual model fields you want locked
+    
+    def get_event(self, obj):
+        """Get the event details for the purchased ticket"""
+        if obj.event_ticket and obj.event_ticket.event:
+            event = obj.event_ticket.event
+            return {
+                'id': event.id,
+                'name': event.name,
+                'date': event.date,
+                'end_date': event.end_date,
+                'location': event.location,
+                'cover_image_url': event.cover_image_url,
+            }
+        return None
+    
+    def get_ticket_type(self, obj):
+        """Get the ticket type details"""
+        if obj.event_ticket and obj.event_ticket.ticket_type:
+            return {
+                'id': obj.event_ticket.ticket_type.id,
+                'name': obj.event_ticket.ticket_type.name,
+                'description': obj.event_ticket.ticket_type.description
+            }
+        return None
+    
+    def get_event_ticket_id(self, obj):
+        """Get the event ticket ID"""
+        return obj.event_ticket.id if obj.event_ticket else None

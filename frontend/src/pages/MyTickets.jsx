@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Box, Button, Card, CardContent, CardMedia, Chip,
-  CircularProgress, Container, Divider, Grid, Typography, Paper
-} from '@mui/material';
-import EventIcon from '@mui/icons-material/Event';
+import { Box, Container, Heading, Button, Stack, useColorModeValue, CircularProgress } from '@chakra-ui/react';
 import { getUserTickets } from '../services/ticketService';
+import TicketCard from '../components/Tickets/TicketCard';
+import NoTickets from '../components/Tickets/NoTickets';
+import { Text } from '@chakra-ui/react';
 
 const MyTickets = () => {
   const [tickets, setTickets] = useState([]);
@@ -13,14 +12,22 @@ const MyTickets = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
+  const bgColor = useColorModeValue('white', 'gray.800');
+  const borderColor = useColorModeValue('gray.200', 'gray.700');
+  const secondaryText = useColorModeValue('gray.600', 'gray.300');
+  const sidePanelBg = useColorModeValue('gray.50', 'gray.700');
+
   useEffect(() => {
     const fetchTickets = async () => {
       try {
-        const data = await getUserTickets();
-        setTickets(data);
+        const response = await getUserTickets();
+        // Ensure we're working with an array
+        const ticketsData = Array.isArray(response) ? response : (response.results || response.data || []);
+        setTickets(ticketsData);
       } catch (err) {
         setError('Failed to load your tickets');
         console.error('Error:', err);
+        setTickets([]); // Ensure tickets is always an array
       } finally {
         setLoading(false);
       }
@@ -30,19 +37,19 @@ const MyTickets = () => {
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" my={4}>
-        <CircularProgress />
+      <Box display="flex" justifyContent="center" my={8}>
+        <CircularProgress isIndeterminate color="teal.500" />
       </Box>
     );
   }
 
   if (error) {
     return (
-      <Container maxWidth="md" sx={{ py: 4 }}>
-        <Typography color="error" variant="h6" gutterBottom>
+      <Container maxW="container.md" py={8}>
+        <Text color="red.500" fontSize="xl" mb={4}>
           {error}
-        </Typography>
-        <Button variant="contained" onClick={() => window.location.reload()}>
+        </Text>
+        <Button colorScheme="teal" onClick={() => window.location.reload()}>
           Try Again
         </Button>
       </Container>
@@ -50,106 +57,30 @@ const MyTickets = () => {
   }
 
   if (tickets.length === 0) {
-    return (
-      <Container maxWidth="md" sx={{ py: 8, textAlign: 'center' }}>
-        <EventIcon color="action" sx={{ fontSize: 60, mb: 2 }} />
-        <Typography variant="h5" gutterBottom>No Tickets Found</Typography>
-        <Typography color="textSecondary" paragraph>You haven't purchased any tickets yet.</Typography>
-        <Button variant="contained" onClick={() => navigate('/events')}>
-          Browse Events
-        </Button>
-      </Container>
-    );
+    return <NoTickets onBrowseEvents={() => navigate('/events')} />;
   }
 
+  const handleViewDetails = (ticketId) => {
+    navigate(`/tickets/${ticketId}`);
+  };
+
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Typography variant="h4" component="h1" gutterBottom>My Tickets</Typography>
+    <Container maxW="container.lg" py={8}>
+      <Heading as="h1" size="xl" mb={8}>My Tickets</Heading>
       
-      <Grid container spacing={3}>
+      <Stack spacing={6}>
         {tickets.map((ticket) => (
-          <Grid item xs={12} key={ticket.id}>
-            <Card elevation={3}>
-              <CardContent>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} md={4}>
-                    {ticket.ticket_type?.event?.image ? (
-                      <CardMedia
-                        component="img"
-                        height="200"
-                        image={ticket.ticket_type.event.image}
-                        alt={ticket.ticket_type.event.title}
-                        sx={{ borderRadius: 1 }}
-                      />
-                    ) : (
-                      <Box height={200} display="flex" alignItems="center" 
-                        justifyContent="center" bgcolor="action.hover" borderRadius={1}>
-                        <EventIcon color="action" sx={{ fontSize: 60 }} />
-                      </Box>
-                    )}
-                  </Grid>
-                  
-                  <Grid item xs={12} md={5}>
-                    <Typography variant="h6" component="h2" gutterBottom>
-                      {ticket.ticket_type?.event?.title || 'Event'}
-                    </Typography>
-                    
-                    <Box mb={2}>
-                      <Typography variant="subtitle2" color="textSecondary">Ticket Type</Typography>
-                      <Typography>{ticket.ticket_type?.name || 'General Admission'}</Typography>
-                    </Box>
-                    
-                    <Box mb={2}>
-                      <Typography variant="subtitle2" color="textSecondary">Event Date</Typography>
-                      <Typography>
-                        {ticket.ticket_type?.event?.date 
-                          ? new Date(ticket.ticket_type.event.date).toLocaleDateString() 
-                          : 'Date not specified'}
-                      </Typography>
-                    </Box>
-                    
-                    <Button 
-                      variant="outlined" 
-                      onClick={() => navigate(`/tickets/${ticket.id}`)}
-                      sx={{ mt: 2 }}
-                    >
-                      View Details
-                    </Button>
-                  </Grid>
-                  
-                  <Grid item xs={12} md={3}>
-                    <Paper elevation={0} sx={{ p: 2, bgcolor: 'background.default' }}>
-                      <Box display="flex" justifyContent="space-between" mb={2}>
-                        <Typography variant="subtitle2" color="textSecondary">Status</Typography>
-                        <Chip 
-                          label={ticket.status || 'Unknown'}
-                          color={
-                            ticket.status?.toLowerCase() === 'confirmed' ? 'success' : 
-                            ticket.status?.toLowerCase() === 'pending' ? 'warning' : 'default'
-                          }
-                          size="small"
-                        />
-                      </Box>
-                      
-                      <Box display="flex" justifyContent="space-between" mb={2}>
-                        <Typography variant="subtitle2" color="textSecondary">Quantity</Typography>
-                        <Typography>{ticket.quantity}</Typography>
-                      </Box>
-                      
-                      <Box display="flex" justifyContent="space-between">
-                        <Typography variant="subtitle2" color="textSecondary">Total</Typography>
-                        <Typography variant="subtitle1" fontWeight="bold">
-                          ${ticket.total_price?.toFixed(2) || '0.00'}
-                        </Typography>
-                      </Box>
-                    </Paper>
-                  </Grid>
-                </Grid>
-              </CardContent>
-            </Card>
-          </Grid>
+          <TicketCard
+            key={ticket.id}
+            ticket={ticket}
+            borderColor={borderColor}
+            bgColor={bgColor}
+            sidePanelBg={sidePanelBg}
+            secondaryText={secondaryText}
+            onViewDetails={handleViewDetails}
+          />
         ))}
-      </Grid>
+      </Stack>
     </Container>
   );
 };

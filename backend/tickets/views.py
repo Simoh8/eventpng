@@ -157,7 +157,7 @@ class UserTicketsList(generics.ListAPIView):
     def get_queryset(self):
         return TicketPurchase.objects.filter(
             user=self.request.user
-        ).select_related('ticket_type', 'ticket_type__event')
+        ).select_related('event_ticket', 'event_ticket__event')
 
 
 # Admin views

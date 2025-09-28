@@ -65,10 +65,8 @@ const CheckoutPage = () => {
     try {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('eventTicketsCart');
-        console.log('Cart cleared successfully');
       }
     } catch (error) {
-      console.error('Error clearing cart:', error);
     }
   };
   const navigate = useNavigate();
@@ -163,12 +161,10 @@ const CheckoutPage = () => {
       if (hasSelectedTickets) {
         // For cash payments, we don't need to create payment intents
         if (paymentMethod === 'cash' || paymentMethod === 'pay_on_venue') {
-          console.log('Processing cash/on-venue payment for cart items');
-          console.log('Cart tickets:', cartTickets);
+
           
           const purchasePromises = await Promise.all(
             cartTickets.map(ticket => {
-              console.log('Processing ticket:', ticket);
               return purchaseTicket(ticket.id, ticket.quantity, paymentMethod, null, ticket.event_id);
             })
           );
@@ -189,12 +185,10 @@ const CheckoutPage = () => {
         }
         
         // For card payments, handle payment intents
-        console.log('Processing card payment for cart items');
         const purchasePromises = await Promise.all(
           cartTickets.map(async (ticket) => {
             // Create payment intent for each ticket in cart
             const paymentIntent = await createPaymentIntent(ticket.id, ticket.quantity, paymentMethod);
-            console.log('Payment intent created for cart item:', paymentIntent);
             
             if (!paymentIntent) {
               throw new Error('No response from payment service');
@@ -230,9 +224,7 @@ const CheckoutPage = () => {
         navigate(`/ticket/success?order=${orderId}`);
       } else {
         // Process single ticket
-        console.log('Creating payment intent for single ticket:', { selectedTicket, quantity, paymentMethod });
         const paymentIntent = await createPaymentIntent(selectedTicket, quantity, paymentMethod);
-        console.log('Payment intent created:', paymentIntent);
         
         if (!paymentIntent) {
           throw new Error('No response from payment service');
@@ -251,7 +243,6 @@ const CheckoutPage = () => {
         }
         
         // Process the purchase with the payment intent
-        console.log('Processing purchase with payment intent:', paymentIntent.payment_intent_id);
         const result = await purchaseTicket(
           selectedTicket,
           quantity,
@@ -259,7 +250,6 @@ const CheckoutPage = () => {
           paymentIntent.payment_intent_id
         );
         
-        console.log('Purchase result:', result);
   
         if (result && (result.success || result.id)) {
           // Navigate to success page with order ID or payment intent ID

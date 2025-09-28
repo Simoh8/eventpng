@@ -136,7 +136,6 @@ const TicketsPage = () => {
     queryKey: ['available-tickets'],
     queryFn: async () => {
       try {
-        console.log('Fetching available tickets from:', `${API_BASE_URL}api/gallery/tickets/available/`);
         const response = await fetch(`${API_BASE_URL}api/gallery/tickets/available/`);
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
@@ -144,10 +143,8 @@ const TicketsPage = () => {
           throw new Error(errorData.detail || 'Failed to fetch available tickets');
         }
         const data = await response.json();
-        console.log('Available tickets:', data);
         return data;
       } catch (error) {
-        console.error('Error fetching tickets:', error);
         throw error;
       }
     },
@@ -274,10 +271,7 @@ const TicketsPage = () => {
       toast.error('Please select at least one ticket');
       return;
     }
-
-    console.log('Proceeding to checkout with tickets:', ticketsToPurchase);
     
-    // Navigate to checkout page with selected tickets
     navigate('/checkout', { 
       state: { 
         selectedTickets: ticketsToPurchase,

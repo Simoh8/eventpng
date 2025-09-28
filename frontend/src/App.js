@@ -178,7 +178,7 @@ function AppContent() {
             <CheckoutPage />
           </ProtectedRoute>
         } />
-        <Route path="ticket/success/:ticketId" element={
+        <Route path="ticket/success" element={
           <ProtectedRoute>
             <TicketSuccess />
           </ProtectedRoute>

@@ -175,7 +175,6 @@ const fetchEvent = async (slug) => {
 };
 
 const processEventData = (eventData) => {
-  console.log('Raw event data from API:', JSON.parse(JSON.stringify(eventData)));
   
   const allPhotos = [];
   
@@ -208,7 +207,6 @@ const processEventData = (eventData) => {
     }
   };
   
-  console.log('Processed event data:', JSON.parse(JSON.stringify(processedData)));
   return processedData;
 };
 
@@ -243,12 +241,7 @@ const EventDetail = () => {
     staleTime: 30 * 60 * 1000, // 30 minutes - consider data fresh for this long
     cacheTime: 60 * 60 * 1000, // 1 hour - keep in cache for this long
     onSuccess: (data) => {
-      console.log('Event data loaded successfully:', {
-        eventId: data?.id,
-        eventName: data?.name,
-        has_tickets: data?.has_tickets,
-        raw_has_tickets: data?.has_tickets
-      });
+
     },
     onError: (error) => {
       console.error('Error loading event:', error);
