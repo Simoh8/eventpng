@@ -223,10 +223,21 @@ const TicketsPage = () => {
 
     const ticketsToPurchase = Object.entries(selectedTickets)
       .filter(([_, quantity]) => quantity > 0)
-      .map(([ticketId, quantity]) => ({
-        ticket_id: parseInt(ticketId),
-        quantity
-      }));
+      .map(([ticketId, quantity]) => {
+        // Find the full ticket details
+        const ticket = Object.values(ticketsByEvent)
+          .flatMap(event => event.tickets)
+          .find(t => t.id === parseInt(ticketId));
+        
+        return {
+          ...ticket,
+          ticket_id: parseInt(ticketId),
+          quantity,
+          price: Number(ticket.price),
+          event_name: ticket.event_name,
+          ticket_type_name: ticket.ticket_type_name
+        };
+      });
 
     if (ticketsToPurchase.length === 0) {
       toast.error('Please select at least one ticket');
@@ -235,12 +246,14 @@ const TicketsPage = () => {
 
     console.log('Proceeding to checkout with tickets:', ticketsToPurchase);
     
-    // Clear the cart after successful checkout
-    clearCart();
-    
-    // Here you would typically redirect to a checkout page or show a checkout modal
-    // For now, we'll just show a success message
-    toast.success('Proceeding to checkout');
+    // Navigate to checkout page with selected tickets
+    navigate('/checkout', { 
+      state: { 
+        selectedTickets: ticketsToPurchase,
+        total: calculateTotal(),
+        fromCart: true
+      } 
+    });
   };
 
   if (isLoadingTickets) {

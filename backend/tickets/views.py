@@ -1,10 +1,13 @@
-from rest_framework import generics, status, permissions, viewsets
+import logging
+from rest_framework import generics, status, permissions, viewsets, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework.decorators import action
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
+
+logger = logging.getLogger(__name__)
 from .models import TicketPurchase, TicketType
 from .serializers import (
     TicketPurchaseSerializer, 
@@ -117,42 +120,33 @@ class TicketPurchaseView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         
         try:
-            ticket_type = TicketType.objects.get(
-                id=serializer.validated_data['ticket_type_id'],
-                is_active=True
-            )
+            # The serializer handles the creation and validation
+            purchase = serializer.save()
             
-            # Check ticket availability
-            if ticket_type.quantity_available < serializer.validated_data['quantity']:
-                return Response(
-                    {'detail': 'Not enough tickets available'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Create ticket purchase
-            purchase = TicketPurchase.objects.create(
-                user=request.user,
-                ticket_type=ticket_type,
-                quantity=serializer.validated_data['quantity'],
-                total_price=ticket_type.price * serializer.validated_data['quantity']
-            )
-            
-            # Update ticket type quantity
-            ticket_type.quantity_available -= purchase.quantity
-            ticket_type.save(update_fields=['quantity_available'])
-            
-            # TODO: Send confirmation email
-            
+            # Return the purchase details
             return Response(
-                TicketPurchaseSerializer(purchase).data,
+                TicketPurchaseSerializer(purchase, context={'request': request}).data,
                 status=status.HTTP_201_CREATED
             )
             
-        except TicketType.DoesNotExist:
+        except serializers.ValidationError as e:
+            # Handle validation errors from the serializer
             return Response(
-                {'detail': 'Ticket type not found or inactive'},
-                status=status.HTTP_404_NOT_FOUND
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
             )
+        except Exception as e:
+            # Log the error and return a generic error message
+            logger.error(f"Error creating ticket purchase: {str(e)}")
+            return Response(
+                {'detail': 'An error occurred while processing your request'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def perform_create(self, serializer):
+        # This is called by the parent class after validation
+        # The actual creation is handled in the serializer
+        pass
 
 
 class UserTicketsList(generics.ListAPIView):

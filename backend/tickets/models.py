@@ -12,66 +12,63 @@ from gallery.models import Event
 
 logger = logging.getLogger(__name__)
 
-class TicketType(models.Model):
-    """Represents a type of ticket that can be purchased for an event."""
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
-    price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
-    quantity_available = models.PositiveIntegerField(
-        null=True, 
-        blank=True, 
-        help_text="Leave empty for unlimited tickets"
-    )
-    is_active = models.BooleanField(default=True)
-    sale_start = models.DateTimeField(null=True, blank=True)
-    sale_end = models.DateTimeField(null=True, blank=True)
-    event = models.ForeignKey(
-        'gallery.Event',
-        on_delete=models.CASCADE,
-        related_name='ticket_types'
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+# Use the TicketType from the gallery app
+from gallery.ticket_models.models import TicketType
 
+# Create a proxy model to maintain compatibility with the rest of the code
+class TicketTypeProxy(TicketType):
     class Meta:
-        ordering = ['name']
+        proxy = True
+        verbose_name = 'Ticket Type'
+        verbose_name_plural = 'Ticket Types'
 
-    def __str__(self):
-        return f"{self.name} - {self.event.title}"
+    def save(self, *args, **kwargs):
+        # Ensure we're using the gallery's TicketType model
+        from gallery.ticket_models.models import TicketType as GalleryTicketType
+        if not isinstance(self, GalleryTicketType):
+            # If this is a new instance, create it in the gallery app
+            gallery_ticket = GalleryTicketType.objects.create(
+                name=self.name,
+                description=self.description,
+                # Add other fields as needed
+            )
+            self.pk = gallery_ticket.pk
+        super().save(*args, **kwargs)
 
 
 class TicketPurchase(models.Model):
-    """Represents a user's purchase of an event ticket."""
+    """Model representing a user's ticket purchase"""
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('confirmed', 'Confirmed'),
         ('cancelled', 'Cancelled'),
         ('refunded', 'Refunded'),
-        ('used', 'Used'),
+        ('used', 'Used')
     ]
     
     PAYMENT_METHODS = [
         ('card', 'Credit/Debit Card'),
         ('paypal', 'PayPal'),
-        ('cash', 'Cash at Venue'),
+        ('cash', 'Cash at Venue')
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    ticket_type = models.ForeignKey(
-        'TicketType', 
-        on_delete=models.PROTECT, 
-        related_name='purchases',
-        help_text="The type of ticket that was purchased"
-    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
         on_delete=models.CASCADE, 
         related_name='ticket_purchases'
     )
+    ticket_type = models.ForeignKey(
+        'gallery.EventTicket', 
+        on_delete=models.PROTECT, 
+        related_name='purchases',
+        help_text='The event-specific ticket that was purchased',
+        verbose_name='event ticket'
+    )
     quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS)
+    payment_intent_id = models.CharField(max_length=255, blank=True, null=True, help_text='Stripe Payment Intent ID')
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
     qr_code = models.ImageField(upload_to='tickets/qrcodes/', blank=True, null=True)
     verification_code = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, db_index=True)
@@ -86,7 +83,7 @@ class TicketPurchase(models.Model):
         ordering = ['-created_at']
     
     def __str__(self):
-        return f"{self.user.email} - {self.ticket_type.name} x{self.quantity} - {self.get_status_display()}"
+        return f"{self.user.email} - {self.ticket_type.ticket_type.name if self.ticket_type else 'Unknown'} x{self.quantity} - {self.get_status_display()}"
     
     def save(self, *args, **kwargs):
         is_new = self._state.adding
@@ -101,6 +98,10 @@ class TicketPurchase(models.Model):
             
         # First save to ensure we have an ID
         super().save(*args, **kwargs)
+        
+        # Generate QR code if this is a new purchase
+        if is_new and not self.qr_code:
+            self.generate_qr_code()
         
         # Generate QR code after initial save
         if not self.qr_code:

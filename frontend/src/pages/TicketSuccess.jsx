@@ -1,81 +1,147 @@
-import React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { Box, Button, Container, Heading, Text, VStack, Icon, useToast } from '@chakra-ui/react';
-import { CheckCircleIcon } from '@chakra-ui/icons';
+import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Box, Button, Container, Typography, CircularProgress, Paper, Divider } from '@mui/material';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import { getTicket } from '../services/ticketService';
 
 const TicketSuccess = () => {
-  const location = useLocation();
+  const { ticketId } = useParams();
   const navigate = useNavigate();
-  const toast = useToast();
-  
-  const { ticket } = location.state || {};
-  
-  React.useEffect(() => {
-    if (!ticket) {
-      toast({
-        title: 'No ticket information found',
-        description: 'Please complete your purchase to view this page.',
-        status: 'warning',
-        duration: 5000,
-        isClosable: true,
-      });
-      navigate('/');
-    }
-  }, [ticket, navigate, toast]);
+  const [ticket, setTicket] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  if (!ticket) return null;
+  useEffect(() => {
+    const fetchTicket = async () => {
+      try {
+        const data = await getTicket(ticketId);
+        setTicket(data);
+      } catch (err) {
+        setError('Failed to load ticket details');
+        console.error('Error fetching ticket:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (ticketId) {
+      fetchTicket();
+    } else {
+      setLoading(false);
+      setError('No ticket ID provided');
+    }
+  }, [ticketId]);
+
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" my={4}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error || !ticket) {
+    return (
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Typography color="error" variant="h6" gutterBottom>
+          {error || 'Ticket not found'}
+        </Typography>
+        <Button variant="contained" onClick={() => navigate('/')}>
+          Back to Home
+        </Button>
+      </Container>
+    );
+  }
 
   return (
-    <Container maxW="container.md" py={16} centerContent>
-      <VStack spacing={8} textAlign="center">
-        <Icon as={CheckCircleIcon} boxSize={20} color="green.500" />
+    <Container maxWidth="md" sx={{ py: 4 }}>
+      <Paper elevation={3} sx={{ p: 4, textAlign: 'center' }}>
+        <CheckCircleIcon color="success" sx={{ fontSize: 80, mb: 2 }} />
         
-        <Heading as="h1" size="2xl">
+        <Typography variant="h4" component="h1" gutterBottom>
           Thank You for Your Purchase!
-        </Heading>
+        </Typography>
         
-        <Text fontSize="xl" color="gray.600">
-          Your ticket for <strong>{ticket.event?.title}</strong> has been successfully purchased.
-        </Text>
+        <Typography variant="h6" color="textSecondary" paragraph>
+          Your ticket for <strong>{ticket.ticket_type?.event?.title}</strong> has been successfully purchased.
+        </Typography>
         
-        <Box bg="green.50" p={6} borderRadius="lg" w="100%" maxW="md">
-          <Text fontSize="lg" fontWeight="bold" mb={2}>Order Confirmation</Text>
-          <Text>Order #: {ticket.id}</Text>
-          <Text>Event: {ticket.event?.title}</Text>
-          <Text>Date: {new Date(ticket.event?.date).toLocaleDateString()}</Text>
-          <Text>Amount: ${ticket.amount_paid?.toFixed(2)}</Text>
-          <Text color="green.600" fontWeight="bold" mt={2}>
+        <Paper variant="outlined" sx={{ p: 3, my: 3, textAlign: 'left' }}>
+          <Typography variant="h6" gutterBottom>
+            Order Confirmation
+          </Typography>
+          
+          <Box mb={2}>
+            <Typography variant="subtitle2" color="textSecondary">Order #</Typography>
+            <Typography>{ticket.id}</Typography>
+          </Box>
+          
+          <Box mb={2}>
+            <Typography variant="subtitle2" color="textSecondary">Event</Typography>
+            <Typography>{ticket.ticket_type?.event?.title}</Typography>
+          </Box>
+          
+          <Box mb={2}>
+            <Typography variant="subtitle2" color="textSecondary">Ticket Type</Typography>
+            <Typography>{ticket.ticket_type?.name}</Typography>
+          </Box>
+          
+          <Box mb={2}>
+            <Typography variant="subtitle2" color="textSecondary">Quantity</Typography>
+            <Typography>{ticket.quantity}</Typography>
+          </Box>
+          
+          <Box mb={2}>
+            <Typography variant="subtitle2" color="textSecondary">Total Amount</Typography>
+            <Typography>${ticket.total_price?.toFixed(2)}</Typography>
+          </Box>
+          
+          <Divider sx={{ my: 2 }} />
+          
+          <Typography color={ticket.payment_method === 'cash' ? 'warning.main' : 'success.main'} fontWeight="bold">
             {ticket.payment_method === 'cash' 
               ? 'Please pay at the venue' 
               : 'Payment successful!'}
-          </Text>
-        </Box>
+          </Typography>
+          
+          {ticket.qr_code && (
+            <Box mt={3} textAlign="center">
+              <Typography variant="subtitle2" color="textSecondary" gutterBottom>
+                Your Ticket QR Code
+              </Typography>
+              <img 
+                src={ticket.qr_code} 
+                alt="Ticket QR Code" 
+                style={{ maxWidth: '200px', height: 'auto' }} 
+              />
+              <Typography variant="caption" display="block" mt={1}>
+                Show this code at the event entrance
+              </Typography>
+            </Box>
+          )}
+        </Paper>
         
-        <VStack spacing={4} w="100%" maxW="sm">
+        <Box mt={4} display="flex" justifyContent="center" gap={2}>
           <Button 
-            colorScheme="blue" 
-            size="lg" 
-            w="full"
-            onClick={() => navigate(`/tickets/${ticket.id}`)}
+            variant="contained" 
+            color="primary"
+            onClick={() => window.print()}
+            sx={{ mt: 2 }}
           >
-            View Your Ticket
+            Print Ticket
           </Button>
-          
           <Button 
-            variant="outline" 
-            w="full"
-            onClick={() => navigate('/events')}
+            variant="outlined" 
+            onClick={() => navigate('/')}
+            sx={{ mt: 2 }}
           >
-            Back to Events
+            Back to Home
           </Button>
-          
-          <Text fontSize="sm" color="gray.500" mt={4}>
-            A confirmation email has been sent to your registered email address.
-          </Text>
-        </VStack>
-      </VStack>
+        </Box>
+      </Paper>
     </Container>
   );
 };
 
 export default TicketSuccess;
+

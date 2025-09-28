@@ -36,6 +36,8 @@ import NotFoundPage from './pages/NotFoundPage';
 import CheckoutPage from './pages/CheckoutPage';
 import TicketDetail from './pages/TicketDetail';
 import TicketSuccess from './pages/TicketSuccess';
+// import TicketPurchaseForm from './components/forms/TicketPurchaseForm';
+import MyTickets from './pages/MyTickets';
 
 
 // Dashboard Redirect Component
@@ -153,18 +155,30 @@ function AppContent() {
         <Route index element={<HomePage />} />
         <Route path="events" element={<Events />} />
         <Route path="events/:slug" element={<EventDetail />} />
-        <Route path="tickets" element={<TicketsPage />} />
-        <Route path="tickets/:id" element={
-          <ProtectedRoute>
-            <TicketDetail />
-          </ProtectedRoute>
-        } />
+        <Route path="tickets">
+          <Route index element={<TicketsPage />} />
+          <Route path="purchase/:eventId" element={
+            <ProtectedRoute>
+              {/* <TicketPurchaseForm /> */}
+            </ProtectedRoute>
+          } />
+          <Route path="my-tickets" element={
+            <ProtectedRoute>
+              <MyTickets />
+            </ProtectedRoute>
+          } />
+          <Route path=":id" element={
+            <ProtectedRoute>
+              <TicketDetail />
+            </ProtectedRoute>
+          } />
+        </Route>
         <Route path="checkout" element={
           <ProtectedRoute>
             <CheckoutPage />
           </ProtectedRoute>
         } />
-        <Route path="ticket/success" element={
+        <Route path="ticket/success/:ticketId" element={
           <ProtectedRoute>
             <TicketSuccess />
           </ProtectedRoute>
