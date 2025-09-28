@@ -82,56 +82,55 @@ const PhotoViewer = ({
     });
   }, [watermarkText]);
 
-  // Load image with lazy loading for watermark
+  // Load image with watermark immediately
   useEffect(() => {
     if (!photo?.image) return;
     
     let isMounted = true;
     
-    const loadImage = async () => {
-      if (!showWatermark) {
-        if (isMounted) setWatermarkedImage(photo.image);
-        return;
-      }
-
-      // Show original image first
-      if (isMounted) setWatermarkedImage(photo.image);
-      
-      // Then apply watermark in the background
+    const loadAndWatermarkImage = async () => {
       setIsWatermarking(true);
       
       try {
+        // Create a new image to load
         const img = new Image();
         img.crossOrigin = 'Anonymous';
         
-        // Load the image
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
+        // Create a promise to handle image loading
+        const imageLoaded = new Promise((resolve, reject) => {
+          img.onload = () => resolve(img);
           img.onerror = reject;
-          const timestamp = new Date().getTime();
-          img.src = `${photo.image}${photo.image.includes('?') ? '&' : '?'}t=${timestamp}`;
+          // Add timestamp to prevent caching issues
+          img.src = `${photo.image}${photo.image.includes('?') ? '&' : '?'}t=${new Date().getTime()}`;
         });
         
-        // Apply watermark
-        const watermarked = await applyWatermark(img);
+        // Wait for the image to load
+        const loadedImg = await imageLoaded;
         
-        // Only update if component is still mounted and we have a valid result
+        // Apply watermark to the loaded image
+        const watermarked = await applyWatermark(loadedImg);
+        
+        // Only update if component is still mounted
         if (isMounted && watermarked) {
           setWatermarkedImage(watermarked);
         }
       } catch (error) {
         console.error('Error processing image:', error);
+        // Fallback to original image if there's an error
+        if (isMounted) setWatermarkedImage(photo.image);
       } finally {
         if (isMounted) setIsWatermarking(false);
       }
     };
     
-    loadImage();
+    // Start the process
+    loadAndWatermarkImage();
     
+    // Cleanup function
     return () => {
       isMounted = false;
     };
-  }, [photo, showWatermark, applyWatermark]);
+  }, [photo?.image, applyWatermark]);
 
   if (!photo) return null;
 
