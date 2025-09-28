@@ -1,6 +1,5 @@
 import React from 'react';
 import { Box, Text, Heading, Stack, Button, Badge, Flex, Icon } from '@chakra-ui/react';
-import { useNavigate } from 'react-router-dom';
 import { CalendarIcon, TicketIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
 
 const TicketDetails = ({ ticket, secondaryText = 'gray.600', onViewDetails }) => {
@@ -29,9 +28,9 @@ const TicketDetails = ({ ticket, secondaryText = 'gray.600', onViewDetails }) =>
 
   return (
     <Box
-      p={6}
+      p={4}  // reduced from 6
       bg="white"
-      borderRadius="xl"
+      borderRadius="lg" // smaller radius
       boxShadow="sm"
       border="1px solid"
       borderColor="gray.100"
@@ -49,17 +48,17 @@ const TicketDetails = ({ ticket, secondaryText = 'gray.600', onViewDetails }) =>
         position="absolute"
         top={0}
         left={0}
-        w="4px"
+        w="3px" // thinner
         h="full"
         bgGradient="linear(to-b, teal.400, blue.500)"
       />
       
-      <Flex justify="space-between" align="flex-start" mb={4}>
+      <Flex justify="space-between" align="flex-start" mb={2}> {/* reduced mb */}
         <Box flex={1}>
           <Heading 
             as="h2" 
-            size="lg" 
-            mb={2}
+            size="md" // smaller heading
+            mb={1}   // reduced mb
             bgGradient="linear(to-r, teal.600, blue.600)"
             bgClip="text"
             fontWeight="bold"
@@ -71,8 +70,8 @@ const TicketDetails = ({ ticket, secondaryText = 'gray.600', onViewDetails }) =>
             <Badge 
               colorScheme={getStatusColor(ticket.status)}
               variant="subtle"
-              px={3}
-              py={1}
+              px={2}
+              py={0.5} // smaller padding
               borderRadius="full"
               fontSize="xs"
               fontWeight="bold"
@@ -84,49 +83,49 @@ const TicketDetails = ({ ticket, secondaryText = 'gray.600', onViewDetails }) =>
         
         {/* Ticket icon */}
         <Box
-          p={2}
+          p={1.5} // smaller padding
           bg="teal.50"
-          borderRadius="lg"
-          ml={4}
+          borderRadius="md"
+          ml={3}
         >
-          <Icon as={TicketIcon} w={6} h={6} color="teal.500" />
+          <Icon as={TicketIcon} w={5} h={5} color="teal.500" /> {/* reduced size */}
         </Box>
       </Flex>
 
-      <Stack spacing={4}>
+      <Stack spacing={2}> {/* reduced spacing */}
         {/* Ticket Type */}
-        <Flex align="center" gap={3}>
+        <Flex align="center" gap={2}>
           <Box
-            p={2}
+            p={1.5}
             bg="blue.50"
             borderRadius="md"
           >
-            <Icon as={TicketIcon} w={4} h={4} color="blue.500" />
+            <Icon as={TicketIcon} w={3.5} h={3.5} color="blue.500" /> {/* smaller */}
           </Box>
           <Box>
             <Text fontSize="xs" fontWeight="medium" color={secondaryText} textTransform="uppercase">
               Ticket Type
             </Text>
-            <Text fontWeight="semibold" color="gray.800">
+            <Text fontSize="sm" fontWeight="semibold" color="gray.800">
               {ticket.ticket_type?.name || 'General Admission'}
             </Text>
           </Box>
         </Flex>
 
         {/* Event Date */}
-        <Flex align="center" gap={3}>
+        <Flex align="center" gap={2}>
           <Box
-            p={2}
+            p={1.5}
             bg="purple.50"
             borderRadius="md"
           >
-            <Icon as={CalendarIcon} w={4} h={4} color="purple.500" />
+            <Icon as={CalendarIcon} w={3.5} h={3.5} color="purple.500" />
           </Box>
           <Box>
             <Text fontSize="xs" fontWeight="medium" color={secondaryText} textTransform="uppercase">
               Event Date & Time
             </Text>
-            <Text fontWeight="medium" color="gray.800">
+            <Text fontSize="sm" fontWeight="medium" color="gray.800">
               {formatDate(ticket.event?.date)}
             </Text>
           </Box>
@@ -134,7 +133,7 @@ const TicketDetails = ({ ticket, secondaryText = 'gray.600', onViewDetails }) =>
 
         {/* Additional Info Section */}
         {(ticket.seat || ticket.section) && (
-          <Flex gap={4} mt={2}>
+          <Flex gap={3} mt={1}>
             {ticket.seat && (
               <Box>
                 <Text fontSize="xs" color={secondaryText}>Seat</Text>
@@ -152,24 +151,24 @@ const TicketDetails = ({ ticket, secondaryText = 'gray.600', onViewDetails }) =>
 
         {/* View Details Button */}
         <Button
-          rightIcon={<ArrowRightIcon style={{ width: '16px', height: '16px' }} />}
+          rightIcon={<ArrowRightIcon style={{ width: '14px', height: '14px' }} />}
           onClick={() => onViewDetails(ticket.id)}
           alignSelf="flex-start"
-          mt={4}
+          mt={2} // reduced margin top
           bgGradient="linear(to-r, teal.500, blue.500)"
           color="white"
           _hover={{
             bgGradient: 'linear(to-r, teal.600, blue.600)',
-            transform: 'translateX(4px)',
-            boxShadow: 'lg'
+            transform: 'translateX(3px)',
+            boxShadow: 'md'
           }}
           _active={{
             bgGradient: 'linear(to-r, teal.700, blue.700)'
           }}
           transition="all 0.2s ease"
-          size="md"
+          size="sm" // smaller button
           fontWeight="semibold"
-          borderRadius="lg"
+          borderRadius="md"
         >
           View Details
         </Button>

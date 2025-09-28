@@ -50,11 +50,15 @@ const EventSection = ({ event, tickets, selectedTickets, onSelectTicket, onDesel
                     <div className="mb-3 sm:mb-0 sm:mr-4">
                       <h5 className="font-medium text-gray-900">{ticket.ticket_type_name || 'General Admission'}</h5>
                       <p className="text-sm text-gray-600">{ticket.ticket_type_description || 'Standard event ticket'}</p>
-                      <div className="mt-1 text-sm text-gray-500">
+                      <div className="mt-1 text-sm">
                         {ticket.remaining_quantity !== null ? (
-                          <span>{ticket.remaining_quantity} of {ticket.quantity_available} remaining</span>
+                          ticket.remaining_quantity === 0 ? (
+                            <span className="text-red-600 font-medium">SOLD OUT</span>
+                          ) : (
+                            <span className="text-gray-500">{ticket.remaining_quantity} of {ticket.quantity_available} remaining</span>
+                          )
                         ) : (
-                          <span>Unlimited tickets available</span>
+                          <span className="text-gray-500">Unlimited tickets available</span>
                         )}
                       </div>
                     </div>

@@ -1,44 +1,33 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
-  Container,
-  Text,
-  CircularProgress,
-  VStack,
-  HStack,
-  Divider,
-  useColorModeValue,
-  Icon,
-  Heading,
   Card,
   CardBody,
+  Heading,
   Image,
-  Flex,
+  Text,
+  VStack,
+  HStack,
   Badge,
-  Grid
+  useToast,
+  CircularProgress,
+  Container
 } from '@chakra-ui/react';
-import { CheckCircleIcon, CalendarIcon, TimeIcon, InfoIcon } from '@chakra-ui/icons';
-import { FiPrinter, FiList, FiMapPin } from 'react-icons/fi';
 import { getTicket } from '../services/ticketService';
 
 const TicketSuccess = () => {
-  // All hooks must be called at the top level
   const location = useLocation();
   const navigate = useNavigate();
+  const toast = useToast();
+  const ticketRef = useRef(null);
+
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  
-  // Color mode values
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
-  const textColor = useColorModeValue('gray.800', 'white');
-  const ticketBg = useColorModeValue('gray.50', 'gray.700');
-  const footerBg = useColorModeValue('gray.50', 'gray.800');
-  
-  // Get order ID from URL
+
+  // Get order ID from query
   const searchParams = new URLSearchParams(location.search);
   const orderId = searchParams.get('order');
 
@@ -50,6 +39,14 @@ const TicketSuccess = () => {
       } catch (err) {
         setError('Failed to load ticket details');
         console.error('Error fetching ticket:', err);
+        toast({
+          title: 'Error',
+          description: 'Failed to load ticket details.',
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
+        navigate('/');
       } finally {
         setLoading(false);
       }
@@ -61,12 +58,16 @@ const TicketSuccess = () => {
       setLoading(false);
       setError('No order ID provided');
     }
-  }, [orderId]);
+  }, [orderId, navigate, toast]);
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" my={8}>
-        <CircularProgress isIndeterminate color="teal.500" />
+        <CircularProgress isIndeterminate color="purple.500" />
       </Box>
     );
   }
@@ -78,7 +79,7 @@ const TicketSuccess = () => {
           <Heading as="h1" size="lg" color="red.500">
             {error || 'Ticket not found'}
           </Heading>
-          <Button colorScheme="teal" onClick={() => navigate('/')}>
+          <Button colorScheme="purple" onClick={() => navigate('/')}>
             Back to Home
           </Button>
         </VStack>
@@ -86,189 +87,213 @@ const TicketSuccess = () => {
     );
   }
 
-
-  // Format date to match the design (e.g., "SAT, 15 MAY 2025")
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    const options = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' };
-    return date.toLocaleDateString('en-US', options).toUpperCase();
-  };
-
-  // Format time (e.g., "10:00 AM")
-  const formatTime = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-  };
-
   return (
-    <Container maxW="container.md" py={8}>
-      <VStack spacing={8} align="stretch">
-        <VStack spacing={4} textAlign="center">
-          <Icon as={CheckCircleIcon} boxSize={12} color="green.500" />
-          <Heading as="h1" size="xl">
-            Thank You for Your Purchase!
-          </Heading>
-          <Text fontSize="lg" color="gray.500">
-            Your ticket for <strong>{ticket.ticket_type?.event?.title}</strong> has been successfully purchased.
-          </Text>
-        </VStack>
-
-        {/* Ticket Card */}
-        <Card 
-          borderWidth="1px" 
-          borderColor={borderColor} 
-          borderRadius="xl" 
+    <Box maxW="400px" mx="auto" py={8} px={4}>
+      {/* Ticket */}
+      <div id="ticket" ref={ticketRef}>
+        <Card
+          borderRadius="20px"
           overflow="hidden"
-          boxShadow="lg"
+          boxShadow="0 10px 30px rgba(0, 0, 0, 0.2)"
+          border="2px solid"
+          borderColor="purple.700"
+          bg="white"
           position="relative"
         >
-          {/* Ticket Header */}
-          <Box 
-            bgGradient="linear(to-r, blue.500, purple.600)" 
-            p={6}
+          {/* Header with Brand */}
+          <Box
+            bg="purple.600"
             color="white"
-            position="relative"
+            py={4}
+            px={6}
+            textAlign="center"
+            borderBottom="3px solid"
+            borderColor="purple.700"
           >
-            <Flex justify="space-between" align="center">
-              <Box>
-                <Text fontSize="sm" fontWeight="semibold" letterSpacing="wide">
-                  {formatDate(ticket.ticket_type?.event?.date)}
-                </Text>
-                <Heading size="xl" mt={1}>
-                  {ticket.ticket_type?.event?.title}
-                </Heading>
-                <HStack mt={2} spacing={4}>
-                  <HStack>
-                    <Icon as={CalendarIcon} />
-                    <Text>{formatDate(ticket.ticket_type?.event?.date)}</Text>
-                  </HStack>
-                  <HStack>
-                    <Icon as={TimeIcon} />
-                    <Text>{formatTime(ticket.ticket_type?.event?.date)}</Text>
-                  </HStack>
-                </HStack>
-              </Box>
-              {ticket.qr_code && (
-                <Box 
-                  bg="white" 
-                  p={2} 
-                  borderRadius="md"
-                  boxShadow="md"
-                >
-                  <Image 
-                    src={ticket.qr_code} 
-                    alt="QR Code" 
-                    w="100px"
-                    h="100px"
-                  />
-                </Box>
-              )}
-            </Flex>
-          </Box>
-
-          {/* Ticket Body */}
-          <CardBody>
-            <VStack spacing={6} align="stretch">
-              {/* Event Location */}
-              <Box>
-                <HStack color="gray.500" mb={2}>
-                  <Icon as={FiMapPin} />
-                  <Text fontSize="sm" fontWeight="semibold">LOCATION</Text>
-                </HStack>
-                <Text fontSize="lg">{ticket.ticket_type?.event?.location || 'Venue not specified'}</Text>
-              </Box>
-
-              {/* Ticket Details */}
-              <Box 
-                bg={ticketBg} 
-                p={4} 
-                borderRadius="lg"
-              >
-                <HStack justify="space-between" mb={3}>
-                  <Text fontWeight="semibold">TICKET</Text>
-                  <Badge colorScheme="blue" px={3} py={1} borderRadius="full">
-                    {ticket.ticket_type?.name || 'General Admission'}
-                  </Badge>
-                </HStack>
-                
-                <Grid templateColumns="repeat(2, 1fr)" gap={4} mt={4}>
-                  <Box>
-                    <Text fontSize="sm" color="gray.500">Order #</Text>
-                    <Text fontWeight="medium">{ticket.id?.split('-')[0].toUpperCase()}</Text>
-                  </Box>
-                  <Box>
-                    <Text fontSize="sm" color="gray.500">Quantity</Text>
-                    <Text fontWeight="medium">{ticket.quantity} {ticket.quantity > 1 ? 'Tickets' : 'Ticket'}</Text>
-                  </Box>
-                  <Box>
-                    <Text fontSize="sm" color="gray.500">Total Amount</Text>
-                    <Text fontWeight="bold" fontSize="lg">
-                      ${ticket.total_price ? Number(ticket.total_price).toFixed(2) : '0.00'}
-                    </Text>
-                  </Box>
-                  <Box>
-                    <Text fontSize="sm" color="gray.500">Status</Text>
-                    <HStack>
-                      <Box w="8px" h="8px" bg="green.500" borderRadius="full" />
-                      <Text fontWeight="medium">
-                        {ticket.payment_method === 'cash' ? 'Pending Payment' : 'Paid'}
-                      </Text>
-                    </HStack>
-                  </Box>
-                </Grid>
-              </Box>
-
-              {/* Payment Method */}
-              <Box>
-                <HStack color="gray.500" mb={2}>
-                  <Icon as={InfoIcon} />
-                  <Text fontSize="sm" fontWeight="semibold">PAYMENT METHOD</Text>
-                </HStack>
-                <Text>
-                  {ticket.payment_method === 'cash' 
-                    ? 'Cash on Arrival' 
-                    : 'Credit/Debit Card (Paid)'}
-                </Text>
-              </Box>
-            </VStack>
-          </CardBody>
-
-          {/* Ticket Footer */}
-          <Box 
-            borderTopWidth="1px" 
-            borderTopColor={borderColor}
-            p={4}
-            bg={footerBg}
-          >
-            <Text fontSize="sm" color="gray.500" textAlign="center">
-              Present this ticket at the entrance. For any questions, please contact support.
+            <Text fontSize="2xl" fontWeight="bold" letterSpacing="wide">
+              EventPNG
             </Text>
           </Box>
-        </Card>
 
-        {/* Action Buttons */}
-        <HStack spacing={4} justify="center" mt={8}>
-          <Button 
-            colorScheme="blue" 
-            onClick={() => window.print()}
-            leftIcon={<Icon as={FiPrinter} />}
-            size="lg"
-          >
-            Print Ticket
-          </Button>
-          <Button 
-            variant="outline" 
-            onClick={() => navigate('/my-tickets')}
-            leftIcon={<Icon as={FiList} />}
-            size="lg"
-          >
-            View All Tickets
-          </Button>
-        </HStack>
-      </VStack>
-    </Container>
+          <CardBody p={0}>
+            {/* Event Details */}
+            <Box
+              p={6}
+              bg="gray.50"
+              borderBottom="2px dashed"
+              borderColor="gray.300"
+            >
+              <VStack spacing={4} align="stretch">
+                {/* Ticket Type Badge */}
+                <Badge
+                  bg="purple.600"
+                  color="white"
+                  px={3}
+                  py={1}
+                  borderRadius="full"
+                  fontSize="xs"
+                  fontWeight="bold"
+                  alignSelf="center"
+                  textTransform="uppercase"
+                  letterSpacing="wide"
+                >
+                  {ticket.ticket_type?.name || 'General Admission'}
+                </Badge>
+
+                {/* Event Title */}
+                <Heading
+                  size="lg"
+                  textAlign="center"
+                  fontWeight="black"
+                  color="gray.800"
+                  lineHeight="1.2"
+                >
+                  {ticket.ticket_type?.event?.title || 'Event Ticket'}
+                </Heading>
+
+                {/* Ticket ID */}
+                <Box textAlign="center" mt={2}>
+                  <Text
+                    fontSize="sm"
+                    fontWeight="bold"
+                    color="gray.600"
+                    letterSpacing="widest"
+                    fontFamily="monospace"
+                  >
+                    TIC-{ticket.id?.toString().padStart(8, '0') || '00000000'}
+                  </Text>
+                </Box>
+              </VStack>
+            </Box>
+
+            {/* QR Code Section */}
+            <Box p={6} textAlign="center" bg="white">
+              {ticket.qr_code ? (
+                <>
+                  <Text
+                    fontSize="xs"
+                    fontWeight="bold"
+                    color="red.500"
+                    mb={4}
+                    textTransform="uppercase"
+                    letterSpacing="wide"
+                  >
+                    Do Not Share This QR Code
+                  </Text>
+
+                  <Box
+                    p={4}
+                    border="2px solid"
+                    borderColor="purple.700"
+                    borderRadius="12px"
+                    display="inline-block"
+                    mb={4}
+                  >
+                    <Image
+                      src={ticket.qr_code}
+                      alt="Ticket QR Code"
+                      w="200px"
+                      h="200px"
+                    />
+                  </Box>
+
+                  <Text
+                    fontSize="lg"
+                    fontWeight="bold"
+                    color="gray.800"
+                    textTransform="uppercase"
+                    letterSpacing="wide"
+                    mb={2}
+                  >
+                    Attendee
+                  </Text>
+
+                  <Text
+                    fontSize="sm"
+                    fontWeight="medium"
+                    color="gray.500"
+                    textTransform="uppercase"
+                    letterSpacing="wide"
+                  >
+                    Start
+                  </Text>
+                </>
+              ) : (
+                <Text color="gray.500">QR Code not available</Text>
+              )}
+            </Box>
+
+            {/* Footer */}
+            <Box p={4} bg="purple.600" color="white" textAlign="center">
+              <VStack spacing={2}>
+                <Text fontSize="sm" fontWeight="medium">
+                  {ticket.ticket_type?.event?.date
+                    ? new Date(ticket.ticket_type?.event?.date).toLocaleDateString(
+                        'en-US',
+                        {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                        }
+                      )
+                    : 'Date not specified'}
+                </Text>
+                {ticket.ticket_type?.event?.time && (
+                  <Text fontSize="sm" opacity="0.9">
+                    {ticket.ticket_type?.event?.time}
+                  </Text>
+                )}
+                {ticket.ticket_type?.event?.location && (
+                  <Text fontSize="xs" opacity="0.9">
+                    {ticket.ticket_type?.event?.location}
+                  </Text>
+                )}
+              </VStack>
+            </Box>
+          </CardBody>
+        </Card>
+      </div>
+
+      {/* Action Buttons */}
+      <HStack spacing={4} mt={6} w="100%">
+        <Button
+          bg="purple.600"
+          color="white"
+          _hover={{
+            bg: 'purple.700',
+            transform: 'translateY(-2px)',
+            boxShadow: 'lg',
+          }}
+          _active={{
+            bg: 'purple.800',
+          }}
+          size="lg"
+          flex="1"
+          borderRadius="full"
+          fontWeight="bold"
+          onClick={handlePrint}
+        >
+          Print Ticket
+        </Button>
+
+        <Button
+          variant="outline"
+          borderColor="purple.400"
+          color="purple.600"
+          _hover={{
+            bg: 'purple.50',
+            borderColor: 'purple.600',
+          }}
+          size="md"
+          flex="1"
+          borderRadius="full"
+          onClick={() => navigate('/my-tickets')}
+        >
+          Back to Tickets
+        </Button>
+      </HStack>
+    </Box>
   );
 };
 
