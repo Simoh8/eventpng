@@ -8,7 +8,8 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 
 logger = logging.getLogger(__name__)
-from .models import TicketPurchase, TicketType
+from .models import TicketPurchase
+from gallery.ticket_models.models import TicketType
 from .serializers import (
     TicketPurchaseSerializer, 
     CreateTicketPurchaseSerializer,
@@ -85,11 +86,10 @@ class TicketTypeViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAdminUser]
     
     def get_queryset(self):
-        queryset = super().get_queryset()
         event_id = self.request.query_params.get('event_id')
         if event_id:
-            queryset = queryset.filter(event_id=event_id)
-        return queryset
+            return TicketType.objects.filter(event_tickets__event_id=event_id).distinct()
+        return super().get_queryset()
 
 
 class TicketTypeList(generics.ListAPIView):
@@ -102,10 +102,10 @@ class TicketTypeList(generics.ListAPIView):
     def get_queryset(self):
         event_id = self.kwargs.get('event_id')
         return TicketType.objects.filter(
-            event_id=event_id,
-            is_active=True,
-            quantity_available__gt=0
-        ).prefetch_related('event')
+            event_tickets__event_id=event_id,
+            event_tickets__is_active=True,
+            event_tickets__quantity_available__gt=0
+        ).distinct()
 
 
 class TicketPurchaseView(generics.CreateAPIView):
@@ -114,39 +114,37 @@ class TicketPurchaseView(generics.CreateAPIView):
     """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = CreateTicketPurchaseSerializer
-    
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
         try:
-            # The serializer handles the creation and validation
+            # The serializer will handle the actual creation
             purchase = serializer.save()
             
-            # Return the purchase details
+            # Return the created purchase with the appropriate status
             return Response(
                 TicketPurchaseSerializer(purchase, context={'request': request}).data,
                 status=status.HTTP_201_CREATED
             )
             
-        except serializers.ValidationError as e:
-            # Handle validation errors from the serializer
+        except Exception as e:
+            logger.error(f'Error creating ticket purchase: {str(e)}')
             return Response(
-                {'detail': str(e)},
+                {'error': 'Failed to process ticket purchase. Please try again.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        except Exception as e:
-            # Log the error and return a generic error message
-            logger.error(f"Error creating ticket purchase: {str(e)}")
-            return Response(
-                {'detail': 'An error occurred while processing your request'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+
+
+class UserTicketDetail(generics.RetrieveAPIView):
+    """
+    API endpoint to view details of a specific ticket purchase.
+    """
+    serializer_class = UserTicketSerializer
+    permission_classes = [permissions.IsAuthenticated]
     
-    def perform_create(self, serializer):
-        # This is called by the parent class after validation
-        # The actual creation is handled in the serializer
-        pass
+    def get_queryset(self):
+        return TicketPurchase.objects.filter(user=self.request.user)
 
 
 class UserTicketsList(generics.ListAPIView):
@@ -160,17 +158,6 @@ class UserTicketsList(generics.ListAPIView):
         return TicketPurchase.objects.filter(
             user=self.request.user
         ).select_related('ticket_type', 'ticket_type__event')
-
-
-class UserTicketDetail(generics.RetrieveAPIView):
-    """
-    API endpoint to view details of a specific ticket purchase.
-    """
-    serializer_class = UserTicketSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    
-    def get_queryset(self):
-        return TicketPurchase.objects.filter(user=self.request.user)
 
 
 # Admin views

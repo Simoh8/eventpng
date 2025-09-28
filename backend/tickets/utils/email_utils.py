@@ -79,8 +79,8 @@ def send_ticket_email(ticket, request=None, is_cancellation=False, refund_amount
         bool: True if email was sent successfully, False otherwise
     """
     try:
-        # Get the event and ticket type
-        event = ticket.event
+        # Get the event and ticket type through the event_ticket relationship
+        event = ticket.event_ticket.event if hasattr(ticket, 'event_ticket') and ticket.event_ticket else None
         ticket_type = ticket.ticket_type
         
         # Build the ticket URL

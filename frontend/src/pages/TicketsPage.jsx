@@ -221,23 +221,54 @@ const TicketsPage = () => {
       return;
     }
 
+    if (Object.keys(selectedTickets).length === 0) {
+      toast.error('Please select at least one ticket');
+      return;
+    }
+
+    // Process each selected ticket
     const ticketsToPurchase = Object.entries(selectedTickets)
       .filter(([_, quantity]) => quantity > 0)
       .map(([ticketId, quantity]) => {
-        // Find the full ticket details
-        const ticket = Object.values(ticketsByEvent)
-          .flatMap(event => event.tickets)
-          .find(t => t.id === parseInt(ticketId));
+        const ticketIdNum = parseInt(ticketId);
+        
+        // Find the ticket in all events
+        let ticket = null;
+        let eventId = null;
+        
+        // First, try to find the ticket in ticketsByEvent
+        for (const event of Object.values(ticketsByEvent)) {
+          const foundTicket = event.tickets.find(t => t.id === ticketIdNum);
+          if (foundTicket) {
+            ticket = foundTicket;
+            // Use event_id from ticket if available, otherwise use event.id
+            eventId = ticket.event_id || event.id;
+            break;
+          }
+        }
+        
+        if (!ticket) {
+          console.error('Ticket not found:', ticketId);
+          toast.error(`Error: Could not find ticket ${ticketId}`);
+          return null;
+        }
+        
+        if (!eventId) {
+          console.error('Could not determine event for ticket:', ticket);
+          toast.error(`Error: Could not determine event for ticket ${ticketId}`);
+          return null;
+        }
         
         return {
-          ...ticket,
-          ticket_id: parseInt(ticketId),
+          event_id: eventId,
+          id: ticketIdNum,
           quantity,
-          price: Number(ticket.price),
-          event_name: ticket.event_name,
-          ticket_type_name: ticket.ticket_type_name
+          price: parseFloat(ticket.price) || 0,
+          name: ticket.ticket_type_name || `Ticket ${ticketId}`,
+          ticket_type_id: ticket.id
         };
-      });
+      })
+      .filter(ticket => ticket !== null); // Filter out any null tickets
 
     if (ticketsToPurchase.length === 0) {
       toast.error('Please select at least one ticket');

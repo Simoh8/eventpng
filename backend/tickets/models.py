@@ -12,28 +12,8 @@ from gallery.models import Event
 
 logger = logging.getLogger(__name__)
 
-# Use the TicketType from the gallery app
-from gallery.ticket_models.models import TicketType
-
-# Create a proxy model to maintain compatibility with the rest of the code
-class TicketTypeProxy(TicketType):
-    class Meta:
-        proxy = True
-        verbose_name = 'Ticket Type'
-        verbose_name_plural = 'Ticket Types'
-
-    def save(self, *args, **kwargs):
-        # Ensure we're using the gallery's TicketType model
-        from gallery.ticket_models.models import TicketType as GalleryTicketType
-        if not isinstance(self, GalleryTicketType):
-            # If this is a new instance, create it in the gallery app
-            gallery_ticket = GalleryTicketType.objects.create(
-                name=self.name,
-                description=self.description,
-                # Add other fields as needed
-            )
-            self.pk = gallery_ticket.pk
-        super().save(*args, **kwargs)
+# Import the EventTicket model from the gallery app
+from gallery.ticket_models.models import EventTicket
 
 
 class TicketPurchase(models.Model):
@@ -58,13 +38,23 @@ class TicketPurchase(models.Model):
         on_delete=models.CASCADE, 
         related_name='ticket_purchases'
     )
-    ticket_type = models.ForeignKey(
-        'gallery.EventTicket', 
-        on_delete=models.PROTECT, 
+    event_ticket = models.ForeignKey(
+        EventTicket,
+        on_delete=models.PROTECT,
         related_name='purchases',
         help_text='The event-specific ticket that was purchased',
-        verbose_name='event ticket'
+        verbose_name='event ticket',
+        db_column='ticket_type_id'  # Keep the same database column name for backward compatibility
     )
+    
+    # For backward compatibility, create a property that maps to event_ticket
+    @property
+    def ticket_type(self):
+        return self.event_ticket
+        
+    @ticket_type.setter
+    def ticket_type(self, value):
+        self.event_ticket = value
     quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS)
@@ -93,17 +83,18 @@ class TicketPurchase(models.Model):
             self.verification_code = uuid.uuid4()
         
         # Set total price if not set
-        if not self.total_price and hasattr(self, 'ticket_type'):
-            self.total_price = self.ticket_type.price * self.quantity
+        if not self.total_price and hasattr(self, 'event_ticket') and self.event_ticket:
+            try:
+                self.total_price = float(self.event_ticket.price) * int(self.quantity)
+            except (AttributeError, TypeError, ValueError) as e:
+                logger.error(f"Error calculating total price: {e}")
+                # Set a default price if calculation fails
+                self.total_price = 0
             
         # First save to ensure we have an ID
         super().save(*args, **kwargs)
         
-        # Generate QR code if this is a new purchase
-        if is_new and not self.qr_code:
-            self.generate_qr_code()
-        
-        # Generate QR code after initial save
+        # Generate QR code if this is a new purchase or doesn't have one
         if not self.qr_code:
             self._generate_qr_code()
             

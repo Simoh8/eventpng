@@ -16,18 +16,23 @@ class EventTicketSerializer(serializers.ModelSerializer):
     """Serializer for event tickets with type information."""
     ticket_type = TicketTypeSerializer(read_only=True)
     remaining_quantity = serializers.IntegerField(read_only=True)
+    event_id = serializers.PrimaryKeyRelatedField(source='event', read_only=True)
     
     class Meta:
         model = EventTicket
         fields = [
             'id', 'ticket_type', 'price', 'quantity_available', 'sale_start', 
-            'sale_end', 'is_active', 'remaining_quantity'
+            'sale_end', 'is_active', 'remaining_quantity', 'event_id'
         ]
-        read_only_fields = ['id', 'remaining_quantity']
+        read_only_fields = ['id', 'remaining_quantity', 'event_id']
+
+
+
 
 
 class EventTicketListSerializer(serializers.ModelSerializer):
     """Serializer for listing tickets with event information."""
+    event_id = serializers.PrimaryKeyRelatedField(source='event', read_only=True)
     event_name = serializers.CharField(source='event.name', read_only=True)
     event_date = serializers.DateField(source='event.date', read_only=True)
     event_location = serializers.CharField(source='event.location', read_only=True)
@@ -38,10 +43,10 @@ class EventTicketListSerializer(serializers.ModelSerializer):
         model = EventTicket
         fields = [
             'id', 'price', 'quantity_available', 'sale_start', 'sale_end', 'is_active',
-            'event_name', 'event_date', 'event_location', 'ticket_type_name', 'ticket_type_description',
-            'remaining_quantity'
+            'event_id', 'event_name', 'event_date', 'event_location', 'ticket_type_name', 
+            'ticket_type_description', 'remaining_quantity'
         ]
-        read_only_fields = ['remaining_quantity']
+        read_only_fields = ['remaining_quantity', 'event_id']
 
 
 class EventWithTicketsSerializer(serializers.ModelSerializer):

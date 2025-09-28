@@ -59,6 +59,18 @@ const CheckoutPage = () => {
   const [error, setError] = useState('');
   
   const toast = useToast();
+  
+  // Function to clear the cart from localStorage
+  const clearCart = () => {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('eventTicketsCart');
+        console.log('Cart cleared successfully');
+      }
+    } catch (error) {
+      console.error('Error clearing cart:', error);
+    }
+  };
   const navigate = useNavigate();
   const location = useLocation();
   const { isOpen, onOpen, onClose } = useDisclosure();
@@ -138,24 +150,54 @@ const CheckoutPage = () => {
       setError(Object.values(errors).join(', '));
       return;
     }
-
+  
     if (!isAuthenticated) {
       onOpen();
       return;
     }
-
+  
     setIsSubmitting(true);
     setError('');
-
+  
     try {
       if (hasSelectedTickets) {
-        // Process multiple tickets from cart
+        // For cash payments, we don't need to create payment intents
+        if (paymentMethod === 'cash' || paymentMethod === 'pay_on_venue') {
+          console.log('Processing cash/on-venue payment for cart items');
+          console.log('Cart tickets:', cartTickets);
+          
+          const purchasePromises = await Promise.all(
+            cartTickets.map(ticket => {
+              console.log('Processing ticket:', ticket);
+              return purchaseTicket(ticket.id, ticket.quantity, paymentMethod, null, ticket.event_id);
+            })
+          );
+          
+          const successfulPurchases = purchasePromises.filter(result => result && (result.success || result.id));
+          
+          if (successfulPurchases.length === 0) {
+            throw new Error('Failed to process any ticket purchases');
+          }
+          
+          // Clear cart after successful purchase
+          clearCart();
+          
+          // Navigate to success page with the first successful order ID
+          const orderId = successfulPurchases[0].order_id || successfulPurchases[0].id || 'cash-payment';
+          navigate(`/ticket/success?order=${orderId}`);
+          return;
+        }
+        
+        // For card payments, handle payment intents
+        console.log('Processing card payment for cart items');
         const purchasePromises = await Promise.all(
           cartTickets.map(async (ticket) => {
             // Create payment intent for each ticket in cart
-            const paymentIntent = await createPaymentIntent(ticket.id, ticket.quantity);
-            if (!paymentIntent || !paymentIntent.id) {
-              throw new Error('Failed to create payment intent');
+            const paymentIntent = await createPaymentIntent(ticket.id, ticket.quantity, paymentMethod);
+            console.log('Payment intent created for cart item:', paymentIntent);
+            
+            if (!paymentIntent) {
+              throw new Error('No response from payment service');
             }
             
             // Process the purchase with the payment intent
@@ -163,48 +205,73 @@ const CheckoutPage = () => {
               ticket.id, 
               ticket.quantity, 
               paymentMethod,
-              paymentIntent.id
+              paymentIntent.payment_intent_id
             );
           })
         );
         
-        const successfulPurchases = purchasePromises.filter(result => result && result.success);
+        const successfulPurchases = purchasePromises.filter(result => result && (result.success || result.id));
         
         if (successfulPurchases.length === 0) {
           throw new Error('Failed to process any ticket purchases');
         }
         
-        // Navigate to success page with the first successful order ID
-        navigate(`/ticket/success?order=${successfulPurchases[0].order_id}`);
-      } else {
-        // Process single ticket
-        // First create a payment intent
-        const paymentIntent = await createPaymentIntent(selectedTicket, quantity);
-        if (!paymentIntent || !paymentIntent.id) {
-          throw new Error('Failed to create payment intent');
+        // Clear cart after successful purchase if cart context is available
+        if (typeof window !== 'undefined' && window.clearCart) {
+          window.clearCart();
+        } else if (typeof clearCart === 'function') {
+          clearCart();
+        } else {
+          console.warn('clearCart function not available');
         }
         
-        // Then process the purchase with the payment intent
+        // Navigate to success page with the first successful order ID
+        const orderId = successfulPurchases[0].order_id || successfulPurchases[0].id || successfulPurchases[0].payment_intent_id;
+        navigate(`/ticket/success?order=${orderId}`);
+      } else {
+        // Process single ticket
+        console.log('Creating payment intent for single ticket:', { selectedTicket, quantity, paymentMethod });
+        const paymentIntent = await createPaymentIntent(selectedTicket, quantity, paymentMethod);
+        console.log('Payment intent created:', paymentIntent);
+        
+        if (!paymentIntent) {
+          throw new Error('No response from payment service');
+        }
+        
+        // For pay on venue, we don't need to process payment
+        if (paymentMethod === 'pay_on_venue') {
+          navigate(`/ticket/success?payment_intent=${paymentIntent.payment_intent_id}&method=venue`);
+          return;
+        }
+        
+        // For card payments, verify we have the required fields
+        if (paymentMethod === 'card' && (!paymentIntent.client_secret || !paymentIntent.payment_intent_id)) {
+          console.error('Invalid payment intent response:', paymentIntent);
+          throw new Error('Invalid payment service response. Please try again.');
+        }
+        
+        // Process the purchase with the payment intent
+        console.log('Processing purchase with payment intent:', paymentIntent.payment_intent_id);
         const result = await purchaseTicket(
           selectedTicket,
           quantity,
           paymentMethod,
-          paymentIntent.id
+          paymentIntent.payment_intent_id
         );
         
-        toast({
-          title: 'Purchase successful!',
-          description: 'Your tickets have been purchased successfully.',
-          status: 'success',
-          duration: 5000,
-          isClosable: true,
-        });
-        
-        navigate(`/ticket/success?order=${result.order_id}`);
+        console.log('Purchase result:', result);
+  
+        if (result && (result.success || result.id)) {
+          // Navigate to success page with order ID or payment intent ID
+          const orderId = result.order_id || result.id || paymentIntent.payment_intent_id;
+          navigate(`/ticket/success?order=${orderId}`);
+        } else {
+          throw new Error(result?.error || 'Failed to complete purchase');
+        }
       }
     } catch (err) {
-      setError(err.message || 'An error occurred while processing your purchase');
       console.error('Purchase error:', err);
+      setError(err.message || 'An error occurred while processing your payment. Please try again.');
     } finally {
       setIsSubmitting(false);
     }

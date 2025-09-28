@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import TicketPurchase, TicketType
+from .models import TicketPurchase
+from gallery.ticket_models.models import TicketType
 
 class TicketTypeVerificationSerializer(serializers.ModelSerializer):
     """Serializer for ticket type data in verification responses."""
