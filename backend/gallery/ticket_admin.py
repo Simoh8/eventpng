@@ -45,16 +45,16 @@ class EventTicketInline(admin.TabularInline):
 
 
 class EventTicketAdmin(admin.ModelAdmin):
-    list_display = ('event', 'ticket_type_display', 'price', 'remaining_quantity', 'is_available', 'is_active')
-    list_filter = ('ticket_type__group', 'ticket_type__level', 'is_active')
+    list_display = ('event', 'ticket_type_display', 'price', 'price_with_currency', 'remaining_quantity', 'is_available', 'is_active')
+    list_filter = ('ticket_type__group', 'ticket_type__level', 'is_active', 'currency')
     search_fields = ('event__name', 'ticket_type__name', 'ticket_type__group__name', 'ticket_type__level__name')
     list_editable = ('price', 'is_active')
-    readonly_fields = ('created_at', 'updated_at', 'remaining_quantity')
+    readonly_fields = ('created_at', 'updated_at', 'remaining_quantity', 'price_with_currency')
     date_hierarchy = 'sale_start'
     
     fieldsets = (
         (None, {
-            'fields': ('event', 'ticket_type', 'price', 'quantity_available')
+            'fields': ('event', 'ticket_type', 'price', 'currency', 'quantity_available')
         }),
         ('Sale Period', {
             'fields': ('sale_start', 'sale_end')
@@ -74,7 +74,7 @@ class EventTicketAdmin(admin.ModelAdmin):
     ticket_type_display.admin_order_field = 'ticket_type__name'
 
     def is_available(self, obj):
-        return obj.is_available
+        return obj.is_available()
     is_available.boolean = True
     is_available.short_description = 'Available'
 

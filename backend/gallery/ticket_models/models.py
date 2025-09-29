@@ -95,10 +95,25 @@ class EventTicket(models.Model):
         on_delete=models.PROTECT,
         related_name='event_tickets'
     )
+    CURRENCY_CHOICES = [
+        ('USD', 'US Dollar ($)'),
+        ('EUR', 'Euro (€)'),
+        ('GBP', 'British Pound (£)'),
+        ('KES', 'Kenyan Shilling (KSh)'),
+        ('UGX', 'Ugandan Shilling (USh)'),
+        ('TZS', 'Tanzanian Shilling (TSh)'),
+    ]
+    
     price = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        help_text="Price in USD"
+        help_text="Price in the selected currency"
+    )
+    currency = models.CharField(
+        max_length=3,
+        choices=CURRENCY_CHOICES,
+        default='USD',
+        help_text="Currency for this ticket price"
     )
     quantity_available = models.PositiveIntegerField(
         null=True,
@@ -129,7 +144,21 @@ class EventTicket(models.Model):
         verbose_name_plural = _('Event Tickets')
 
     def __str__(self):
-        return f"{self.event.title} - {self.ticket_type}"
+        return f"{self.event.name} - {self.ticket_type}"
+        
+    @property
+    def price_with_currency(self):
+        """Return price formatted with currency symbol"""
+        currency_symbols = {
+            'USD': '$',
+            'EUR': '€',
+            'GBP': '£',
+            'KES': 'KSh',
+            'UGX': 'USh',
+            'TZS': 'TSh',
+        }
+        symbol = currency_symbols.get(self.currency, self.currency)
+        return f"{symbol} {self.price:.2f}"
 
     @property
     def name(self):

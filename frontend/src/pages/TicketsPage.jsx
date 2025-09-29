@@ -7,8 +7,22 @@ import { format, parseISO } from 'date-fns';
 import { API_BASE_URL } from '../config';
 import { FaTicketAlt, FaCalendarAlt, FaMapMarkerAlt, FaInfoCircle, FaPlus, FaMinus, FaChevronDown, FaChevronUp } from 'react-icons/fa';
 
+// Currency symbol mapping for consistent display
+const CURRENCY_SYMBOLS = {
+  'USD': '$',
+  'EUR': '€',
+  'GBP': '£',
+  'KES': 'KSh',
+  'UGX': 'USh',
+  'TZS': 'TSh',
+  'NGN': '₦',
+  'GHS': 'GH₵',
+  'ZAR': 'R',
+  'INR': '₹',
+};
+
 // Component to display a collapsible event section
-const EventSection = ({ event, tickets, selectedTickets, onSelectTicket, onDeselectTicket }) => {
+const EventSection = ({ event, tickets, selectedTickets, onSelectTicket: handleSelectTicket, onDeselectTicket: handleDeselectTicket }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   
   // Group tickets by type
@@ -64,13 +78,13 @@ const EventSection = ({ event, tickets, selectedTickets, onSelectTicket, onDesel
                     </div>
                     <div className="flex flex-col sm:flex-row items-end sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
                       <div className="text-xl font-bold text-primary-600">
-                        ${Number(ticket.price).toFixed(2)}
+                        {CURRENCY_SYMBOLS[ticket.currency] || ticket.currency || '$'}{Number(ticket.price).toFixed(2)}
                       </div>
                       <div className="flex items-center space-x-2">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            onDeselectTicket(ticket.id);
+                            handleDeselectTicket(ticket.id);
                           }}
                           className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full"
                           disabled={!selectedTickets[ticket.id]}
@@ -83,7 +97,7 @@ const EventSection = ({ event, tickets, selectedTickets, onSelectTicket, onDesel
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            onSelectTicket(ticket);
+                            handleSelectTicket(ticket);
                           }}
                           className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full"
                           disabled={ticket.remaining_quantity !== null && (selectedTickets[ticket.id] || 0) >= ticket.remaining_quantity}
@@ -111,8 +125,24 @@ const TicketsPage = () => {
   const [selectedTickets, setSelectedTickets] = useState(() => {
     // Load cart from localStorage on initial render
     if (typeof window !== 'undefined') {
-      const savedCart = localStorage.getItem('eventTicketsCart');
-      return savedCart ? JSON.parse(savedCart) : {};
+      try {
+        const savedCart = localStorage.getItem('eventTicketsCart');
+        const parsedCart = savedCart ? JSON.parse(savedCart) : {};
+        
+        // Ensure we have a valid object with string keys and number values
+        if (parsedCart && typeof parsedCart === 'object') {
+          const validCart = {};
+          Object.entries(parsedCart).forEach(([key, value]) => {
+            const numValue = Number(value);
+            if (!isNaN(numValue) && numValue > 0) {
+              validCart[String(key)] = numValue;
+            }
+          });
+          return validCart;
+        }
+      } catch (error) {
+        console.error('Error parsing cart from localStorage:', error);
+      }
     }
     return {};
   });
@@ -176,23 +206,50 @@ const TicketsPage = () => {
     return groups;
   }, {});
 
-  const handleTicketSelect = (ticket) => {
-    updateSelectedTickets(prev => ({
-      ...prev,
-      [ticket.id]: (prev[ticket.id] || 0) + 1
-    }));
-  };
-  
-  const handleTicketDeselect = (ticketId) => {
+  const handleSelectTicket = (ticket) => {
+    if (!ticket || !ticket.id) return;
+    
     updateSelectedTickets(prev => {
-      const newTickets = { ...prev };
-      if (newTickets[ticketId] > 0) {
-        newTickets[ticketId]--;
-        if (newTickets[ticketId] === 0) {
-          delete newTickets[ticketId];
+      const ticketId = String(ticket.id);
+      const currentCount = typeof prev[ticketId] === 'number' ? prev[ticketId] : 0;
+      
+      // Get the ticket details to check remaining quantity
+      const allTickets = Object.values(ticketsByEvent).flatMap(event => event.tickets);
+      const ticketDetails = allTickets.find(t => String(t.id) === ticketId);
+      
+      // If there's a remaining quantity limit, respect it
+      if (ticketDetails?.remaining_quantity !== null) {
+        const remaining = ticketDetails?.remaining_quantity || 0;
+        if (currentCount >= remaining) {
+          return prev; // Don't exceed available quantity
         }
       }
-      return newTickets;
+      
+      return {
+        ...prev,
+        [ticketId]: currentCount + 1
+      };
+    });
+  };
+  
+  const handleDeselectTicket = (ticketId) => {
+    if (!ticketId) return;
+    
+    updateSelectedTickets(prev => {
+      const ticketIdStr = String(ticketId);
+      const currentCount = typeof prev[ticketIdStr] === 'number' ? prev[ticketIdStr] : 0;
+      
+      if (currentCount <= 1) {
+        // Remove the ticket if count would go to 0 or below
+        const { [ticketIdStr]: _, ...rest } = prev;
+        return rest;
+      }
+      
+      // Decrement the count
+      return {
+        ...prev,
+        [ticketIdStr]: currentCount - 1
+      };
     });
   };
 
@@ -243,7 +300,7 @@ const TicketsPage = () => {
           if (foundTicket) {
             ticket = foundTicket;
             // Use event_id from ticket if available, otherwise use event.id
-            eventId = ticket.event_id || event.id;
+            eventId = ticket.event_id || (event.id ? parseInt(event.id) : null);
             break;
           }
         }
@@ -266,7 +323,9 @@ const TicketsPage = () => {
           quantity,
           price: parseFloat(ticket.price) || 0,
           name: ticket.ticket_type_name || `Ticket ${ticketId}`,
-          ticket_type_id: ticket.id
+          ticket_type_id: ticket.id,
+          currency: ticket.currency || 'KES',
+          event_name: ticket.event_name || 'Event'
         };
       })
       .filter(ticket => ticket !== null); // Filter out any null tickets
@@ -276,12 +335,15 @@ const TicketsPage = () => {
       return;
     }
     
+    console.log('Navigating to checkout with tickets:', ticketsToPurchase); // Debug log
+    
     navigate('/checkout', { 
       state: { 
         selectedTickets: ticketsToPurchase,
         total: calculateTotal(),
         fromCart: true
-      } 
+      },
+      replace: true // Prevent going back to the same page with back button
     });
   };
 
@@ -316,37 +378,43 @@ const TicketsPage = () => {
               <div className="p-4">
                 {Object.keys(selectedTickets).length > 0 ? (
                   <div className="space-y-4">
-                    {Object.entries(selectedTickets).map(([ticketId, quantity]) => {
+                    {Object.entries(selectedTickets).map(([ticketId, item]) => {
                       // Flatten all tickets to find the selected one
                       const allTickets = Object.values(ticketsByEvent).flatMap(event => event.tickets);
                       const ticket = allTickets.find(t => t.id === parseInt(ticketId));
                       if (!ticket) return null;
                       
+                      // Use currency from the cart item if available, otherwise from the ticket
+                      const currency = item.currency || ticket.currency || 'USD';
+                      const currencySymbol = CURRENCY_SYMBOLS[currency] || currency;
+                      
                       return (
                         <div key={ticketId} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                           <div>
                             <h3 className="font-medium">{ticket.event_name}</h3>
-                            <p className="text-sm text-gray-600">{ticket.ticket_type_name}</p>
-                            <p className="text-sm font-medium">${Number(ticket.price).toFixed(2)} × {quantity}</p>
+                            <p className="text-sm text-gray-600">{item.name || ticket.ticket_type_name}</p>
+                            <p className="text-sm font-medium">
+                              {currencySymbol}{Number(item.price || ticket.price).toFixed(2)} × {item.quantity}
+                            </p>
                           </div>
                           <div className="flex items-center space-x-2">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleTicketDeselect(ticket.id);
+                                handleDeselectTicket(ticket.id);
                               }}
                               className="p-1 text-gray-500 hover:text-gray-700"
                             >
                               <FaMinus />
                             </button>
-                            <span>{quantity}</span>
+                            <span>{item.quantity}</span>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleTicketSelect(ticket);
+                                handleSelectTicket(ticket);
                               }}
                               className="p-1 text-gray-500 hover:text-gray-700"
-                              disabled={ticket.remaining_quantity !== null && quantity >= ticket.remaining_quantity}
+                              disabled={ticket.remaining_quantity !== null && item.quantity >= ticket.remaining_quantity}
                             >
                               <FaPlus />
                             </button>
@@ -357,7 +425,22 @@ const TicketsPage = () => {
                     <div className="border-t border-gray-200 pt-4 mt-4">
                       <div className="flex justify-between font-medium">
                         <span>Total:</span>
-                        <span>${calculateTotal().toFixed(2)}</span>
+                        <span>
+                          {(() => {
+                            // Get the first ticket to determine the currency
+                            const firstTicketId = Object.keys(selectedTickets)[0];
+                            if (!firstTicketId) return '$0.00';
+                            
+                            const allTickets = Object.values(ticketsByEvent).flatMap(event => event.tickets);
+                            const ticket = allTickets.find(t => t.id === parseInt(firstTicketId));
+                            if (!ticket) return '$0.00';
+                            
+                            const currency = ticket.currency || 'USD';
+                            const currencySymbol = CURRENCY_SYMBOLS[currency] || currency;
+                            
+                            return `${currencySymbol}${calculateTotal().toFixed(2)}`;
+                          })()}
+                        </span>
                       </div>
                       <button
                         onClick={handleCheckout}
@@ -390,8 +473,8 @@ const TicketsPage = () => {
                     event={event}
                     tickets={event.tickets}
                     selectedTickets={selectedTickets}
-                    onSelectTicket={handleTicketSelect}
-                    onDeselectTicket={handleTicketDeselect}
+                    onSelectTicket={handleSelectTicket}
+                    onDeselectTicket={handleDeselectTicket}
                   />
                 ))
               ) : (

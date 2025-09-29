@@ -62,10 +62,14 @@ class CreatePaymentIntentView(APIView):
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 
-                # Calculate total amount in kobo (smallest currency unit for NGN)
-                total_amount = int(event_ticket.price * quantity * 100)
+                # Set default currency to USD since it's not stored in the model
+                currency = 'USD'
+                decimal_places = 2  # USD uses 2 decimal places (cents)
                 
-                # Prepare Paystack payment data
+                # Calculate amount in the smallest currency unit (cents for USD)
+                total_amount = int(event_ticket.price * 100 * quantity)  # Convert to cents
+                
+                # Prepare Paystack payment data with currency
                 reference = f"TKT-{timezone.now().strftime('%Y%m%d')}-{str(request.user.id)[:8]}-{str(ticket_type_id)[:8]}"
                 
                 # In a real implementation, you would call the Paystack API here
@@ -118,12 +122,13 @@ class CreatePaymentIntentView(APIView):
                         'payment_url': payment_data['data']['authorization_url'],
                         'reference': payment_data['data']['reference'],
                         'amount': total_amount,
-                        'currency': 'NGN',
+                        'currency': currency,
                         'metadata': {
                             'event_id': event_id,
                             'ticket_type_id': ticket_type_id,
                             'quantity': quantity,
-                            'user_id': str(request.user.id)
+                            'user_id': str(request.user.id),
+                            'currency': currency
                         }
                     }
                 })

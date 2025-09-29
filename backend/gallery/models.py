@@ -42,6 +42,19 @@ class Event(models.Model):
         ('rsvp', 'RSVP - Free but requires registration')
     ]
     
+    CURRENCY_CHOICES = [
+        ('USD', 'US Dollar ($)'),
+        ('EUR', 'Euro (€)'),
+        ('GBP', 'British Pound (£)'),
+        ('NGN', 'Nigerian Naira (₦)'),
+        ('KES', 'Kenyan Shilling (KSh)'),
+        ('GHS', 'Ghanaian Cedi (GH₵)'),
+        ('ZAR', 'South African Rand (R)'),
+        ('INR', 'Indian Rupee (₹)'),
+        ('AUD', 'Australian Dollar (A$)'),
+        ('CAD', 'Canadian Dollar (C$)'),
+    ]
+    
     name = models.CharField(max_length=200)
     slug = models.SlugField(max_length=200, unique=True, blank=True)
     description = models.TextField(blank=True)
@@ -79,6 +92,13 @@ class Event(models.Model):
         null=True,
         help_text="PIN code for private events (auto-generated for private events)",
         editable=False
+    )
+    
+    currency = models.CharField(
+        max_length=3,
+        choices=CURRENCY_CHOICES,
+        default='USD',
+        help_text="Currency for this event's ticket prices"
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -213,7 +233,14 @@ class Ticket(models.Model):
         max_digits=10,
         decimal_places=2,
         default=0,
-        help_text="Price in USD. Set to 0 for free tickets."
+        help_text="Price in the selected currency. Set to 0 for free tickets."
+    )
+    
+    currency = models.CharField(
+        max_length=3,
+        choices=Event.CURRENCY_CHOICES,
+        default='USD',
+        help_text="Currency for this ticket. Defaults to the event's currency."
     )
     quantity_available = models.PositiveIntegerField(
         null=True,

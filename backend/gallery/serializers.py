@@ -42,7 +42,7 @@ class EventTicketListSerializer(serializers.ModelSerializer):
     class Meta:
         model = EventTicket
         fields = [
-            'id', 'price', 'quantity_available', 'sale_start', 'sale_end', 'is_active',
+            'id', 'price', 'currency', 'quantity_available', 'sale_start', 'sale_end', 'is_active',
             'event_id', 'event_name', 'event_date', 'event_location', 'ticket_type_name', 
             'ticket_type_description', 'remaining_quantity'
         ]
