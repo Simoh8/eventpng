@@ -335,7 +335,6 @@ const TicketsPage = () => {
       return;
     }
     
-    console.log('Navigating to checkout with tickets:', ticketsToPurchase); // Debug log
     
     navigate('/checkout', { 
       state: { 

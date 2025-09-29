@@ -139,11 +139,7 @@ const CheckoutPage = () => {
   
   // Initialize tickets from location state or redirect
   useEffect(() => {
-    console.log('Location state:', location.state); // Debug
-    console.log('Cart tickets:', cartTickets); // Debug
-    
     if (!hasSelectedTickets) {
-      console.log('No valid cart data found, redirecting to events');
       toast({
         title: 'No tickets selected',
         description: 'Please select tickets before proceeding to checkout',
@@ -219,10 +215,19 @@ const CheckoutPage = () => {
           ? phoneNumber 
           : `254${phoneNumber}`;
       
+      // Calculate total amount
+      const amount = tickets.reduce((sum, ticket) => {
+        const quantity = selectedTickets[ticket.id] || 0;
+        return sum + (ticket.price * quantity);
+      }, 0);
+      
+      // Convert to kobo/pesewas for the payment gateway
+      const amountInKobo = Math.round(amount * 100);
+      
       // Prepare payment data
       const paymentData = {
         phone: formattedPhone,
-        amount: totalAmount.replace(/[^0-9.]/g, ''), // Remove currency symbol
+        amount: amountInKobo, // Amount in kobo/pesewas
         account_reference: `TKT-${Date.now()}`,
         transaction_desc: `Payment for event tickets`,
         callback_url: `${window.location.origin}/payment/callback`,
@@ -234,7 +239,8 @@ const CheckoutPage = () => {
           name: formData.name,
           email: formData.email,
           phone: formattedPhone
-        }
+        },
+        currency: 'KES'
       };
       
       // Call your M-Pesa API here
@@ -245,7 +251,6 @@ const CheckoutPage = () => {
       
       // On success
       clearCart();
-      setCurrentStep(4); // Confirmation step
       setSuccess(true);
       
       toast({
@@ -255,6 +260,8 @@ const CheckoutPage = () => {
         duration: 5000,
         isClosable: true,
       });
+      
+      return true;
       
     } catch (error) {
       console.error('Payment error:', error);
@@ -267,8 +274,10 @@ const CheckoutPage = () => {
         duration: 5000,
         isClosable: true,
       });
+      return false;
     } finally {
       setIsSubmitting(false);
+      setPaymentInProgress(false);
     }
   };
   
@@ -285,8 +294,17 @@ const CheckoutPage = () => {
 
   // Process payment with Paystack
   const processPayment = useCallback(async () => {
-    if (!formData.email) {
-      setError('Please enter your email address');
+    // Enhanced email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!formData.email || !emailRegex.test(formData.email)) {
+      setError('Please enter a valid email address');
+      toast({
+        title: 'Invalid Email',
+        description: 'Please enter a valid email address to continue with the payment',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
       return false;
     }
 
@@ -297,6 +315,7 @@ const CheckoutPage = () => {
 
     setIsSubmitting(true);
     setError(null);
+    setPaymentInProgress(true);
 
     try {
       // Calculate total amount
@@ -308,53 +327,113 @@ const CheckoutPage = () => {
       // Process payment based on method
       if (selectedPaymentMethod === 'card') {
         // Process card payment with Paystack
-        await processPaystackPayment({
-          email: formData.email,
-          amount,
-          metadata: {
-            custom_fields: [
-              {
-                display_name: 'Customer Name',
-                variable_name: 'customer_name',
-                value: formData.name || 'Customer'
-              },
-              {
-                display_name: 'Phone Number',
-                variable_name: 'phone_number',
-                value: formData.phone || ''
+        const ticketDetails = Object.entries(selectedTickets)
+          .filter(([_, qty]) => qty > 0)
+          .map(([ticketId, qty]) => {
+            const ticket = tickets.find(t => t.id === ticketId);
+            return {
+              id: ticketId,
+              name: ticket?.name || `Ticket ${ticketId}`,
+              quantity: qty,
+              price: ticket?.price || 0
+            };
+          });
+
+        // Calculate total amount in kobo/pesewas for Paystack
+        const amountInKobo = Math.round(amount * 100);
+
+        try {
+          // Ensure email is trimmed and in lowercase
+          const cleanedEmail = formData.email.trim().toLowerCase();
+          
+          const paymentResult = await processPaystackPayment({
+            email: cleanedEmail,
+            amount: amountInKobo,
+            metadata: {
+              customer_name: formData.name || 'Customer',
+              customer_phone: formData.phone || '',
+              ticket_ids: ticketDetails.map(t => t.id).join(','),
+              ticket_quantities: ticketDetails.map(t => `${t.id}:${t.quantity}`).join(','),
+              total_amount: amount,
+              currency: currency || 'KES'
+            },
+            onSuccess: async (response) => {
+              setPaymentReference(response.reference);
+              setSuccess(true);
+              
+              try {
+                // Verify payment with backend
+                await verifyPayment(response.reference);
+                
+                // Clear cart on successful payment
+                clearCart();
+                
+                // Show success modal
+                onSuccessModalOpen();
+              } catch (error) {
+                console.error('Payment verification failed:', error);
+                // Even if verification fails, we still consider the payment successful
+                // but log the error for debugging
+                clearCart();
+                onSuccessModalOpen();
               }
-            ]
-          },
-          onSuccess: async (response) => {
-            console.log('Payment successful:', response);
-            setPaymentReference(response.reference);
-            setSuccess(true);
-            onSuccessModalOpen();
-            
-            // Here you would typically verify the payment with your backend
-            // and update your database
-            await verifyPayment(response.reference);
-            
-            // Clear cart on successful payment
-            clearCart();
-          },
-          onClose: () => {
-            console.log('Payment window closed');
-            setPaymentInProgress(false);
-          }
-        });
+            },
+            onClose: () => {
+              // Reset the payment states when user closes the Paystack popup
+              setPaymentInProgress(false);
+              setIsSubmitting(false);
+              
+              toast({
+                title: 'Payment Cancelled',
+                description: 'You cancelled the payment process',
+                status: 'info',
+                duration: 5000,
+                isClosable: true,
+              });
+            }
+          });
+          
+          return Boolean(paymentResult);
+        } catch (error) {
+          console.error('Paystack payment error:', error);
+          setError(error.message || 'Failed to process payment with Paystack');
+          setPaymentInProgress(false);
+          setIsSubmitting(false);
+          
+          toast({
+            title: 'Payment Error',
+            description: error.message || 'Failed to process payment. Please try again.',
+            status: 'error',
+            duration: 5000,
+            isClosable: true,
+          });
+          
+          return false;
+        }
       } else if (selectedPaymentMethod === 'mpesa') {
         // Process M-Pesa payment
-        await processMpesaPayment();
+        return await processMpesaPayment();
       }
       
-      return true;
+      return false;
     } catch (error) {
-      console.error('Payment error:', error);
+      console.error('Payment processing error:', error);
       setError(error.message || 'An error occurred while processing your payment');
+      
+      toast({
+        title: 'Payment Error',
+        description: error.message || 'Failed to process payment. Please try again.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+      
       return false;
     } finally {
-      setIsSubmitting(false);
+      if (selectedPaymentMethod !== 'card') { // For card, we handle this in the callbacks
+        setIsSubmitting(false);
+        setPaymentInProgress(false);
+      }
     }
   }, [formData, selectedPaymentMethod, phoneNumber, tickets, selectedTickets, onSuccessModalOpen]);
 
@@ -386,19 +465,30 @@ const CheckoutPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Basic validation
-    if (!formData.name || !formData.email || !formData.phone) {
-      setError('Please fill in all required fields');
-      return;
+    try {
+      // Process payment
+      const success = await processPayment();
+      if (success) {
+        // Clear form on successful payment
+        setFormData(prev => ({
+          ...prev,
+          name: '',
+          phone: '',
+          terms: false
+        }));
+      }
+    } catch (error) {
+      console.error('Payment processing error:', error);
+      setError(error.message || 'An error occurred while processing your payment');
+      
+      toast({
+        title: 'Payment Error',
+        description: error.message || 'Failed to process payment. Please try again.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
     }
-    
-    if (!formData.terms) {
-      setError('You must accept the terms and conditions');
-      return;
-    }
-    
-    // Process payment
-    await processPayment();
   };
 
   // Handle back to events

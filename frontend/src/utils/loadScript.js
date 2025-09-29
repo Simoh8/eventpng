@@ -16,12 +16,10 @@ export const loadScript = (src) => {
     script.async = true;
     
     script.onload = () => {
-      console.log(`Script loaded: ${src}`);
       resolve();
     };
     
     script.onerror = (error) => {
-      console.error(`Error loading script: ${src}`, error);
       reject(new Error(`Failed to load script: ${src}`));
     };
     
