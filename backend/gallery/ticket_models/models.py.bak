@@ -147,27 +147,8 @@ class EventTicket(models.Model):
     def remaining_quantity(self):
         if self.quantity_available is None:
             return None
-        
-        # Get the related Ticket model from the main app
-        from gallery.models import EventRegistration
-        
-        # Find the corresponding Ticket in the main app
-        from gallery.models import Ticket as MainTicket
-        try:
-            main_ticket = MainTicket.objects.get(
-                event_id=self.event.id,
-                name=self.ticket_type.name,
-                price=self.price
-            )
-            # Get count of registrations for this ticket type
-            sold = EventRegistration.objects.filter(
-                ticket=main_ticket,
-                status__in=['confirmed', 'attended']
-            ).count()
-            return max(0, self.quantity_available - sold)
-        except MainTicket.DoesNotExist:
-            # If no corresponding ticket exists, return the full quantity
-            return self.quantity_available
+        sold = self.registrations.filter(status__in=['confirmed', 'attended']).count()
+        return max(0, self.quantity_available - sold)
 
     def is_available(self):
         """Check if this ticket is currently available for purchase."""
@@ -185,3 +166,86 @@ class EventTicket(models.Model):
             return False
             
         return True
+
+
+class EventRegistration(models.Model):
+    """Tracks event registrations and ticket assignments."""
+    STATUS_CHOICES = [
+        ('pending_payment', _('Pending Payment')),
+        ('confirmed', _('Confirmed')),
+        ('cancelled', _('Cancelled')),
+        ('refunded', _('Refunded')),
+        ('attended', _('Attended')),
+        ('no_show', _('No Show')),
+    ]
+
+    event = models.ForeignKey(
+        'gallery.Event',
+        on_delete=models.CASCADE,
+        related_name='registrations'
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='event_registrations'
+    )
+    ticket_type = models.ForeignKey(
+        EventTicket,
+        on_delete=models.PROTECT,
+        related_name='registrations'
+    )
+    order = models.ForeignKey(
+        'payments.Order',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='registrations'
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pending_payment'
+    )
+    ticket_number = models.CharField(
+        max_length=50,
+        unique=True,
+        blank=True,
+        help_text="Unique ticket number/identifier"
+    )
+    checked_in = models.BooleanField(default=False)
+    checked_in_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = _('Event Registration')
+        verbose_name_plural = _('Event Registrations')
+        unique_together = ['event', 'user', 'ticket_type']
+
+    def __str__(self):
+        return f"{self.user.get_full_name()} - {self.ticket_type}"
+
+    def save(self, *args, **kwargs):
+        if not self.ticket_number:
+            # Generate a unique ticket number when the registration is created
+            self.ticket_number = f"TKT-{timezone.now().strftime('%Y%m%d')}-{self.id or 0:06d}"
+        
+        # Update checked_in_at when checked_in changes
+        if self.checked_in and not self.checked_in_at:
+            self.checked_in_at = timezone.now()
+        elif not self.checked_in:
+            self.checked_in_at = None
+            
+        super().save(*args, **kwargs)
+
+    @property
+    def is_confirmed(self):
+        """Check if the registration is confirmed."""
+        return self.status == 'confirmed'
+
+    @property
+    def can_cancel(self):
+        """Check if the registration can be cancelled."""
+        return self.status in ['pending_payment', 'confirmed'] and not self.checked_in

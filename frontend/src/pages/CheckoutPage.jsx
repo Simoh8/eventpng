@@ -34,7 +34,10 @@ import {
   CardHeader,
   Stack,
   Container,
-  Divider
+  Divider,
+  Input,
+  Grid,
+  GridItem
 } from '@chakra-ui/react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -45,7 +48,10 @@ import {
   FaCreditCard, 
   FaMoneyBillWave, 
   FaTicketAlt, 
-  FaShoppingBag 
+  FaShoppingBag,
+  FaUser,
+  FaMobile,
+  FaGoogle
 } from 'react-icons/fa';
 
 const CheckoutPage = () => {
@@ -54,9 +60,21 @@ const CheckoutPage = () => {
   const [selectedTicket, setSelectedTicket] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState('card');
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  
+  // Card payment fields
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardName, setCardName] = useState('');
+  const [expiryDate, setExpiryDate] = useState('');
+  const [cvv, setCvv] = useState('');
+  const [email, setEmail] = useState('');
+  
+  // Mobile money fields
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [mobileProvider, setMobileProvider] = useState('safaricom');
   
   const toast = useToast();
   
@@ -67,11 +85,31 @@ const CheckoutPage = () => {
         localStorage.removeItem('eventTicketsCart');
       }
     } catch (error) {
+      console.error('Error clearing cart:', error);
     }
   };
+  
   const navigate = useNavigate();
   const location = useLocation();
   const { isOpen, onOpen, onClose } = useDisclosure();
+
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://js.paystack.co/v1/inline.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.PaystackPop && window.PaystackPop.setup) {
+        console.log('Paystack loaded successfully');
+      } else {
+        console.error('Paystack failed to load properly');
+      }
+    };
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
   
   // Get state from location (coming from cart)
   const { selectedTickets: cartTickets = [], fromCart = false } = location.state || {};
@@ -122,6 +160,61 @@ const CheckoutPage = () => {
     ? cartTickets.reduce((sum, ticket) => sum + (ticket.price * ticket.quantity), 0)
     : 0;
 
+  // Format card number with spaces
+  const formatCardNumber = (value) => {
+    const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
+    const matches = v.match(/\d{4,16}/g);
+    const match = (matches && matches[0]) || '';
+    const parts = [];
+    
+    for (let i = 0, len = match.length; i < len; i += 4) {
+      parts.push(match.substring(i, i + 4));
+    }
+    
+    if (parts.length) {
+      return parts.join(' ');
+    } else {
+      return value;
+    }
+  };
+
+  // Format expiry date
+  const formatExpiryDate = (value) => {
+    const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
+    if (v.length >= 2) {
+      return v.substring(0, 2) + (v.length > 2 ? '/' + v.substring(2, 4) : '');
+    }
+    return v;
+  };
+
+  // Format phone number
+  const formatPhoneNumber = (value) => {
+    const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
+    if (v.startsWith('0')) {
+      return `+254 ${v.substring(1)}`;
+    } else if (v.startsWith('254')) {
+      return `+254 ${v.substring(3)}`;
+    } else if (v.startsWith('+254')) {
+      return `+254 ${v.substring(4)}`;
+    }
+    return v;
+  };
+
+  const handleCardNumberChange = (e) => {
+    const formatted = formatCardNumber(e.target.value);
+    setCardNumber(formatted);
+  };
+
+  const handleExpiryDateChange = (e) => {
+    const formatted = formatExpiryDate(e.target.value);
+    setExpiryDate(formatted);
+  };
+
+  const handlePhoneNumberChange = (e) => {
+    const formatted = formatPhoneNumber(e.target.value);
+    setPhoneNumber(formatted);
+  };
+
   const validateForm = () => {
     const errors = {};
     
@@ -137,7 +230,156 @@ const CheckoutPage = () => {
       errors.quantity = `Only ${selectedTicketData.quantity_available} tickets available`;
     }
     
+    // Card validation
+    if (paymentMethod === 'card') {
+      if (!cardNumber || cardNumber.replace(/\s/g, '').length < 16) {
+        errors.cardNumber = 'Please enter a valid card number';
+      }
+      
+      if (!cardName.trim()) {
+        errors.cardName = 'Please enter the name on card';
+      }
+      
+      if (!expiryDate || expiryDate.length < 5) {
+        errors.expiryDate = 'Please enter a valid expiry date';
+      }
+      
+      if (!cvv || cvv.length < 3) {
+        errors.cvv = 'Please enter a valid CVV';
+      }
+      
+      if (!email || !/\S+@\S+\.\S+/.test(email)) {
+        errors.email = 'Please enter a valid email address';
+      }
+    }
+    
+    // Mobile money validation
+    if (paymentMethod === 'mobile_money') {
+      if (!phoneNumber || phoneNumber.replace(/\D/g, '').length < 9) {
+        errors.phoneNumber = 'Please enter a valid phone number';
+      }
+      
+      if (!mobileProvider) {
+        errors.mobileProvider = 'Please select a mobile provider';
+      }
+    }
+    
     return errors;
+  };
+
+  const handlePaystackPayment = async (paymentData) => {
+    try {
+      // Initialize Paystack payment
+      const paystack = window.PaystackPop.setup({
+        key: process.env.REACT_APP_PAYSTACK_PUBLIC_KEY,
+        email: user?.email || email,
+        amount: paymentData.amount * 100, // Convert to kobo
+        ref: paymentData.reference,
+        metadata: {
+          custom_fields: [
+            {
+              display_name: 'Event Ticket',
+              variable_name: 'event_ticket',
+              value: paymentData.metadata.ticket_type_id
+            }
+          ]
+        },
+        callback: function(response) {
+          // Verify payment with your backend
+          verifyPayment(response.reference, paymentData);
+        },
+        onClose: function() {
+          // Handle when user closes payment modal
+          setIsSubmitting(false);
+          toast({
+            title: 'Payment cancelled',
+            description: 'You cancelled the payment process.',
+            status: 'warning',
+            duration: 5000,
+            isClosable: true,
+          });
+        }
+      });
+      
+      paystack.openIframe();
+    } catch (error) {
+      console.error('Paystack error:', error);
+      throw new Error('Failed to initialize payment. Please try again.');
+    }
+  };
+
+  const verifyPayment = async (reference, paymentData) => {
+    try {
+      // Call your backend to verify the payment
+      const response = await fetch(`/api/payments/verify/${reference}/`);
+      const data = await response.json();
+      
+      if (data.status === 'success') {
+        // Process the purchase after successful payment
+        await processPurchase(paymentData, reference);
+      } else {
+        throw new Error(data.message || 'Payment verification failed');
+      }
+    } catch (error) {
+      console.error('Payment verification error:', error);
+      setError(error.message || 'Failed to verify payment. Please contact support.');
+      setIsSubmitting(false);
+    }
+  };
+
+  const processPurchase = async (paymentData, reference) => {
+    try {
+      let result;
+      
+      if (hasSelectedTickets) {
+        // Process multiple tickets from cart
+        const purchasePromises = await Promise.all(
+          cartTickets.map(ticket => (
+            purchaseTicket(
+              ticket.event_id,
+              ticket.id,
+              ticket.quantity,
+              paymentMethod,
+              reference
+            )
+          ))
+        );
+        
+        const successfulPurchases = purchasePromises.filter(result => result && (result.success || result.id));
+        
+        if (successfulPurchases.length === 0) {
+          throw new Error('Failed to process any ticket purchases');
+        }
+        
+        // Clear cart after successful purchase
+        clearCart();
+        
+        // Navigate to success page with the first successful order ID
+        const orderId = successfulPurchases[0].order_id || successfulPurchases[0].id || reference;
+        navigate(`/ticket/success?order=${orderId}`);
+      } else {
+        // Process single ticket
+        result = await purchaseTicket(
+          paymentData.metadata.event_id,
+          paymentData.metadata.ticket_type_id,
+          paymentData.metadata.quantity,
+          paymentMethod,
+          reference
+        );
+        
+        if (result && (result.success || result.id)) {
+          // Navigate to success page with order ID or reference
+          const orderId = result.order_id || result.id || reference;
+          navigate(`/ticket/success?order=${orderId}`);
+        } else {
+          throw new Error(result?.error || 'Failed to complete purchase');
+        }
+      }
+    } catch (error) {
+      console.error('Purchase processing error:', error);
+      setError(error.message || 'An error occurred while processing your purchase.');
+      setIsSubmitting(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -158,15 +400,19 @@ const CheckoutPage = () => {
     setError('');
   
     try {
-      if (hasSelectedTickets) {
-        // For cash payments, we don't need to create payment intents
-        if (paymentMethod === 'cash' || paymentMethod === 'pay_on_venue') {
-
-          
+      // For cash or pay on venue
+      if (paymentMethod === 'cash' || paymentMethod === 'pay_on_venue') {
+        if (hasSelectedTickets) {
+          // Handle multiple tickets for cash/venue payment
           const purchasePromises = await Promise.all(
-            cartTickets.map(ticket => {
-              return purchaseTicket(ticket.id, ticket.quantity, paymentMethod, null, ticket.event_id);
-            })
+            cartTickets.map(ticket => (
+              purchaseTicket(
+                ticket.event_id,
+                ticket.id,
+                ticket.quantity,
+                paymentMethod
+              )
+            ))
           );
           
           const successfulPurchases = purchasePromises.filter(result => result && (result.success || result.id));
@@ -175,89 +421,57 @@ const CheckoutPage = () => {
             throw new Error('Failed to process any ticket purchases');
           }
           
-          // Clear cart after successful purchase
           clearCart();
-          
-          // Navigate to success page with the first successful order ID
           const orderId = successfulPurchases[0].order_id || successfulPurchases[0].id || 'cash-payment';
           navigate(`/ticket/success?order=${orderId}`);
-          return;
+        } else {
+          // Handle single ticket for cash/venue payment
+          const result = await purchaseTicket(
+            selectedTicketData.event.id,
+            selectedTicket,
+            quantity,
+            paymentMethod
+          );
+          
+          if (result && (result.success || result.id)) {
+            const orderId = result.order_id || result.id || 'cash-payment';
+            navigate(`/ticket/success?order=${orderId}`);
+          } else {
+            throw new Error(result?.error || 'Failed to complete purchase');
+          }
         }
-        
-        // For card payments, handle payment intents
-        const purchasePromises = await Promise.all(
-          cartTickets.map(async (ticket) => {
-            // Create payment intent for each ticket in cart
-            const paymentIntent = await createPaymentIntent(ticket.id, ticket.quantity, paymentMethod);
-            
-            if (!paymentIntent) {
-              throw new Error('No response from payment service');
-            }
-            
-            // Process the purchase with the payment intent
-            return purchaseTicket(
-              ticket.id, 
-              ticket.quantity, 
-              paymentMethod,
-              paymentIntent.payment_intent_id
-            );
-          })
+        return;
+      }
+      
+      // For Paystack payment
+      if (hasSelectedTickets) {
+        // Create payment for cart items
+        const paymentData = await createPaymentIntent(
+          cartTickets[0].event_id, // Assuming all tickets are for the same event
+          cartTickets[0].id, // Just use the first ticket ID for the payment
+          cartTickets.reduce((sum, ticket) => sum + ticket.quantity, 0) // Total quantity
         );
         
-        const successfulPurchases = purchasePromises.filter(result => result && (result.success || result.id));
-        
-        if (successfulPurchases.length === 0) {
-          throw new Error('Failed to process any ticket purchases');
+        if (!paymentData || !paymentData.data || !paymentData.data.payment_url) {
+          throw new Error('Failed to initialize payment. Please try again.');
         }
         
-        // Clear cart after successful purchase if cart context is available
-        if (typeof window !== 'undefined' && window.clearCart) {
-          window.clearCart();
-        } else if (typeof clearCart === 'function') {
-          clearCart();
-        } else {
-          console.warn('clearCart function not available');
-        }
-        
-        // Navigate to success page with the first successful order ID
-        const orderId = successfulPurchases[0].order_id || successfulPurchases[0].id || successfulPurchases[0].payment_intent_id;
-        navigate(`/ticket/success?order=${orderId}`);
+        // Handle Paystack payment
+        await handlePaystackPayment(paymentData.data);
       } else {
-        // Process single ticket
-        const paymentIntent = await createPaymentIntent(selectedTicket, quantity, paymentMethod);
-        
-        if (!paymentIntent) {
-          throw new Error('No response from payment service');
-        }
-        
-        // For pay on venue, we don't need to process payment
-        if (paymentMethod === 'pay_on_venue') {
-          navigate(`/ticket/success?payment_intent=${paymentIntent.payment_intent_id}&method=venue`);
-          return;
-        }
-        
-        // For card payments, verify we have the required fields
-        if (paymentMethod === 'card' && (!paymentIntent.client_secret || !paymentIntent.payment_intent_id)) {
-          console.error('Invalid payment intent response:', paymentIntent);
-          throw new Error('Invalid payment service response. Please try again.');
-        }
-        
-        // Process the purchase with the payment intent
-        const result = await purchaseTicket(
+        // Create payment for single ticket
+        const paymentData = await createPaymentIntent(
+          selectedTicketData.event.id,
           selectedTicket,
-          quantity,
-          paymentMethod,
-          paymentIntent.payment_intent_id
+          quantity
         );
         
-  
-        if (result && (result.success || result.id)) {
-          // Navigate to success page with order ID or payment intent ID
-          const orderId = result.order_id || result.id || paymentIntent.payment_intent_id;
-          navigate(`/ticket/success?order=${orderId}`);
-        } else {
-          throw new Error(result?.error || 'Failed to complete purchase');
+        if (!paymentData || !paymentData.data || !paymentData.data.payment_url) {
+          throw new Error('Failed to initialize payment. Please try again.');
         }
+        
+        // Handle Paystack payment
+        await handlePaystackPayment(paymentData.data);
       }
     } catch (err) {
       console.error('Purchase error:', err);
@@ -269,7 +483,7 @@ const CheckoutPage = () => {
 
   if (isLoading) {
     return (
-      <Container maxW="container.md" centerContent py={20}>
+      <Container maxW="60%" centerContent py={20}>
         <VStack spacing={4}>
           <Spinner size="xl" thickness="3px" speed="0.65s" color="blue.500" />
           <Text fontSize="lg" color="gray.600">Loading checkout...</Text>
@@ -280,7 +494,7 @@ const CheckoutPage = () => {
 
   if (!eventId && !hasSelectedTickets) {
     return (
-      <Container maxW="container.md" centerContent py={20}>
+      <Container maxW="60%" centerContent py={20}>
         <VStack spacing={4} textAlign="center">
           <Heading size="lg" color="gray.700">No Event Selected</Heading>
           <Text color="gray.600">Please select an event to purchase tickets.</Text>
@@ -294,7 +508,7 @@ const CheckoutPage = () => {
 
   if (tickets.length === 0 && !isLoading && !hasSelectedTickets) {
     return (
-      <Container maxW="container.md" centerContent py={20}>
+      <Container maxW="60%" centerContent py={20}>
         <VStack spacing={4} textAlign="center">
           <Heading size="lg" color="gray.700">No Tickets Available</Heading>
           <Text color="gray.600">There are currently no tickets available for this event.</Text>
@@ -304,9 +518,9 @@ const CheckoutPage = () => {
   }
 
   return (
-    <Container maxW="container.md" centerContent py={8} px={4}>
+    <Container maxW="60%" centerContent py={8} px={4}>
       {/* Back Button */}
-      <Box w="50%" mb={6}>
+      <Box w="100%" mb={6}>
         <Button 
           leftIcon={<FaArrowLeft />} 
           variant="ghost" 
@@ -320,7 +534,7 @@ const CheckoutPage = () => {
       </Box>
 
       {/* Main Content */}
-      <Box w="50%" minW="400px">
+      <Box w="100%" minW="400px">
         <VStack spacing={8} align="stretch">
           {/* Header */}
           <VStack spacing={3} textAlign="center">
@@ -452,48 +666,343 @@ const CheckoutPage = () => {
                     <FormLabel fontSize="md" fontWeight="semibold" color="gray.700">
                       Payment Method
                     </FormLabel>
-                    <Select 
-                      value={paymentMethod} 
-                      onChange={(e) => setPaymentMethod(e.target.value)}
-                      size="lg"
-                      borderRadius="lg"
-                      borderColor="gray.300"
-                      _hover={{ borderColor: 'gray.400' }}
-                      _focus={{ borderColor: 'blue.500', boxShadow: '0 0 0 1px blue.500' }}
-                    >
-                      <option value="card">Credit/Debit Card</option>
-                      <option value="cash">Pay at Venue</option>
-                    </Select>
+                    <VStack spacing={4} align="stretch">
+                      {/* Card Payment Option */}
+                      <Box 
+                        as="button"
+                        type="button"
+                        p={6} 
+                        borderRadius="lg" 
+                        bg={paymentMethod === 'card' ? 'blue.50' : 'white'}
+                        border="1px" 
+                        borderColor={paymentMethod === 'card' ? 'blue.300' : 'gray.200'}
+                        onClick={() => setPaymentMethod('card')}
+                        textAlign="left"
+                        _hover={{ 
+                          borderColor: 'blue.400',
+                          shadow: 'md',
+                          transform: 'translateY(-2px)'
+                        }}
+                        transition="all 0.2s"
+                      >
+                        <HStack spacing={4}>
+                          <Box p={3} bg="white" borderRadius="md" border="1px" borderColor={paymentMethod === 'card' ? 'blue.200' : 'gray.200'} boxShadow="sm">
+                            <FaCreditCard color={paymentMethod === 'card' ? '#3182CE' : '#718096'} size={24} />
+                          </Box>
+                          <VStack align="start" spacing={1}>
+                            <Text fontWeight="semibold" color="gray.800" fontSize="lg">Credit/Debit Card</Text>
+                            <Text fontSize="sm" color="gray.500">Pay with Visa, Mastercard, or Verve</Text>
+                          </VStack>
+                        </HStack>
+                      </Box>
+
+                      {/* Google Pay Option */}
+                      <Box 
+                        as="button"
+                        type="button"
+                        p={6} 
+                        borderRadius="lg" 
+                        bg={paymentMethod === 'google_pay' ? 'blue.50' : 'white'}
+                        border="1px" 
+                        borderColor={paymentMethod === 'google_pay' ? 'blue.300' : 'gray.200'}
+                        onClick={() => setPaymentMethod('google_pay')}
+                        textAlign="left"
+                        _hover={{ 
+                          borderColor: 'blue.400',
+                          shadow: 'md',
+                          transform: 'translateY(-2px)'
+                        }}
+                        transition="all 0.2s"
+                      >
+                        <HStack spacing={4}>
+                          <Box p={3} bg="white" borderRadius="md" border="1px" borderColor={paymentMethod === 'google_pay' ? 'blue.200' : 'gray.200'} boxShadow="sm">
+                            <FaGoogle color={paymentMethod === 'google_pay' ? '#3182CE' : '#718096'} size={24} />
+                          </Box>
+                          <VStack align="start" spacing={1}>
+                            <Text fontWeight="semibold" color="gray.800" fontSize="lg">Google Pay</Text>
+                            <Text fontSize="sm" color="gray.500">Fast and secure payment with Google Pay</Text>
+                          </VStack>
+                        </HStack>
+                      </Box>
+
+                      {/* Mobile Money Option */}
+                      <Box 
+                        as="button"
+                        type="button"
+                        p={6} 
+                        borderRadius="lg" 
+                        bg={paymentMethod === 'mobile_money' ? 'blue.50' : 'white'}
+                        border="1px" 
+                        borderColor={paymentMethod === 'mobile_money' ? 'blue.300' : 'gray.200'}
+                        onClick={() => setPaymentMethod('mobile_money')}
+                        textAlign="left"
+                        _hover={{ 
+                          borderColor: 'blue.400',
+                          shadow: 'md',
+                          transform: 'translateY(-2px)'
+                        }}
+                        transition="all 0.2s"
+                      >
+                        <HStack spacing={4}>
+                          <Box p={3} bg="white" borderRadius="md" border="1px" borderColor={paymentMethod === 'mobile_money' ? 'blue.200' : 'gray.200'} boxShadow="sm">
+                            <FaMoneyBillWave color={paymentMethod === 'mobile_money' ? '#3182CE' : '#718096'} size={24} />
+                          </Box>
+                          <VStack align="start" spacing={1}>
+                            <Text fontWeight="semibold" color="gray.800" fontSize="lg">Mobile Money</Text>
+                            <Text fontSize="sm" color="gray.500">Pay with your mobile money account</Text>
+                          </VStack>
+                        </HStack>
+                      </Box>
+
+                      {/* Pay at Venue Option */}
+                      <Box 
+                        as="button"
+                        type="button"
+                        p={6} 
+                        borderRadius="lg" 
+                        bg={paymentMethod === 'pay_on_venue' ? 'green.50' : 'white'}
+                        border="1px" 
+                        borderColor={paymentMethod === 'pay_on_venue' ? 'green.300' : 'gray.200'}
+                        onClick={() => setPaymentMethod('pay_on_venue')}
+                        textAlign="left"
+                        _hover={{ 
+                          borderColor: 'green.400',
+                          shadow: 'md',
+                          transform: 'translateY(-2px)'
+                        }}
+                        transition="all 0.2s"
+                      >
+                        <HStack spacing={4}>
+                          <Box p={3} bg="white" borderRadius="md" border="1px" borderColor={paymentMethod === 'pay_on_venue' ? 'green.200' : 'gray.200'} boxShadow="sm">
+                            <FaMoneyBillWave color={paymentMethod === 'pay_on_venue' ? '#38A169' : '#718096'} size={24} />
+                          </Box>
+                          <VStack align="start" spacing={1}>
+                            <Text fontWeight="semibold" color="gray.800" fontSize="lg">Pay at Venue</Text>
+                            <Text fontSize="sm" color="gray.500">Pay when you arrive at the event</Text>
+                          </VStack>
+                        </HStack>
+                      </Box>
+                    </VStack>
                   </FormControl>
 
-                  {/* Payment Method Info */}
+                  {/* Card Payment Form */}
                   {paymentMethod === 'card' && (
                     <Box 
-                      p={4} 
+                      p={6} 
                       borderRadius="lg" 
                       bg="blue.50" 
                       border="1px" 
                       borderColor="blue.200"
                       transition="all 0.2s"
-                      _hover={{ shadow: 'sm' }}
                     >
-                      <HStack spacing={4}>
-                        <Box p={2} bg="white" borderRadius="md" border="1px solid" borderColor="blue.100">
-                          <FaCreditCard color="#3182CE" size={20} />
-                        </Box>
-                        <Box flex={1}>
-                          <Text fontSize="md" fontWeight="semibold" color="blue.800">
-                            Secure Card Payment
-                          </Text>
-                          <Text fontSize="sm" color="blue.600" mt={1}>
-                            Your payment information is encrypted and secure
-                          </Text>
-                        </Box>
-                      </HStack>
+                      <VStack spacing={4} align="stretch">
+                        <Text fontSize="lg" fontWeight="semibold" color="blue.800" mb={2}>
+                          Card Details
+                        </Text>
+                        
+                        {/* Card Number */}
+                        <FormControl isRequired>
+                          <FormLabel fontSize="sm" fontWeight="medium" color="gray.700">
+                            Card Number
+                          </FormLabel>
+                          <Input
+                            type="text"
+                            placeholder="1234 5678 9012 3456"
+                            value={cardNumber}
+                            onChange={handleCardNumberChange}
+                            maxLength={19}
+                            bg="white"
+                            borderRadius="lg"
+                            size="lg"
+                            _focus={{ borderColor: 'blue.500', boxShadow: '0 0 0 1px blue.500' }}
+                          />
+                        </FormControl>
+
+                        {/* Card Holder Name */}
+                        <FormControl isRequired>
+                          <FormLabel fontSize="sm" fontWeight="medium" color="gray.700">
+                            Name on Card
+                          </FormLabel>
+                          <Input
+                            type="text"
+                            placeholder="John Doe"
+                            value={cardName}
+                            onChange={(e) => setCardName(e.target.value)}
+                            bg="white"
+                            borderRadius="lg"
+                            size="lg"
+                            _focus={{ borderColor: 'blue.500', boxShadow: '0 0 0 1px blue.500' }}
+                          />
+                        </FormControl>
+
+                        {/* Expiry and CVV */}
+                        <Grid templateColumns="1fr 1fr" gap={4}>
+                          <GridItem>
+                            <FormControl isRequired>
+                              <FormLabel fontSize="sm" fontWeight="medium" color="gray.700">
+                                Expiry Date
+                              </FormLabel>
+                              <Input
+                                type="text"
+                                placeholder="MM/YY"
+                                value={expiryDate}
+                                onChange={handleExpiryDateChange}
+                                maxLength={5}
+                                bg="white"
+                                borderRadius="lg"
+                                size="lg"
+                                _focus={{ borderColor: 'blue.500', boxShadow: '0 0 0 1px blue.500' }}
+                              />
+                            </FormControl>
+                          </GridItem>
+                          <GridItem>
+                            <FormControl isRequired>
+                              <FormLabel fontSize="sm" fontWeight="medium" color="gray.700">
+                                CVV
+                              </FormLabel>
+                              <Input
+                                type="text"
+                                placeholder="123"
+                                value={cvv}
+                                onChange={(e) => setCvv(e.target.value.replace(/[^0-9]/g, ''))}
+                                maxLength={4}
+                                bg="white"
+                                borderRadius="lg"
+                                size="lg"
+                                _focus={{ borderColor: 'blue.500', boxShadow: '0 0 0 1px blue.500' }}
+                              />
+                            </FormControl>
+                          </GridItem>
+                        </Grid>
+
+                        {/* Email */}
+                        <FormControl isRequired>
+                          <FormLabel fontSize="sm" fontWeight="medium" color="gray.700">
+                            Email Address
+                          </FormLabel>
+                          <Input
+                            type="email"
+                            placeholder="your@email.com"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            bg="white"
+                            borderRadius="lg"
+                            size="lg"
+                            _focus={{ borderColor: 'blue.500', boxShadow: '0 0 0 1px blue.500' }}
+                          />
+                          <FormHelperText fontSize="xs" color="gray.500">
+                            Receipt and ticket will be sent to this email
+                          </FormHelperText>
+                        </FormControl>
+                      </VStack>
                     </Box>
                   )}
 
-                  {paymentMethod === 'cash' && (
+                  {/* Google Pay Info */}
+                  {paymentMethod === 'google_pay' && (
+                    <Box 
+                      p={6} 
+                      borderRadius="lg" 
+                      bg="blue.50" 
+                      border="1px" 
+                      borderColor="blue.200"
+                      transition="all 0.2s"
+                    >
+                      <VStack spacing={4} align="stretch">
+                        <Text fontSize="lg" fontWeight="semibold" color="blue.800" mb={2}>
+                          Google Pay
+                        </Text>
+                        <HStack spacing={4}>
+                          <Box p={2} bg="white" borderRadius="md" border="1px solid" borderColor="blue.100">
+                            <FaGoogle color="#3182CE" size={24} />
+                          </Box>
+                          <Box flex={1}>
+                            <Text fontSize="md" fontWeight="semibold" color="blue.800">
+                              Fast and Secure Payment
+                            </Text>
+                            <Text fontSize="sm" color="blue.600" mt={1}>
+                              You will be redirected to Google Pay to complete your payment securely
+                            </Text>
+                          </Box>
+                        </HStack>
+                      </VStack>
+                    </Box>
+                  )}
+
+                  {/* Mobile Money Form */}
+                  {paymentMethod === 'mobile_money' && (
+                    <Box 
+                      p={6} 
+                      borderRadius="lg" 
+                      bg="blue.50" 
+                      border="1px" 
+                      borderColor="blue.200"
+                      transition="all 0.2s"
+                    >
+                      <VStack spacing={4} align="stretch">
+                        <Text fontSize="lg" fontWeight="semibold" color="blue.800" mb={2}>
+                          Mobile Money Details
+                        </Text>
+                        
+                        {/* Mobile Provider */}
+                        <FormControl isRequired>
+                          <FormLabel fontSize="sm" fontWeight="medium" color="gray.700">
+                            Mobile Provider
+                          </FormLabel>
+                          <Select
+                            value={mobileProvider}
+                            onChange={(e) => setMobileProvider(e.target.value)}
+                            bg="white"
+                            borderRadius="lg"
+                            size="lg"
+                            _focus={{ borderColor: 'blue.500', boxShadow: '0 0 0 1px blue.500' }}
+                          >
+                            <option value="safaricom">Safaricom (M-Pesa)</option>
+                            <option value="airtel">Airtel Money</option>
+                          </Select>
+                        </FormControl>
+
+                        {/* Phone Number */}
+                        <FormControl isRequired>
+                          <FormLabel fontSize="sm" fontWeight="medium" color="gray.700">
+                            Phone Number
+                          </FormLabel>
+                          <Input
+                            type="tel"
+                            placeholder="+254 7XX XXX XXX"
+                            value={phoneNumber}
+                            onChange={handlePhoneNumberChange}
+                            bg="white"
+                            borderRadius="lg"
+                            size="lg"
+                            _focus={{ borderColor: 'blue.500', boxShadow: '0 0 0 1px blue.500' }}
+                          />
+                          <FormHelperText fontSize="xs" color="gray.500">
+                            Enter your mobile money registered phone number
+                          </FormHelperText>
+                        </FormControl>
+
+                        {/* Instructions based on provider */}
+                        <Box 
+                          p={4} 
+                          borderRadius="md" 
+                          bg="white" 
+                          border="1px" 
+                          borderColor="blue.100"
+                        >
+                          <Text fontSize="sm" color="blue.700" fontWeight="medium">
+                            {mobileProvider === 'safaricom' 
+                              ? 'You will receive an M-Pesa prompt on your phone to complete the payment'
+                              : 'You will receive an Airtel Money prompt on your phone to complete the payment'
+                            }
+                          </Text>
+                        </Box>
+                      </VStack>
+                    </Box>
+                  )}
+
+                  {/* Payment Method Info */}
+                  {paymentMethod === 'pay_on_venue' && (
                     <Box 
                       p={4} 
                       borderRadius="lg" 
@@ -512,7 +1021,7 @@ const CheckoutPage = () => {
                             Pay at Venue
                           </Text>
                           <Text fontSize="sm" color="green.600" mt={1}>
-                            Pay when you arrive at the event venue
+                            Pay when you arrive at the event venue. Your tickets will be reserved.
                           </Text>
                         </Box>
                       </HStack>

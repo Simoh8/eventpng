@@ -13,41 +13,48 @@ export const getTicketTypes = async (eventId) => {
   }
 };
 
-// Create Payment Intent
-export const createPaymentIntent = async (eventTicketId, quantity, paymentMethod = 'card') => {
+// Create Paystack Payment
+/**
+ * Creates a Paystack payment for ticket purchase
+ * @param {string} eventId - The ID of the event
+ * @param {string} ticketTypeId - The ID of the ticket type
+ * @param {number} quantity - Number of tickets to purchase
+ * @param {string} [paymentMethod='card'] - Payment method ('card', 'bank_transfer', 'ussd', 'mobile_money', 'bank', 'cash', 'pay_on_venue')
+ * @returns {Promise<Object>} Payment details including payment URL and reference
+ */
+export const createPaymentIntent = async (eventId, ticketTypeId, quantity = 1, paymentMethod = 'card') => {
   try {
-    console.log('Sending request to create payment intent...', { 
-      eventTicketId, 
+    console.log('Creating Paystack payment...', { 
+      eventId, 
+      ticketTypeId,
       quantity,
-      paymentMethod,
       endpoint: '/api/tickets/create-payment-intent/'
     });
     
-    if (!eventTicketId) {
-      throw new Error('Event ticket ID is required');
+    if (!eventId || !ticketTypeId) {
+      throw new Error('Event ID and Ticket Type ID are required');
     }
     
-    // For cash payments, we don't need to create a payment intent
+    // For cash payments, return a mock response
     if (paymentMethod === 'cash' || paymentMethod === 'pay_on_venue') {
-      console.log('Skipping payment intent creation for cash/on-venue payment');
+      console.log('Skipping payment creation for cash/on-venue payment');
       return {
         payment_method: paymentMethod,
-        payment_intent_id: `cash_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        reference: `cash_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         amount: 0, // Will be set by the backend
-        currency: 'usd',
-        requires_payment_method: false,
-        requires_action: false,
-        status: 'succeeded'
+        currency: 'NGN',
+        status: 'success',
+        payment_url: null
       };
     }
     
-    // For card payments, create a payment intent
+    // For Paystack payments
     const response = await api.post(
       '/api/tickets/create-payment-intent/',
       { 
-        event_ticket_id: eventTicketId,  // Changed to match backend expectation
-        quantity: parseInt(quantity, 10) || 1,
-        payment_method: paymentMethod
+        event_id: eventId,
+        ticket_type_id: ticketTypeId,
+        quantity: parseInt(quantity, 10) || 1
       },
       { 
         validateStatus: status => status < 500,
@@ -57,14 +64,13 @@ export const createPaymentIntent = async (eventTicketId, quantity, paymentMethod
       }
     );
     
-    console.log('Payment intent response status:', response.status);
+    console.log('Paystack payment response status:', response.status);
     console.log('Response data:', response.data);
     
     if (response.status >= 400) {
-      const errorMessage = response.data?.detail || 
-                         response.data?.error?.message ||
+      const errorMessage = response.data?.error || 
                          response.data?.message ||
-                         'Failed to create payment intent';
+                         'Failed to create payment';
       const error = new Error(errorMessage);
       error.response = response;
       throw error;
@@ -101,45 +107,46 @@ export const createPaymentIntent = async (eventTicketId, quantity, paymentMethod
   }
 };
 
-// Purchase Ticket
-export const purchaseTicket = async (eventTicketId, quantity, paymentMethod, paymentIntentId = null, eventId = null) => {
+/**
+ * Purchase a ticket using Paystack or cash payment
+ * @param {string} eventId - The ID of the event
+ * @param {string} ticketTypeId - The ID of the ticket type
+ * @param {number} quantity - Number of tickets to purchase
+ * @param {string} paymentMethod - Payment method ('card', 'bank_transfer', 'ussd', 'mobile_money', 'bank', 'cash', 'pay_on_venue')
+ * @param {string} [reference] - Payment reference from Paystack (required for online payments)
+ * @returns {Promise<Object>} The purchase result
+ */
+export const purchaseTicket = async (eventId, ticketTypeId, quantity = 1, paymentMethod = 'card', reference = null) => {
   try {
-    if (!eventTicketId) {
-      throw new Error('Please select a valid event ticket');
+    if (!eventId || !ticketTypeId) {
+      throw new Error('Event ID and Ticket Type ID are required');
     }
     
-    // Only require paymentIntentId for card payments
-    if (paymentMethod === 'card' && !paymentIntentId) {
-      throw new Error('Payment intent ID is required for card payments');
+    // For cash payments, generate a reference if not provided
+    if ((paymentMethod === 'cash' || paymentMethod === 'pay_on_venue') && !reference) {
+      reference = `cash_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
     
-    // For cash payments, generate a reference ID if not provided
-    if ((paymentMethod === 'cash' || paymentMethod === 'pay_on_venue') && !paymentIntentId) {
-      paymentIntentId = `cash_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // For online payments, reference is required
+    if (paymentMethod === 'card' && !reference) {
+      throw new Error('Payment reference is required for online payments');
     }
     
-    console.log('Sending purchase request...', { 
-      eventTicketId, 
+    console.log('Processing ticket purchase...', { 
+      eventId, 
+      ticketTypeId, 
       quantity, 
       paymentMethod, 
-      paymentIntentId 
+      reference 
     });
     
     const requestData = {
-      event_ticket_id: eventTicketId,  // Changed to match backend's expected field name
-      quantity: parseInt(quantity, 10),
-      payment_method: paymentMethod
+      event_id: eventId,
+      ticket_type_id: ticketTypeId,
+      quantity: parseInt(quantity, 10) || 1,
+      payment_method: paymentMethod,
+      reference: reference
     };
-    
-    // Only include event_id if it's provided (not required as it's derived from event_ticket on the backend)
-    if (eventId) {
-      requestData.event_id = eventId;
-    }
-    
-    // Only include payment_intent_id if it exists
-    if (paymentIntentId) {
-      requestData.payment_intent_id = paymentIntentId;
-    }
     
     const response = await api.post(
       '/api/tickets/purchase/',
@@ -154,9 +161,9 @@ export const purchaseTicket = async (eventTicketId, quantity, paymentMethod, pay
     
     // Handle error responses
     if (response.status >= 400) {
-      const errorMessage = response.data?.detail || 
-                         response.data?.error?.message ||
+      const errorMessage = response.data?.error?.message || 
                          response.data?.message ||
+                         response.data?.detail ||
                          'Failed to process ticket purchase';
       const error = new Error(errorMessage);
       error.response = response;

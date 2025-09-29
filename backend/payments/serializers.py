@@ -18,6 +18,28 @@ class OrderItemSerializer(serializers.ModelSerializer):
         fields = ['id', 'photo', 'photo_id', 'price']
         read_only_fields = ['id', 'price']
 
+class OrderDetailSerializer(serializers.ModelSerializer):
+    """Detailed serializer for a single order with nested items and transactions."""
+    items = OrderItemSerializer(many=True, read_only=True)
+    user = serializers.StringRelatedField(read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    transactions = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Order
+        fields = [
+            'id', 'user', 'status', 'status_display', 'subtotal', 'tax_amount', 'total',
+            'currency', 'stripe_payment_intent_id', 'billing_email', 'billing_name',
+            'billing_address', 'created_at', 'updated_at', 'paid_at', 'items', 'transactions'
+        ]
+        read_only_fields = fields
+    
+    def get_transactions(self, obj):
+        from .models import Transaction
+        transactions = Transaction.objects.filter(order=obj).order_by('-created_at')
+        return TransactionSerializer(transactions, many=True).data
+
+
 class OrderSerializer(serializers.ModelSerializer):
     """Serializer for orders."""
     items = OrderItemSerializer(many=True, required=False)

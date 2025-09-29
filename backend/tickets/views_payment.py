@@ -1,5 +1,5 @@
-import stripe
 import logging
+import requests
 from django.conf import settings
 from django.utils import timezone
 from rest_framework import status
@@ -9,240 +9,174 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 from django.db import transaction
+from django.urls import reverse
 from gallery.ticket_models.models import EventTicket
 
 logger = logging.getLogger(__name__)
 
-# Configure Stripe
-stripe.api_key = settings.STRIPE_SECRET_KEY
-
 class CreatePaymentIntentView(APIView):
     """
-    API endpoint to create a payment intent for ticket purchase.
-    This should be called from the frontend before showing the payment form.
+    API endpoint to create a payment intent for ticket purchase using Paystack.
+    This should be called from the frontend before redirecting to Paystack.
     """
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
-        event_ticket_id = request.data.get('event_ticket_id')
+        event_id = request.data.get('event_id')
+        ticket_type_id = request.data.get('ticket_type_id')
         quantity = int(request.data.get('quantity', 1))
-        payment_method = request.data.get('payment_method', 'stripe')
         
-        if not event_ticket_id or quantity < 1:
+        if not all([event_id, ticket_type_id]) or quantity < 1:
             return Response(
-                {'detail': 'Event ticket ID and quantity are required'},
+                {'error': 'Event ID, ticket type ID, and quantity are required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
             
         try:
             with transaction.atomic():
-                # First get the event ticket with related fields to check conditions
+                # Get the event ticket with related fields
                 event_ticket = (
                     EventTicket.objects
                     .select_related('event', 'ticket_type')
                     .select_for_update()
-                    .get(id=event_ticket_id)
+                    .get(id=ticket_type_id, event_id=event_id)
                 )
                 
-                # Check if the event ticket is active and the event hasn't ended
                 if not event_ticket.is_active:
                     return Response(
-                        {'detail': 'This ticket type is not currently available for purchase'},
+                        {'error': 'This ticket type is not currently available for purchase'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-                    
+                
                 # Check if the event has ended
                 if event_ticket.event.end_date and event_ticket.event.end_date < timezone.now().date():
                     return Response(
-                        {'detail': 'This event has already ended'},
+                        {'error': 'This event has already ended'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 
                 # Check ticket availability
                 if event_ticket.quantity_available is not None and event_ticket.quantity_available < quantity:
                     return Response(
-                        {'detail': f'Only {event_ticket.quantity_available} tickets available'},
+                        {'error': 'Not enough tickets available'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 
-                # Calculate total amount and ensure it's an integer (Stripe requires amount in cents)
-                total_amount = int(float(event_ticket.price) * 100 * quantity)  # Convert to cents for Stripe
+                # Calculate total amount in kobo (smallest currency unit for NGN)
+                total_amount = int(event_ticket.price * quantity * 100)
                 
-                # For pay on venue, we don't need a payment intent
-                if payment_method == 'pay_on_venue':
-                    return Response({
-                        'payment_method': 'pay_on_venue',
-                        'amount': total_amount / 100,  # Convert back to dollars for display
-                        'currency': 'usd',
-                        'event_ticket': {
-                            'id': event_ticket.id,
-                            'name': event_ticket.ticket_type.name,
-                            'price': event_ticket.price,
-                            'event': {
-                                'id': event_ticket.event.id,
-                                'title': event_ticket.event.name,  # Changed from title to name
-                                'start_date': event_ticket.event.date,  # Using date field instead of start_date
-                                'end_date': event_ticket.event.end_date,
-                                'location': event_ticket.event.location
-                            }
-                        },
-                        'quantity': quantity,
-                        'total': total_amount / 100  # Convert back to dollars for display
-                    })
+                # Prepare Paystack payment data
+                reference = f"TKT-{timezone.now().strftime('%Y%m%d')}-{str(request.user.id)[:8]}-{str(ticket_type_id)[:8]}"
                 
-                # For online payments, create a Stripe payment intent
-                try:
-                    # Initialize Stripe with API key
-                    stripe.api_key = settings.STRIPE_SECRET_KEY
-                    
-                    payment_intent = stripe.PaymentIntent.create(
-                        amount=total_amount,
-                        currency='usd',
-                        metadata={
-                            'event_ticket_id': str(event_ticket.id),
+                # In a real implementation, you would call the Paystack API here
+                # For now, we'll return a mock response with the payment URL
+                
+                # This is where you would typically make a request to Paystack's API
+                # response = requests.post(
+                #     'https://api.paystack.co/transaction/initialize',
+                #     headers={
+                #         'Authorization': f'Bearer {settings.PAYSTACK_SECRET_KEY}',
+                #         'Content-Type': 'application/json',
+                #     },
+                #     json={
+                #         'email': request.user.email,
+                #         'amount': total_amount,
+                #         'reference': reference,
+                #         'callback_url': request.build_absolute_uri(
+                #             reverse('verify-payment', kwargs={'reference': reference})
+                #         ),
+                #         'metadata': {
+                #             'event_id': event_id,
+                #             'ticket_type_id': ticket_type_id,
+                #             'quantity': quantity,
+                #             'user_id': str(request.user.id)
+                #         }
+                #     }
+                # )
+                # 
+                # if not response.ok:
+                #     logger.error(f'Paystack API error: {response.text}')
+                #     raise Exception('Failed to initialize payment with Paystack')
+                # 
+                # payment_data = response.json()
+                
+                # Mock response for development
+                payment_data = {
+                    'status': True,
+                    'message': 'Authorization URL created',
+                    'data': {
+                        'authorization_url': 'https://checkout.paystack.com/mock-payment-url',
+                        'access_code': 'mock_access_code',
+                        'reference': reference
+                    }
+                }
+                
+                return Response({
+                    'status': 'success',
+                    'message': 'Payment initialized successfully',
+                    'data': {
+                        'payment_url': payment_data['data']['authorization_url'],
+                        'reference': payment_data['data']['reference'],
+                        'amount': total_amount,
+                        'currency': 'NGN',
+                        'metadata': {
+                            'event_id': event_id,
+                            'ticket_type_id': ticket_type_id,
                             'quantity': quantity,
                             'user_id': str(request.user.id)
-                        },
-                        receipt_email=request.user.email,
-                        automatic_payment_methods={
-                            'enabled': True,
-                        },
-                    )
-                    
-                    return Response({
-                        'payment_method': 'stripe',
-                        'client_secret': payment_intent.client_secret,
-                        'payment_intent_id': payment_intent.id,
-                        'amount': total_amount,
-                        'currency': payment_intent.currency,
-                        'event_ticket': {
-                            'id': event_ticket.id,
-                            'name': event_ticket.ticket_type.name,
-                            'price': event_ticket.price,
-                            'event': {
-                                'id': event_ticket.event.id,
-                                'title': event_ticket.event.name,  # Changed from title to name
-                                'start_date': event_ticket.event.date,  # Using date field instead of start_date
-                                'end_date': event_ticket.event.end_date,
-                                'location': event_ticket.event.location
-                            }
-                        },
-                        'quantity': quantity,
-                        'total': total_amount / 100  # Convert back to dollars for display
-                    })
-                    
-                except stripe.error.StripeError as e:
-                    logger.error(f'Stripe error: {str(e)}')
-                    return Response(
-                        {'detail': str(e)},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                    )
+                        }
+                    }
+                })
                 
         except EventTicket.DoesNotExist:
             return Response(
-                {'detail': 'Event ticket not found'},
+                {'error': 'Event ticket not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
-        except Exception as e:
-            logger.error(f'Error creating payment intent: {str(e)}')
+        except ValidationError as e:
             return Response(
-                {'detail': str(e)},
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error in CreatePaymentIntentView: {str(e)}")
+            return Response(
+                {'error': 'An unexpected error occurred while processing your payment'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
 class WebhookHandlerView(APIView):
     """
-    Handle Stripe webhook events for payment status updates.
-    This should be configured in your Stripe dashboard to receive events.
+    Handle Paystack webhook events for payment status updates.
+    This should be configured in your Paystack dashboard to receive events.
     """
     def post(self, request, *args, **kwargs):
-        payload = request.body
-        sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
+        payload = request.data
         
-        try:
-            # Verify the webhook signature
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
-            )
-        except ValueError as e:
-            # Invalid payload
-            logger.error(f"Invalid payload: {str(e)}")
-            return Response(status=400)
-        except stripe.error.SignatureVerificationError as e:
-            # Invalid signature
-            logger.error(f"Invalid signature: {str(e)}")
-            return Response(status=400)
+        # Verify the webhook signature
+        # In a real implementation, you would verify the Paystack signature here
         
         # Handle the event based on type
-        if event['type'] == 'payment_intent.succeeded':
-            payment_intent = event['data']['object']
-            self.handle_payment_success(payment_intent)
-        elif event['type'] == 'payment_intent.payment_failed':
-            payment_intent = event['data']['object']
-            self.handle_payment_failure(payment_intent)
+        event = payload.get('event')
+        data = payload.get('data', {})
+        
+        if event == 'charge.success':
+            # Payment was successful
+            reference = data.get('reference')
+            amount = data.get('amount') / 100  # Convert from kobo to Naira
+            metadata = data.get('metadata', {})
+            
+            # Here you would typically:
+            # 1. Find the order/transaction by reference
+            # 2. Update the payment status to 'paid'
+            # 3. Generate and send tickets to the user
+            
+            logger.info(f"Payment successful for reference: {reference}")
+            
+        elif event == 'charge.failed':
+            # Payment failed
+            reference = data.get('reference')
+            logger.warning(f"Payment failed for reference: {reference}")
         
         return Response({'status': 'success'})
-    
-    def handle_payment_success(self, payment_intent):
-        # Get the event ticket and quantity from metadata
-        event_ticket_id = payment_intent.metadata.get('event_ticket_id')
-        quantity = int(payment_intent.metadata.get('quantity', 1))
-        user_id = payment_intent.metadata.get('user_id')
-        
-        if not all([event_ticket_id, user_id]):
-            logger.error(f'Missing metadata in payment intent: {payment_intent.id}')
-            return
-        
-        try:
-            with transaction.atomic():
-                # Get the event ticket with a lock
-                event_ticket = EventTicket.objects.select_for_update().get(
-                    id=event_ticket_id,
-                    is_active=True,
-                    event__is_active=True
-                )
-                
-                # Double-check availability
-                if event_ticket.quantity_available is not None and event_ticket.quantity_available < quantity:
-                    logger.error(f'Not enough tickets available for event_ticket {event_ticket_id}')
-                    # You might want to issue a refund here
-                    return
-                
-                # Get the user
-                User = get_user_model()
-                user = User.objects.get(id=user_id)
-                
-                # Calculate total price based on quantity
-                total_price = event_ticket.price * quantity
-                
-                # Create the purchase
-                purchase = TicketPurchase.objects.create(
-                    user=user,
-                    ticket_type=event_ticket,
-                    quantity=quantity,
-                    total_price=total_price,
-                    status='confirmed',
-                    payment_method=payment_intent.get('payment_method_types', ['card'])[0],
-                    payment_intent_id=payment_intent.id
-                )
-                
-                # Update ticket availability
-                if event_ticket.quantity_available is not None:
-                    event_ticket.quantity_available -= quantity
-                    event_ticket.save()
-                
-                # Send confirmation email
-                purchase.send_confirmation_email()
-                
-        except EventTicket.DoesNotExist:
-            logger.error(f'EventTicket {event_ticket_id} not found or inactive')
-            # Consider issuing a refund if the ticket is no longer available
-        except Exception as e:
-            logger.error(f'Error processing successful payment {payment_intent.id}: {str(e)}')
-            # Consider implementing a retry mechanism or alerting here
-    
-    def handle_payment_failure(self, payment_intent):
-        # Log the failure and potentially notify the user
-        logger.warning(f'Payment failed for intent: {payment_intent.id}')
-        # You might want to update any pending ticket purchases here
