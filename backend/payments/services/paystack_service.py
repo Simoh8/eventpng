@@ -1,5 +1,4 @@
 import logging
-from django.conf import settings
 from paystackapi.paystack import Paystack
 from paystackapi.transaction import Transaction as PaystackTransaction
 from paystackapi.customer import Customer as PaystackCustomer
@@ -9,23 +8,22 @@ logger = logging.getLogger(__name__)
 
 class PaystackService:
     def __init__(self):
-        self.config = PaystackConfig.get_solo()
-        self.paystack = Paystack(secret_key=self.config.secret_key)
+        self.config = None
+        self.paystack = None
+
+    def _load_config(self):
+        if not self.config:
+            # Will only query DB when needed
+            self.config, _ = PaystackConfig.objects.get_or_create(pk=1)
+        return self.config
+
+    def _get_paystack(self):
+        if not self.paystack:
+            config = self._load_config()
+            self.paystack = Paystack(secret_key=config.secret_key)
+        return self.paystack
 
     def initialize_payment(self, email, amount, reference, callback_url, metadata=None):
-        """
-        Initialize a Paystack payment
-        
-        Args:
-            email (str): Customer's email
-            amount (int): Amount in kobo (smallest currency unit)
-            reference (str): Unique reference for the transaction
-            callback_url (str): URL to redirect to after payment
-            metadata (dict, optional): Additional metadata
-            
-        Returns:
-            dict: Paystack API response
-        """
         try:
             response = PaystackTransaction.initialize(
                 email=email,
@@ -40,15 +38,6 @@ class PaystackService:
             raise
 
     def verify_payment(self, reference):
-        """
-        Verify a Paystack payment
-        
-        Args:
-            reference (str): Transaction reference
-            
-        Returns:
-            dict: Payment verification response
-        """
         try:
             response = PaystackTransaction.verify(reference)
             return response
@@ -57,18 +46,6 @@ class PaystackService:
             raise
 
     def create_customer(self, email, first_name=None, last_name=None, phone=None):
-        """
-        Create a Paystack customer
-        
-        Args:
-            email (str): Customer's email
-            first_name (str, optional): Customer's first name
-            last_name (str, optional): Customer's last name
-            phone (str, optional): Customer's phone number
-            
-        Returns:
-            dict: Paystack customer data
-        """
         try:
             customer_data = {
                 'email': email,
@@ -76,9 +53,7 @@ class PaystackService:
                 'last_name': last_name,
                 'phone': phone
             }
-            # Remove None values
             customer_data = {k: v for k, v in customer_data.items() if v is not None}
-            
             response = PaystackCustomer.create(**customer_data)
             return response
         except Exception as e:
@@ -86,19 +61,6 @@ class PaystackService:
             raise
 
     def get_payment_link(self, amount, email, reference, callback_url, metadata=None):
-        """
-        Get a payment link for Paystack
-        
-        Args:
-            amount (int): Amount in kobo (smallest currency unit)
-            email (str): Customer's email
-            reference (str): Unique reference for the transaction
-            callback_url (str): URL to redirect to after payment
-            metadata (dict, optional): Additional metadata
-            
-        Returns:
-            str: Payment URL
-        """
         try:
             response = self.initialize_payment(
                 email=email,
@@ -112,5 +74,5 @@ class PaystackService:
             logger.error(f"Error getting Paystack payment link: {str(e)}")
             raise
 
-# Create a singleton instance
+# Singleton instance (safe now)
 paystack_service = PaystackService()
