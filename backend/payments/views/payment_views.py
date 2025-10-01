@@ -79,19 +79,50 @@ class PaystackWebhookView(APIView):
 
 
 class PaystackVerifyPaymentView(APIView):
-    """Verify a Paystack payment from the frontend"""
+    """Verify a Paystack payment from the frontend and update ticket purchase records"""
     permission_classes = [AllowAny]  # Or use IsAuthenticated if needed
     
     def get(self, request, reference, *args, **kwargs):
         try:
+            # Find the transaction in our database
+            try:
+                txn = Transaction.objects.select_related('order').get(
+                    reference=reference
+                )
+            except Transaction.DoesNotExist:
+                return Response(
+                    {'error': 'Transaction not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
             # Verify the payment with Paystack
             response = paystack_service.verify_payment(reference)
             
             if response.get('status') and response['data'].get('status') == 'success':
-                # Payment was successful
-                # You can update your database here if needed
+                # Payment was successful - update our records
+                with transaction.atomic():
+                    # Update transaction status
+                    txn.status = Transaction.STATUS_COMPLETED
+                    txn.payment_reference = response['data'].get('reference')
+                    txn.payment_data = response['data']
+                    txn.paid_at = timezone.now()
+                    txn.save()
+                    
+                    # Update order status
+                    if hasattr(txn, 'order'):
+                        txn.order.status = Order.STATUS_PAID
+                        txn.order.paid_at = timezone.now()
+                        txn.order.save()
+                        
+                        # Update event registrations
+                        EventRegistration.objects.filter(
+                            order=txn.order,
+                            status='pending_payment'
+                        ).update(status='confirmed')
+                
                 return Response({
                     'status': 'success',
+                    'message': 'Payment verified and ticket purchase recorded',
                     'data': response['data']
                 })
             else:
@@ -103,7 +134,13 @@ class PaystackVerifyPaymentView(APIView):
                 }, status=status.HTTP_400_BAD_REQUEST)
                 
         except Exception as e:
+            # Log the error for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error verifying payment: {str(e)}")
+            
             return Response({
                 'status': 'error',
-                'message': str(e)
+                'message': 'An error occurred while verifying your payment',
+                'error': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

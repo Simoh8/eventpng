@@ -35,7 +35,11 @@ const TicketStatusPanel = ({ ticket, borderColor, sidePanelBg, secondaryText }) 
         
         <Flex justify="space-between" fontWeight="bold">
           <Text>Total</Text>
-          <Text>${typeof ticket.total_price === 'number' ? ticket.total_price.toFixed(2) : '0.00'}</Text>
+          <Text>
+            {ticket.currency || 'KSh'} {typeof ticket.total_price === 'number' 
+              ? new Intl.NumberFormat('en-US').format(ticket.total_price)
+              : '0'}
+          </Text>
         </Flex>
       </Stack>
     </Box>

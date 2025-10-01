@@ -1,6 +1,6 @@
 import React from 'react';
-import { Box, Text, Heading, Stack, Button, Badge, Flex, Icon } from '@chakra-ui/react';
-import { CalendarIcon, TicketIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
+import { Box, Text, Heading, Stack, Button, Badge, Flex, Icon, Divider } from '@chakra-ui/react';
+import { CalendarIcon, TicketIcon, ArrowRightIcon, CurrencyDollarIcon } from '@heroicons/react/24/outline';
 
 const TicketDetails = ({ ticket, secondaryText = 'gray.600', onViewDetails }) => {
   const getStatusColor = (status) => {
@@ -24,6 +24,21 @@ const TicketDetails = ({ ticket, secondaryText = 'gray.600', onViewDetails }) =>
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const formatPrice = (price) => {
+    if (price === null || price === undefined) return 'N/A';
+    
+    // Convert to number if it's a string
+    const numPrice = typeof price === 'string' ? parseFloat(price) : price;
+    
+    // Format with commas and 2 decimal places
+    return new Intl.NumberFormat('en-KE', {
+      style: 'currency',
+      currency: 'KES',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    }).format(numPrice);
   };
 
   return (
@@ -149,29 +164,62 @@ const TicketDetails = ({ ticket, secondaryText = 'gray.600', onViewDetails }) =>
           </Flex>
         )}
 
+        {/* Price Information */}
+        <Flex align="center" gap={2} mt={2}>
+          <Box
+            p={1.5}
+            bg="green.50"
+            borderRadius="md"
+          >
+            <Icon as={CurrencyDollarIcon} w={3.5} h={3.5} color="green.500" />
+          </Box>
+          <Box>
+            <Text fontSize="xs" fontWeight="medium" color={secondaryText} textTransform="uppercase">
+              Price
+            </Text>
+            <Flex align="baseline" gap={1}>
+              <Text fontSize="lg" fontWeight="bold" color="gray.800">
+                {ticket.ticket_type?.price || ticket.price ? 
+                  formatPrice(ticket.ticket_type?.price || ticket.price)
+                  : 'Free'}
+              </Text>
+              {ticket.currency && ticket.currency !== 'KES' && (
+                <Text fontSize="xs" color="gray.500" ml={1}>
+                  ({ticket.currency})
+                </Text>
+              )}
+            </Flex>
+          </Box>
+        </Flex>
+
+        <Divider my={3} borderColor="gray.100" />
+
         {/* View Details Button */}
-        <Button
-          rightIcon={<ArrowRightIcon style={{ width: '14px', height: '14px' }} />}
-          onClick={() => onViewDetails(ticket.id)}
-          alignSelf="flex-start"
-          mt={2} // reduced margin top
-          bgGradient="linear(to-r, teal.500, blue.500)"
-          color="white"
-          _hover={{
-            bgGradient: 'linear(to-r, teal.600, blue.600)',
-            transform: 'translateX(3px)',
-            boxShadow: 'md'
-          }}
-          _active={{
-            bgGradient: 'linear(to-r, teal.700, blue.700)'
-          }}
-          transition="all 0.2s ease"
-          size="sm" // smaller button
-          fontWeight="semibold"
-          borderRadius="md"
-        >
-          View Details
-        </Button>
+        <Flex justify="space-between" align="center" mt={2}>
+          <Text fontSize="xs" color="gray.500" fontStyle="italic">
+            {ticket.reference ? `Ref: ${ticket.reference}` : ''}
+          </Text>
+          <Button
+            rightIcon={<ArrowRightIcon style={{ width: '14px', height: '14px' }} />}
+            onClick={() => onViewDetails(ticket.id)}
+            bgGradient="linear(to-r, teal.500, blue.500)"
+            color="white"
+            _hover={{
+              bgGradient: 'linear(to-r, teal.600, blue.600)',
+              transform: 'translateX(3px)',
+              boxShadow: 'md'
+            }}
+            _active={{
+              bgGradient: 'linear(to-r, teal.700, blue.700)'
+            }}
+            transition="all 0.2s ease"
+            size="sm"
+            fontWeight="semibold"
+            borderRadius="md"
+          >
+            View Details
+          </Button>
+        </Flex>
       </Stack>
     </Box>
   );

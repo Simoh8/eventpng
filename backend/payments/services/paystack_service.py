@@ -10,7 +10,11 @@ logger = logging.getLogger(__name__)
 class PaystackService:
     def __init__(self):
         self.config = PaystackConfig.get_solo()
-        self.paystack = Paystack(secret_key=self.config.secret_key)
+        # Use the appropriate key based on the environment
+        secret_key = self.config.live_secret_key if self.config.is_live else self.config.test_secret_key
+        if not secret_key:
+            raise ValueError("Paystack secret key is not configured")
+        self.paystack = Paystack(secret_key=secret_key)
 
     def initialize_payment(self, email, amount, reference, callback_url, metadata=None):
         """
