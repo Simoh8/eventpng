@@ -4,6 +4,7 @@ import random
 import string
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 from django.utils.text import slugify
 from django.core.validators import FileExtensionValidator
 from django.db.models.signals import pre_save, post_save
@@ -35,10 +36,34 @@ class Event(models.Model):
         ('private', 'Private - Requires PIN to view')
     ]
     
+    TICKET_TYPES = [
+        ('free', 'Free - No ticket required'),
+        ('paid', 'Paid - Requires ticket purchase'),
+        ('rsvp', 'RSVP - Free but requires registration')
+    ]
+    
+    CURRENCY_CHOICES = [
+        ('USD', 'US Dollar ($)'),
+        ('EUR', 'Euro (€)'),
+        ('GBP', 'British Pound (£)'),
+        ('NGN', 'Nigerian Naira (₦)'),
+        ('KES', 'Kenyan Shilling (KSh)'),
+        ('GHS', 'Ghanaian Cedi (GH₵)'),
+        ('ZAR', 'South African Rand (R)'),
+        ('INR', 'Indian Rupee (₹)'),
+        ('AUD', 'Australian Dollar (A$)'),
+        ('CAD', 'Canadian Dollar (C$)'),
+    ]
+    
     name = models.CharField(max_length=200)
     slug = models.SlugField(max_length=200, unique=True, blank=True)
     description = models.TextField(blank=True)
     date = models.DateField()
+    end_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="End date for multi-day events"
+    )
     location = models.CharField(max_length=255, blank=True)
     privacy = models.CharField(
         max_length=10,
@@ -46,12 +71,34 @@ class Event(models.Model):
         default='public',
         help_text="Control who can view this event's galleries"
     )
+    has_tickets = models.BooleanField(
+        default=False,
+        help_text="Check if this event requires tickets"
+    )
+    ticket_type = models.CharField(
+        max_length=10,
+        choices=TICKET_TYPES,
+        default='free',
+        help_text="Type of ticketing for this event"
+    )
+    max_attendees = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Maximum number of attendees (for RSVP/paid events)"
+    )
     pin = models.CharField(
         max_length=6,
         blank=True,
         null=True,
         help_text="PIN code for private events (auto-generated for private events)",
         editable=False
+    )
+    
+    currency = models.CharField(
+        max_length=3,
+        choices=CURRENCY_CHOICES,
+        default='USD',
+        help_text="Currency for this event's ticket prices"
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -69,25 +116,76 @@ class Event(models.Model):
         return str(self.name) if self.name is not None else f"Event {self.id}"
         
     def save(self, *args, **kwargs):
+        # Track if has_tickets is being changed
+        has_tickets_changed = False
+        if not self._state.adding:
+            try:
+                old_instance = Event.objects.get(pk=self.pk)
+                has_tickets_changed = (old_instance.has_tickets != self.has_tickets)
+                if has_tickets_changed:
+                    self._has_tickets_changed = True
+            except Event.DoesNotExist:
+                pass
+        
+        # Generate slug from name if not provided
         if not self.slug:
             self.slug = slugify(self.name)
-            
             # Ensure slug is unique
-            original_slug = self.slug
-            counter = 1
-            while Event.objects.filter(slug=self.slug).exclude(pk=self.pk).exists():
-                self.slug = f"{original_slug}-{counter}"
-                counter += 1
+            if Event.objects.filter(slug=self.slug).exclude(pk=self.pk if self.pk else None).exists():
+                self.slug = f"{self.slug}-{self.date.strftime('%Y%m%d')}"
                 
-        # Generate PIN for private events if not set
+        # Set end date to match start date if not provided
+        if not self.end_date:
+            self.end_date = self.date
+            
+        # If this is a private event, generate a PIN if not set
         if self.privacy == 'private' and not self.pin:
             self.pin = generate_pin()
-        elif self.privacy == 'public':
-            self.pin = None
-                
+        
+        # Save the event
         super().save(*args, **kwargs)
         
-    @property
+        # Schedule ticket creation after the transaction is committed
+        if getattr(self, '_has_tickets_changed', False) or (self.has_tickets and has_tickets_changed):
+            from django.db import transaction
+            transaction.on_commit(lambda: self._create_default_ticket() if self.has_tickets else None)
+    
+    def _create_default_ticket(self):
+        """Create a default ticket for the event."""
+        from .ticket_models.models import TicketType, EventTicket
+        
+        # Check if a default ticket already exists
+        if hasattr(self, 'tickets') and self.tickets.exists():
+            return
+            
+        try:
+            # Try to get a default ticket type, create one if it doesn't exist
+            try:
+                ticket_type = TicketType.objects.get(name='General Admission')
+            except TicketType.DoesNotExist:
+                # Create a default ticket type if it doesn't exist
+                ticket_type = TicketType.objects.create(
+                    name='General Admission',
+                    description='General admission ticket',
+                    is_active=True
+                )
+            
+            # Create the default ticket
+            EventTicket.objects.create(
+                event=self,
+                ticket_type=ticket_type,
+                price=0.00,  # Default to free
+                quantity_available=100,  # Default quantity
+                is_active=True,
+                sale_start=timezone.now(),
+                sale_end=self.date  # Default to event date
+            )
+        except Exception as e:
+            # Log the error but don't fail the event save
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to create default ticket for event {self.id}: {str(e)}")
+    
     def cover_images(self):
         """Return all cover images for this event, ordered by display order."""
         return self.covers.all().order_by('order')
@@ -100,6 +198,161 @@ class Event(models.Model):
     def primary_cover(self):
         """Return the primary cover image or first available."""
         return self.covers.filter(is_primary=True).first() or self.covers.first()
+        
+    @property
+    def cover_image_url(self):
+        """Return the URL of the primary cover image if available."""
+        primary_cover = self.covers.filter(is_primary=True).first()
+        if primary_cover and hasattr(primary_cover.image, 'url'):
+            return primary_cover.image.url
+        
+        # Fallback to first cover image if no primary is set
+        first_cover = self.covers.first()
+        if first_cover and hasattr(first_cover.image, 'url'):
+            return first_cover.image.url
+            
+        # Return a placeholder if no covers are available
+        return '/static/images/event-placeholder.jpg'
+
+
+class Ticket(models.Model):
+    """
+    Represents a ticket type for an event.
+    """
+    event = models.ForeignKey(
+        'Event',
+        on_delete=models.CASCADE,
+        related_name='tickets'
+    )
+    name = models.CharField(
+        max_length=100,
+        help_text="Name of the ticket type (e.g., 'General Admission', 'VIP')"
+    )
+    description = models.TextField(blank=True)
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Price in the selected currency. Set to 0 for free tickets."
+    )
+    
+    currency = models.CharField(
+        max_length=3,
+        choices=Event.CURRENCY_CHOICES,
+        default='USD',
+        help_text="Currency for this ticket. Defaults to the event's currency."
+    )
+    quantity_available = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Maximum number of tickets available. Leave empty for unlimited."
+    )
+    sale_start = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When ticket sales start. Leave empty to start immediately."
+    )
+    sale_end = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When ticket sales end. Leave empty for no end date."
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this ticket type is currently available for purchase"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['price', 'name']
+
+    def __str__(self):
+        return f"{self.name} - {self.event.name}"
+
+    @property
+    def is_available(self):
+        """Check if this ticket is currently available for purchase."""
+        if not self.is_active:
+            return False
+            
+        now = timezone.now()
+        if self.sale_start and now < self.sale_start:
+            return False
+        if self.sale_end and now > self.sale_end:
+            return False
+            
+        if self.quantity_available is not None:
+            return self.quantity_available > self.registrations.count()
+            
+        return True
+
+    @property
+    def remaining_quantity(self):
+        """Return the number of tickets remaining."""
+        if self.quantity_available is None:
+            return None
+        return max(0, self.quantity_available - self.registrations.count())
+
+
+class EventRegistration(models.Model):
+    """
+    Tracks event registrations/ticket sales.
+    """
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('confirmed', 'Confirmed'),
+        ('cancelled', 'Cancelled'),
+        ('attended', 'Attended'),
+        ('no_show', 'No Show')
+    ]
+    
+    event = models.ForeignKey(
+        'Event',
+        on_delete=models.CASCADE,
+        related_name='registrations'
+    )
+    ticket = models.ForeignKey(
+        'Ticket',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='registrations'
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='event_registrations'
+    )
+    email = models.EmailField(help_text="Email address for the attendee")
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pending'
+    )
+    registration_date = models.DateTimeField(auto_now_add=True)
+    checked_in = models.BooleanField(default=False)
+    checked_in_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    
+    # Store payment information if this was a paid ticket
+    payment = models.ForeignKey(
+        'Payment',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='event_registrations'
+    )
+    
+    class Meta:
+        ordering = ['-registration_date']
+        verbose_name = 'Event Registration'
+        verbose_name_plural = 'Event Registrations'
+    
+    def __str__(self):
+        return f"{self.first_name} {self.last_name} - {self.event.name}"
 
 
 class EventCoverImage(models.Model):

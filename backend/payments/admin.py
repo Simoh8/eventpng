@@ -2,7 +2,16 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-from .models import Order, OrderItem, Transaction, DownloadToken
+from django.contrib import messages
+from django.http import HttpResponseRedirect
+
+from .models import (
+    Order,
+    OrderItem,
+    Transaction,
+    DownloadToken,
+    PaystackConfig
+)
 
 
 class OrderItemInline(admin.TabularInline):
@@ -189,9 +198,72 @@ class DownloadTokenAdmin(admin.ModelAdmin):
     photo_link.short_description = 'Photo'
     
     def is_valid_field(self, obj):
-        return obj.is_valid
+        return obj.is_valid()
     is_valid_field.boolean = True
     is_valid_field.short_description = 'Is Valid'
+    
+    def order_id(self, obj):
+        return obj.order.id
+    order_id.short_description = 'Order ID'
+    
+    def photo_title(self, obj):
+        return obj.photo.title
+    photo_title.short_description = 'Photo'
+
+
+@admin.register(PaystackConfig)
+class PaystackConfigAdmin(admin.ModelAdmin):
+    """
+    Admin interface for Paystack configuration.
+    Only one instance can exist, so we'll handle that here.
+    """
+    list_display = ('__str__', 'is_live', 'created_at', 'updated_at')
+    fieldsets = (
+        ('Mode', {
+            'fields': ('is_live',)
+        }),
+        ('Test Credentials', {
+            'fields': ('test_public_key', 'test_secret_key'),
+            'classes': ('collapse',)
+        }),
+        ('Live Credentials', {
+            'fields': ('live_public_key', 'live_secret_key'),
+            'classes': ('collapse',)
+        }),
+        ('Webhook', {
+            'fields': ('webhook_secret',),
+            'classes': ('collapse',)
+        }),
+        ('Metadata', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    readonly_fields = ('created_at', 'updated_at')
+    
+    def has_add_permission(self, request):
+        # Only allow one instance
+        return not PaystackConfig.objects.exists()
+    
+    def has_delete_permission(self, request, obj=None):
+        # Don't allow deletion of the only instance
+        return False
+    
+    def response_add(self, request, obj, post_url_continue=None):
+        self.message_user(
+            request,
+            'Paystack configuration saved successfully.',
+            messages.SUCCESS
+        )
+        return HttpResponseRedirect(reverse('admin:payments_paystackconfig_changelist'))
+    
+    def response_change(self, request, obj):
+        self.message_user(
+            request,
+            'Paystack configuration updated successfully.',
+            messages.SUCCESS
+        )
+        return HttpResponseRedirect(reverse('admin:payments_paystackconfig_changelist'))
     
     def order_id(self, obj):
         return obj.order.id

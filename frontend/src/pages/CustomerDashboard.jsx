@@ -12,14 +12,24 @@ import {
   ArrowDownTrayIcon,
   ShareIcon,
   ArrowPathIcon,
-  CloudArrowDownIcon
+  CloudArrowDownIcon,
+  TicketIcon,
+  CalendarIcon
 } from '@heroicons/react/24/outline';
 import api from '../utils/api';
 import { API_ENDPOINTS } from '../utils/apiEndpoints';
 import { toast } from 'react-toastify';
+import TicketCard from '../components/Tickets/TicketCard';
 
 // Default stats data structure
 const defaultStats = [
+  { 
+    name: 'My Tickets', 
+    value: '0', 
+    icon: TicketIcon, 
+    color: 'bg-purple-100 text-purple-600',
+    description: 'Your event tickets',
+  },
   { 
     name: 'Total Downloads', 
     value: '0', 
@@ -60,6 +70,7 @@ export default function CustomerDashboard() {
     recentDownloads: [],
     favorites: [],
     orders: [],
+    recentTickets: [],
     loading: true,
     error: null
   });
@@ -68,7 +79,11 @@ export default function CustomerDashboard() {
     try {
       setDashboardData(prev => ({ ...prev, loading: true, error: null }));
       
-      // Fetch all data in parallel
+      // First, fetch tickets to get the most up-to-date count
+      const ticketsRes = await api.get('/api/tickets/my-tickets/');
+      const ticketCount = ticketsRes.data?.count || 0;
+      
+      // Then fetch other data in parallel
       const [
         dashboardRes, 
         purchasesRes, 
@@ -89,10 +104,21 @@ export default function CustomerDashboard() {
       // Update stats with real data
       if (dashboardRes.data) {
         const data = dashboardRes.data;
-        stats[0].value = data.totalDownloads?.toString() || '0';
+        // Update tickets count first
+        stats[0].value = ticketCount.toString();
+        // Then update other stats
         stats[1].value = data.purchasedPhotos?.toString() || '0';
         stats[2].value = data.favoritesCount?.toString() || '0';
-        stats[3].value = data.ordersCount?.toString() || '0';
+        // Ensure orders count is at least the number of tickets if we have tickets but no orders yet
+        const ordersCount = parseInt(data.ordersCount || '0');
+        stats[3].value = Math.max(ordersCount, ticketCount > 0 ? 1 : 0).toString();
+      } else {
+        // If no dashboard data, still set the ticket count
+        stats[0].value = ticketCount.toString();
+        // If we have tickets but no orders, show at least 1 order
+        if (ticketCount > 0) {
+          stats[3].value = Math.max(parseInt(stats[3].value || '0'), 1).toString();
+        }
       }
 
       setDashboardData({
@@ -101,10 +127,12 @@ export default function CustomerDashboard() {
         recentDownloads: downloadsRes.data?.results || [],
         favorites: favoritesRes.data?.results || [],
         orders: ordersRes.data?.results || [],
+        recentTickets: ticketsRes.data?.results || [],
         loading: false,
         error: null
       });
     } catch (error) {
+      console.error('Error fetching dashboard data:', error);
       setDashboardData(prev => ({
         ...prev,
         loading: false,
@@ -443,6 +471,8 @@ export default function CustomerDashboard() {
               </div>
             </div>
           </div>
+
+
         </div>
       </main>
     </div>

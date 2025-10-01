@@ -118,6 +118,31 @@ a:hover {
   background: #6b7280;
 }
 
+@media print {
+  body {
+    -webkit-print-color-adjust: exact !important; /* Chrome, Safari */
+    print-color-adjust: exact !important;        /* Modern browsers */
+    color-adjust: exact !important;              /* Fallback */
+  }
+
+  body * {
+    visibility: hidden !important; /* Hide everything */
+  }
+
+  #ticket, #ticket * {
+    visibility: visible !important; /* Show only ticket */
+  }
+
+  #ticket {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}
+
+
+
 /* Responsive typography */
 @media (min-width: 640px) {
   h1 { font-size: 3rem; }

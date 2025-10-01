@@ -1,0 +1,33 @@
+/* Style for ticket settings section */
+fieldset.ticket-settings {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 10px 15px;
+    margin-bottom: 20px;
+}
+
+/* Style for the has_tickets checkbox */
+#id_has_tickets {
+    margin-right: 10px;
+}
+
+/* Style for the ticket type and max attendees fields */
+#id_ticket_type, #id_max_attendees {
+    margin-top: 10px;
+}
+
+/* Make the form rows more compact */
+.form-row {
+    padding: 5px 0;
+}
+
+/* Style for the ticket inline formset */
+.inline-group .tabular tr.has_original td {
+    padding-top: 8px;
+}
+
+/* Add some spacing between fields */
+.field-box {
+    margin-bottom: 15px;
+}

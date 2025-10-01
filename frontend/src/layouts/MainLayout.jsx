@@ -24,9 +24,11 @@ export default function MainLayout() {
   const navigation = useMemo(() => [
     { name: 'Home', href: '/' },
     { name: 'Events', href: '/events' },
+    { name: 'Tickets', href: '/tickets' },
     ...(isAuthenticated ? [
       user?.is_photographer && { name: 'Dashboard', href: '/photographer-dashboard' },
       user?.is_photographer === false && { name: 'My Gallery', href: '/my-gallery' },
+      user?.is_photographer === false && { name: 'My Tickets', href: '/tickets/my-tickets' },
       (user?.is_staff || user?.is_superuser) && { name: 'Admin', href: '/admin/events' }
     ].filter(Boolean) : [
       { name: 'Pricing', href: '/pricing' },
@@ -42,6 +44,7 @@ export default function MainLayout() {
       user?.is_photographer && { name: 'Create Gallery', href: '/galleries/new' },
       user?.is_photographer === false && { name: 'My Photos', href: '/my-photos' },
       user?.is_photographer === false && { name: 'My Orders', href: '/orders' },
+      user?.is_photographer === false && { name: 'My Tickets', href: '/tickets/my-tickets' },
       user?.is_photographer === false && { name: 'Saved', href: '/saved' },
       { name: 'Account Settings', href: '/settings' },
       { name: 'Help & Support', href: '/support' }

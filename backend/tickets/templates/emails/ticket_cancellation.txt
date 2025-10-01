@@ -1,0 +1,19 @@
+Hello {{ ticket.user.get_full_name|default:"there" }},
+
+We're sorry to see you go! Your ticket(s) for {{ event.title }} have been cancelled as requested.
+
+Order Details:
+- Order #: {{ ticket.id }}
+- Event: {{ event.title }}
+- Ticket Type: {{ ticket_type.name }}
+- Quantity: {{ ticket.quantity }}
+- Refund Amount: ${{ refund_amount|floatformat:2 }}
+
+Your refund has been processed and should appear in your account within 5-7 business days, depending on your payment method and financial institution.
+
+If you have any questions about your cancellation or refund, please don't hesitate to contact us at {{ settings.DEFAULT_FROM_EMAIL }}.
+
+We hope to see you at a future event!
+
+Best regards,
+The {{ event.organizer_name|default:settings.SITE_NAME }} Team

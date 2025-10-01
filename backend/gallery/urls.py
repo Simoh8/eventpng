@@ -2,6 +2,13 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import *  # This will import all views including the ones from base_views and cached_views
 from .views_photo import ProtectedImageView
+from .views.ticket_views import (
+    EventWithTicketsViewSet,
+    TicketViewSet,
+    PublicTicketViewSet,
+    TicketPurchaseViewSet,
+    AvailableTicketsViewSet
+)
 
 app_name = 'gallery'
 
@@ -37,6 +44,39 @@ urlpatterns = [
     path('public/events/<int:pk>/', PublicEventDetailView.as_view(), name='public-event-detail'),
     path('public/events/slug/<slug:slug>/', PublicEventBySlugView.as_view(), name='public-event-detail-by-slug'),
     path('events/<slug:slug>/verify-pin/', VerifyEventPinView.as_view(), name='verify-event-pin'),
+    
+    # Ticket endpoints
+    path('events/with-tickets/', EventWithTicketsViewSet.as_view({'get': 'list'}), name='events-with-tickets'),
+    path('tickets/available/', AvailableTicketsViewSet.as_view({'get': 'list'}), name='available-tickets'),
+    path('events/<int:event_pk>/tickets/', TicketViewSet.as_view({
+        'get': 'list',
+        'post': 'create'
+    }), name='event-tickets-list'),
+    path('events/<int:event_pk>/tickets/<int:pk>/', TicketViewSet.as_view({
+        'get': 'retrieve',
+        'put': 'update',
+        'patch': 'partial_update',
+        'delete': 'destroy'
+    }), name='event-ticket-detail'),
+    path('events/<int:event_pk>/tickets/<int:pk>/available/', TicketViewSet.as_view({
+        'get': 'available'
+    }), name='event-ticket-available'),
+    
+    # Public ticket endpoints
+    path('public/events/<int:event_pk>/tickets/', PublicTicketViewSet.as_view({
+        'get': 'list'
+    }), name='public-event-tickets'),
+    
+    # Ticket registration endpoints
+    path('tickets/register/', TicketPurchaseViewSet.as_view({
+        'post': 'create'
+    }), name='ticket-register'),
+    path('tickets/my-tickets/', TicketPurchaseViewSet.as_view({
+        'get': 'list'
+    }), name='my-tickets'),
+    path('tickets/<int:pk>/cancel/', TicketPurchaseViewSet.as_view({
+        'post': 'cancel'
+    }), name='cancel-ticket'),
     
     # Event stats endpoint
     path('events/<int:event_id>/stats/', event_stats, name='event-stats'),

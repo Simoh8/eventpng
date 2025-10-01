@@ -170,6 +170,9 @@ const getCSRFToken = () => {
   return cookieValue || null;
 };
 
+// Export the api instance for use in other services
+export { api };
+
 // Auth service methods
 const authService = {
   // Add CSRF token getter
@@ -450,10 +453,13 @@ const authService = {
   
 
   // Get stored user
-  getStoredUser: getStoredUser,
+  getStoredUser,
   
-  // Token validation
-  isTokenValid: isTokenValid
+  // Check if token is valid
+  isTokenValid,
+  
+  // Get CSRF token
+  getCSRFToken
 };
 
 export default authService;

@@ -48,6 +48,7 @@ urlpatterns = [
     path('api/gallery/', include('gallery.urls')),  # Gallery endpoints
     path('api/payments/', include('payments.urls')),  # Payment endpoints
     path('api/contact/', include('contact.urls')),  # Contact form endpoints
+    path('api/tickets/', include(('tickets.urls', 'tickets'), namespace='tickets')),  # Ticket endpoints
     path('api/customer/', include('customer_dashboard.urls')),  # Customer dashboard endpoints
     
     # API Documentation and Authentication

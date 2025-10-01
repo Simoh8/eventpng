@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "accounts",
     "gallery",
     "payments",
+    "tickets",
     "contact",
     "customer_dashboard",
 ]
@@ -201,8 +202,10 @@ FILE_UPLOAD_PERMISSIONS = 0o644
 MAX_IMAGE_SIZE = 50 * 1024 * 1024
 ALLOWED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"]
 
+# Stripe settings
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PUBLIC_KEY = os.getenv("STRIPE_PUBLIC_KEY")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

@@ -813,6 +813,7 @@ def public_event_detail_page(request, slug):
             'end_date': event.end_date,
             'cover_image': event.cover_image.url if event.cover_image else None,
             'is_private': event.privacy == 'private',
+            'has_tickets': event.has_tickets,
             'galleries': [
                 {
                     'id': gallery.id,
@@ -1019,6 +1020,7 @@ def public_event_detail_page(request, slug):
             'end_date': event.end_date,
             'cover_image': event.cover_image.url if event.cover_image else None,
             'is_private': event.privacy == 'private',
+            'has_tickets': event.has_tickets,
             'galleries': [
                 {
                     'id': gallery.id,

@@ -9,6 +9,7 @@ import HomePage from './pages/HomePage';
 import Events from './pages/Events';
 import EventDetail from './pages/EventDetail';
 import GalleryDetail from './pages/GalleryDetail';
+import TicketsPage from './pages/TicketsPage';
 import PricingPage from './pages/PricingPage';
 import FaqPage from './pages/FaqPage';
 import TermsAndPrivacy from './pages/TermsAndPrivacy';
@@ -32,6 +33,11 @@ import AccountSettingsPage from './pages/AccountSettingsPage';
 import HelpAndSupportPage from './pages/HelpAndSupportPage';
 import ContactPage from './pages/ContactPage';
 import NotFoundPage from './pages/NotFoundPage';
+import CheckoutPage from './pages/CheckoutPage';
+import TicketDetail from './pages/TicketDetail';
+import TicketSuccess from './pages/TicketSuccess';
+// import TicketPurchaseForm from './components/forms/TicketPurchaseForm';
+import MyTickets from './pages/MyTickets';
 
 
 // Dashboard Redirect Component
@@ -149,6 +155,34 @@ function AppContent() {
         <Route index element={<HomePage />} />
         <Route path="events" element={<Events />} />
         <Route path="events/:slug" element={<EventDetail />} />
+        <Route path="tickets">
+          <Route index element={<TicketsPage />} />
+          <Route path="purchase/:eventId" element={
+            <ProtectedRoute>
+              {/* <TicketPurchaseForm /> */}
+            </ProtectedRoute>
+          } />
+          <Route path="my-tickets" element={
+            <ProtectedRoute>
+              <MyTickets />
+            </ProtectedRoute>
+          } />
+          <Route path=":id" element={
+            <ProtectedRoute>
+              <TicketDetail />
+            </ProtectedRoute>
+          } />
+        </Route>
+        <Route path="checkout" element={
+          <ProtectedRoute>
+            <CheckoutPage />
+          </ProtectedRoute>
+        } />
+        <Route path="ticket/success" element={
+          <ProtectedRoute>
+            <TicketSuccess />
+          </ProtectedRoute>
+        } />
         <Route path="gallery/:id" element={<GalleryDetail />} />
         <Route path="pricing" element={<PricingPage />} />
         <Route path="faq" element={<FaqPage />} />

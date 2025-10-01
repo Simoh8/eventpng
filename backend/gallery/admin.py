@@ -9,7 +9,11 @@ from django.utils import timezone
 from django.db.models import Count, F, Q, Sum
 from django.conf import settings
 
-from .models import Event, EventCoverImage, Gallery, Photo, Download
+from .models import Event, EventCoverImage, Gallery, Photo, Download, Ticket, EventRegistration
+# Import ticket models and admin classes
+from .ticket_models.models import TicketGroup, TicketLevel, TicketType, EventTicket
+from .ticket_admin import TicketGroupAdmin, TicketLevelAdmin, TicketTypeAdmin, EventTicketAdmin
+from .forms import EventForm, EventCoverImageForm, GalleryForm, PhotoForm, TicketForm, EventRegistrationForm
 
 # Get the custom user model if it exists
 User = get_user_model()
@@ -17,6 +21,23 @@ HAS_CUSTOM_USER_ADMIN = hasattr(User, 'is_photographer')
 
 # Admin site instance
 admin_site = admin.site
+
+class TicketInline(admin.TabularInline):
+    model = Ticket
+    extra = 1
+    fields = ('name', 'description', 'price', 'quantity_available', 'sale_start', 'sale_end', 'is_active', 'sold_count')
+    readonly_fields = ('created_at', 'updated_at', 'sold_count')
+    
+    def sold_count(self, obj):
+        if obj and obj.pk:
+            return obj.registrations.count()
+        return 0
+    sold_count.short_description = 'Sold'
+    
+    # Add this to handle cases where the model might not be fully loaded yet
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('event')
+
 
 class PhotoInline(admin.TabularInline):
     model = Photo
@@ -151,27 +172,85 @@ class GalleryAdmin(admin.ModelAdmin):
     is_public_display.short_description = 'Visibility'
     is_public_display.allow_tags = True
 
+from .ticket_admin import EventTicketInline
+
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
-    list_display = ('name', 'date', 'location', 'get_gallery_count', 'get_photo_count', 'privacy_badge', 'cover_preview', 'created_by_display', 'created_short')
-    list_filter = ('privacy', 'date', 'created_at', 'created_by')
+    form = EventForm
+    list_display = ('name', 'date', 'location', 'ticket_status', 'ticket_actions', 'get_gallery_count', 'get_photo_count', 'privacy_badge', 'cover_preview', 'created_short')
+    list_filter = ('privacy', 'date', 'created_at', 'created_by', 'has_tickets', 'ticket_type')
     search_fields = ('name', 'location', 'description', 'created_by__email', 'created_by__full_name')
     list_select_related = ('created_by',)
-    readonly_fields = ('created_at', 'updated_at', 'pin_display', 'cover_preview', 'get_gallery_count', 'get_photo_count', 'created_by_display')
+    readonly_fields = ('created_at', 'updated_at', 'pin_display', 'cover_preview', 'get_gallery_count', 
+                      'get_photo_count', 'created_by_display', 'ticket_status', 'ticket_management_links')
     list_per_page = 25
     date_hierarchy = 'date'
     save_on_top = True
     inlines = [EventCoverImageInline]
-    actions = ['make_public', 'make_private']
+    actions = ['make_public', 'make_private', 'export_event_attendees', 'enable_ticketing', 'disable_ticketing']
     
+    def get_inlines(self, request, obj=None):
+        inlines = [EventCoverImageInline]
+        if obj and obj.has_tickets:
+            inlines.append(EventTicketInline)
+        return inlines
+    
+    fieldsets = (
+        (_('Event Information'), {
+            'fields': ('name', 'slug', 'description', 'date', 'end_date', 'location')
+        }),
+        (_('Ticket Settings'), {
+            'fields': ('has_tickets', 'ticket_type', 'max_attendees'),
+            'classes': ('collapse', 'ticket-settings')
+        }),
+        (_('Privacy Settings'), {
+            'fields': ('privacy', 'pin_display'),
+            'classes': ('collapse',)
+        }),
+        (_('Cover Image'), {
+            'fields': ('cover_preview',),
+            'classes': ('collapse',)
+        }),
+        (_('Metadata'), {
+            'fields': ('created_by_display', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = super().get_fieldsets(request, obj)
+        # Ensure has_tickets is in the first fieldset if it's not already there
+        if obj is None:  # Only for add form
+            for fieldset in fieldsets:
+                if fieldset[0] == _('Event Information'):
+                    if 'has_tickets' not in fieldset[1]['fields']:
+                        fieldset[1]['fields'] += ('has_tickets',)
+                        
+        # Add ticket management section for existing events with ticketing enabled
+        if obj and obj.has_tickets:
+            fieldsets = list(fieldsets)
+            # Insert after the first fieldset
+            fieldsets.insert(1, (
+                _('Ticket Management'), {
+                    'fields': ('ticket_management_links',),
+                    'classes': ('collapse', 'ticket-management'),
+                    'description': _('Manage tickets for this event')
+                }
+            ))
+            
+        return fieldsets
+        
     def get_queryset(self, request):
-        return super().get_queryset(request).annotate(
+        qs = super().get_queryset(request)
+        qs = qs.annotate(
             gallery_count=Count('galleries', distinct=True),
             photo_count=Count('galleries__photos', distinct=True)
         )
+        return qs
         
     def get_gallery_count(self, obj):
-        return obj.gallery_count
+        url = reverse('admin:gallery_gallery_changelist') + f'?event__id__exact={obj.id}'
+        return format_html('<a href="{}">{}</a>', url, obj.gallery_count)
     get_gallery_count.short_description = 'Galleries'
     get_gallery_count.admin_order_field = 'gallery_count'
     
@@ -179,6 +258,47 @@ class EventAdmin(admin.ModelAdmin):
         return obj.photo_count
     get_photo_count.short_description = 'Photos'
     get_photo_count.admin_order_field = 'photo_count'
+    
+    def export_event_attendees(self, request, queryset):
+        if queryset.count() != 1:
+            self.message_user(request, "Please select exactly one event to export attendees.", messages.ERROR)
+            return
+            
+        event = queryset.first()
+        registrations = EventRegistration.objects.filter(event=event).select_related('ticket', 'user', 'payment')
+        
+        if not registrations.exists():
+            self.message_user(request, "No attendees found for this event.", messages.WARNING)
+            return
+            
+        import csv
+        from django.http import HttpResponse
+        from io import StringIO
+        
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{event.slug}_attendees.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow([
+            'Registration ID', 'Ticket', 'First Name', 'Last Name', 'Email',
+            'Status', 'Checked In', 'Checked In At', 'Registration Date'
+        ])
+        
+        for reg in registrations:
+            writer.writerow([
+                reg.id,
+                reg.ticket.name if reg.ticket else 'N/A',
+                reg.first_name,
+                reg.last_name,
+                reg.email,
+                reg.get_status_display(),
+                'Yes' if reg.checked_in else 'No',
+                reg.checked_in_at.strftime('%Y-%m-%d %H:%M') if reg.checked_in_at else '',
+                reg.registration_date.strftime('%Y-%m-%d %H:%M')
+            ])
+        
+        return response
+    export_event_attendees.short_description = "Export attendees to CSV"
     
     def privacy_badge(self, obj):
         privacy_choices = dict(Event.PRIVACY_CHOICES)
@@ -226,6 +346,82 @@ class EventAdmin(admin.ModelAdmin):
         return obj.pin or "-"
     pin_display.short_description = 'PIN'
     
+    def ticket_status(self, obj):
+        if not obj.has_tickets:
+            return format_html('<span class="status-tag" style="background: #999; color: white; padding: 2px 6px; border-radius: 10px; font-size: 11px;">No Tickets</span>')
+        
+        now = timezone.now()
+        active_tickets = obj.event_tickets.filter(is_active=True)
+        
+        if not active_tickets.exists():
+            return format_html('<span class="status-tag" style="background: #f0ad4e; color: white; padding: 2px 6px; border-radius: 10px; font-size: 11px;">No Active Tickets</span>')
+        
+        # Check if any tickets are on sale
+        on_sale = any(t.is_available for t in active_tickets)
+        
+        if on_sale:
+            return format_html('<span class="status-tag" style="background: #5cb85c; color: white; padding: 2px 6px; border-radius: 10px; font-size: 11px;">Tickets On Sale</span>')
+        else:
+            return format_html('<span class="status-tag" style="background: #d9534f; color: white; padding: 2px 6px; border-radius: 10px; font-size: 11px;">Sales Ended</span>')
+    
+    def ticket_actions(self, obj):
+        if not obj.has_tickets:
+            return format_html(
+                '<a class="button" href="{}?event={}">Enable Ticketing</a>',
+                reverse('admin:gallery_event_changelist'),
+                obj.id
+            )
+        
+        manage_url = reverse('admin:gallery_eventticket_changelist') + f'?event__id__exact={obj.id}'
+        add_url = reverse('admin:gallery_eventticket_add') + f'?event={obj.id}'
+        
+        return format_html(
+            '<div class="ticket-actions">'
+            '<a class="button" href="{}">Manage Tickets</a> '
+            '<a class="button" href="{}">Add Ticket</a>'
+            '</div>',
+            manage_url,
+            add_url
+        )
+    ticket_actions.short_description = 'Ticket Actions'
+    ticket_actions.allow_tags = True
+    
+    def ticket_management_links(self, obj):
+        if not obj.has_tickets:
+            return "Enable ticketing to manage tickets for this event"
+            
+        manage_url = reverse('admin:gallery_eventticket_changelist') + f'?event__id__exact={obj.id}'
+        add_url = reverse('admin:gallery_eventticket_add') + f'?event={obj.id}'
+        
+        return format_html(
+            '<div class="ticket-management-links">'
+            '<a class="button" href="{}" style="margin-right: 10px;">View All Tickets</a>'
+            '<a class="button" href="{}" style="background: #417690; color: white;">Add New Ticket</a>'
+            '</div>',
+            manage_url,
+            add_url
+        )
+    ticket_management_links.short_description = 'Manage Tickets'
+    ticket_management_links.allow_tags = True
+    
+    def enable_ticketing(self, request, queryset):
+        updated = queryset.update(has_tickets=True)
+        self.message_user(
+            request,
+            f'Successfully enabled ticketing for {updated} event(s).',
+            messages.SUCCESS
+        )
+    enable_ticketing.short_description = 'Enable ticketing for selected events'
+    
+    def disable_ticketing(self, request, queryset):
+        updated = queryset.update(has_tickets=False)
+        self.message_user(
+            request,
+            f'Disabled ticketing for {updated} event(s).',
+            messages.WARNING
+        )
+    disable_ticketing.short_description = 'Disable ticketing for selected events'
+    
     def make_public(self, request, queryset):
         updated = queryset.update(privacy='public')
         self.message_user(request, f'Made {updated} event(s) public.', messages.SUCCESS)
@@ -257,116 +453,11 @@ class EventAdmin(admin.ModelAdmin):
     photo_count.short_description = 'Photos'
     photo_count.admin_order_field = 'photo_count'
     
-    fieldsets = (
-        (_('Event Information'), {
-            'fields': ('name', 'slug', 'description', 'date', 'location')
-        }),
-        (_('Cover Image'), {
-            'fields': ('cover_preview',),
-            'classes': ('collapse',)
-        }),
-        (_('Privacy Settings'), {
-            'fields': ('privacy', 'pin_display'),
-            'classes': ('collapse',)
-        }),
-        (_('Metadata'), {
-            'fields': ('created_by', 'created_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
-    
-    def cover_preview(self, obj):
-        cover = obj.covers.filter(is_primary=True).first() or obj.covers.first()
-        if cover and cover.image:
-            return format_html(
-                '<a href="{}" target="_blank">'
-                '<img src="{}" style="max-height: 60px; max-width: 80px; border-radius: 4px; object-fit: cover;" />'
-                '</a>',
-                cover.image.url,
-                cover.image.url
-            )
-        return "No cover"
-    cover_preview.short_description = 'Cover'
-    cover_preview.allow_tags = True
-    
-    def privacy_badge(self, obj):
-        privacy_styles = {
-            'public': ('#4CAF50', 'Public'),
-            'private': ('#f44336', 'Private'),
-            'invite_only': ('#FF9800', 'Invite Only'),
+    class Media:
+        css = {
+            'all': ('css/admin.css',)
         }
-        bg_color, display_text = privacy_styles.get(obj.privacy, ('#9E9E9E', obj.get_privacy_display()))
-        return format_html(
-            '<span style="background: {}; color: white; padding: 3px 8px; border-radius: 12px; font-size: 12px;">{}</span>',
-            bg_color, display_text
-        )
-    privacy_badge.short_description = 'Privacy'
-    privacy_badge.admin_order_field = 'privacy'
-    
-    def pin_display(self, obj):
-        return obj.pin if obj.privacy == 'private' else "—"
-    pin_display.short_description = 'Access PIN'
-    
-    def created_short(self, obj):
-        return obj.created_at.strftime('%b %d, %Y')
-    created_short.short_description = 'Created'
-    created_short.admin_order_field = 'created_at'
-    
-    def thumbnail_preview(self, obj):
-        if obj.image:
-            return format_html(
-                '<a href="{}" target="_blank">'
-                '<img src="{}" style="max-height: 60px; border-radius: 4px;" />'
-                '</a>',
-                obj.image.url,
-                obj.image.url
-            )
-        return "No image"
-    thumbnail_preview.short_description = 'Preview'
-    thumbnail_preview.allow_tags = True
-    
-    def gallery_link(self, obj):
-        if obj.gallery:
-            url = reverse('admin:gallery_gallery_change', args=[obj.gallery.id])
-            return format_html('<a href="{}">{}</a>', url, obj.gallery.title)
-        return "-"
-    gallery_link.short_description = 'Gallery'
-    gallery_link.admin_order_field = 'gallery__title'
-    
-    def event_link(self, obj):
-        if obj.gallery and obj.gallery.event:
-            url = reverse('admin:gallery_event_change', args=[obj.gallery.event.id])
-            return format_html('<a href="{}">{}</a>', url, obj.gallery.event.name)
-        return "-"
-    event_link.short_description = 'Event'
-    
-    def get_featured_badge(self, obj):
-        if obj.is_featured:
-            return format_html(
-                '<span style="background: #4CAF50; color: white; padding: 2px 6px; border-radius: 10px; font-size: 11px;">Featured</span>'
-            )
-        return ""
-    get_featured_badge.short_description = 'Featured'
-    get_featured_badge.allow_tags = True
-    
-    def get_status_badge(self, obj):
-        status_colors = {
-            'draft': 'gray',
-            'published': 'green',
-            'archived': 'orange',
-        }
-        color = status_colors.get(obj.status, 'gray')
-        return format_html(
-            '<span style="background: {}; color: white; padding: 2px 6px; border-radius: 10px; font-size: 11px;">{}</span>',
-            color, obj.get_status_display()
-        )
-    get_status_badge.short_description = 'Status'
-    get_status_badge.allow_tags = True
-    
-    def created_short(self, obj):
-        return obj.created_at.strftime('%b %d, %Y')
-    created_short.short_description = 'Created'
-    created_short.admin_order_field = 'created_at'
+        js = ('js/admin/event_admin.js',)
     
     def get_image_preview(self, obj):
         if obj.image:
@@ -405,136 +496,6 @@ class EventAdmin(admin.ModelAdmin):
         if not obj.pk:
             obj.created_by = request.user
         super().save_model(request, obj, form, change)
-
-@admin.register(EventCoverImage)
-class EventCoverImageAdmin(admin.ModelAdmin):
-    list_display = ('preview', 'event_link', 'get_dimensions', 'get_file_size', 'get_primary_badge', 'order', 'created_short')
-    list_filter = ('is_primary', 'created_at', 'event')
-    search_fields = ('caption', 'event__name', 'event__location')
-    list_editable = ('order',)
-    list_display_links = ('preview', 'event_link')
-    readonly_fields = ('created_at', 'updated_at', 'preview', 'get_dimensions', 'get_file_size', 'get_primary_badge')
-    list_per_page = 20
-    actions = ['make_primary', 'duplicate_cover']
-    
-    fieldsets = (
-        (None, {
-            'fields': ('event', 'image', 'preview', 'get_dimensions', 'get_file_size', 'caption', 'is_primary', 'order')
-        }),
-        ('Metadata', {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
-    
-    def preview(self, obj):
-        if obj.image:
-            return format_html(
-                '<a href="{}" target="_blank">'
-                '<img src="{}" style="max-height: 60px; border-radius: 4px;" />'
-                '</a>',
-                obj.image.url,
-                obj.image.url
-            )
-        return "No image"
-    preview.short_description = 'Preview'
-    preview.allow_tags = True
-    
-    def event_link(self, obj):
-        if obj.event:
-            url = reverse('admin:gallery_event_change', args=[obj.event.id])
-            return format_html('<a href="{}">{}</a>', url, obj.event.name)
-        return "-"
-    event_link.short_description = 'Event'
-    event_link.admin_order_field = 'event__name'
-    
-    def get_dimensions(self, obj):
-        if obj.image and hasattr(obj.image, 'width') and hasattr(obj.image, 'height'):
-            return f"{obj.image.width} × {obj.image.height}"
-        return "N/A"
-    get_dimensions.short_description = 'Dimensions'
-    
-    def get_file_size(self, obj):
-        if obj.image and hasattr(obj.image, 'size'):
-            return f"{obj.image.size / 1024:.1f} KB"
-        return "N/A"
-    get_file_size.short_description = 'File Size'
-    
-    def get_primary_badge(self, obj):
-        if obj.is_primary:
-            return format_html(
-                '<span style="background: #4CAF50; color: white; padding: 2px 6px; border-radius: 10px; font-size: 11px;">Primary</span>'
-            )
-        return ""
-    get_primary_badge.short_description = 'Primary'
-    get_primary_badge.allow_tags = True
-    
-    def created_short(self, obj):
-        return obj.created_at.strftime('%b %d, %Y')
-    created_short.short_description = 'Created'
-    created_short.admin_order_field = 'created_at'
-    
-    def make_primary(self, request, queryset):
-        # Only allow one primary image per event
-        from django.db import transaction
-        
-        with transaction.atomic():
-            # First, get all events that have selected images
-            event_ids = queryset.values_list('event_id', flat=True).distinct()
-            
-            # Set all selected images as primary
-            updated = queryset.update(is_primary=True)
-            
-            # For each affected event, unset primary on other images
-            for event_id in event_ids:
-                self.model.objects.filter(
-                    event_id=event_id,
-                    is_primary=True
-                ).exclude(
-                    id__in=queryset.filter(event_id=event_id).values('id')
-                ).update(is_primary=False)
-        
-        self.message_user(
-            request,
-            f"Successfully set {updated} image(s) as primary. Other images for these events have been unset as primary.",
-            messages.SUCCESS
-        )
-    make_primary.short_description = "Make selected images primary"
-    
-    def duplicate_cover(self, request, queryset):
-        from django.core.files.base import ContentFile
-        import os
-        
-        count = 0
-        for cover in queryset:
-            try:
-                # Create a copy of the image file
-                image_file = cover.image
-                new_image = ContentFile(image_file.read(), name=os.path.basename(image_file.name))
-                
-                # Create a new cover with the same data
-                new_cover = self.model(
-                    event=cover.event,
-                    caption=f"{cover.caption} (Copy)" if cover.caption else "",
-                    is_primary=False,  # Don't duplicate primary status
-                    order=cover.order
-                )
-                new_cover.image.save(os.path.basename(image_file.name), new_image, save=False)
-                new_cover.save()
-                count += 1
-            except Exception as e:
-                self.message_user(
-                    request,
-                    f"Failed to duplicate cover {cover.id}: {str(e)}",
-                    level=messages.ERROR
-                )
-        
-        self.message_user(
-            request,
-            f"Successfully duplicated {count} cover image(s).",
-            messages.SUCCESS
-        )
-    duplicate_cover.short_description = "Duplicate selected cover images"
 
 @admin.register(Photo)
 class PhotoAdmin(admin.ModelAdmin):
@@ -678,31 +639,30 @@ class PhotoAdmin(admin.ModelAdmin):
 class DownloadAdmin(admin.ModelAdmin):
     list_display = ('id', 'user_link', 'photo_preview', 'gallery_link', 'file_size_mb', 'downloaded_at_short', 'download_actions')
     list_filter = ('downloaded_at', 'photo__gallery__event')
-    search_fields = ('user__email', 'user__full_name', 'photo__title', 'gallery__title', 'photo__gallery__event__name')
+    search_fields = ('user__email', 'user__full_name', 'photo__title', 'photo__gallery__title', 'photo__gallery__event__name')
     readonly_fields = ('downloaded_at', 'user_link', 'photo_preview', 'gallery_link', 'file_size_mb', 'download_actions')
     list_per_page = 30
     date_hierarchy = 'downloaded_at'
     actions = ['resend_download_links', 'export_downloads_csv']
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('user', 'photo', 'gallery', 'photo__gallery__event')
-        
-    def get_search_results(self, request, queryset, search_term):
-        queryset, use_distinct = super().get_search_results(request, queryset, search_term)
-        try:
-            search_term_as_int = int(search_term)
-            queryset |= self.model.objects.filter(id=search_term_as_int)
-        except ValueError:
-            pass
-        return queryset, use_distinct
-        
+        return super().get_queryset(request).select_related('user', 'photo', 'photo__gallery', 'payment')
+    
     def user_link(self, obj):
         if obj.user:
-            url = reverse('admin:accounts_customuser_change', args=[obj.user.id])
+            url = reverse('admin:accounts_user_change', args=[obj.user.id])
             return format_html('<a href="{}">{}</a>', url, obj.user.email)
         return "-"
     user_link.short_description = 'User'
     user_link.admin_order_field = 'user__email'
+    
+    def gallery_link(self, obj):
+        if obj.photo and hasattr(obj.photo, 'gallery') and obj.photo.gallery:
+            url = reverse('admin:gallery_gallery_change', args=[obj.photo.gallery.id])
+            return format_html('<a href="{}">{}</a>', url, obj.photo.gallery.title)
+        return "-"
+    gallery_link.short_description = 'Gallery'
+    gallery_link.admin_order_field = 'photo__gallery__title'
     
     def gallery_link(self, obj):
         if obj.gallery:
@@ -770,19 +730,6 @@ class DownloadAdmin(admin.ModelAdmin):
         
         count = 0
         for download in queryset:
-            if download.user and download.user.email:
-                try:
-                    subject = f"Your Download: {download.photo.title if download.photo else 'Gallery'}"
-                    message = f"Here's your download link: {settings.SITE_URL}/downloads/{download.id}/"
-                    send_mail(
-                        subject,
-                        message,
-                        settings.DEFAULT_FROM_EMAIL,
-                        [download.user.email],
-                        fail_silently=False,
-                    )
-                    count += 1
-                except Exception as e:
                     self.message_user(
                         request,
                         f"Failed to send email to {download.user.email}: {str(e)}",
@@ -810,16 +757,14 @@ class DownloadAdmin(admin.ModelAdmin):
         ])
         
         # Write data rows
-        for download in queryset.select_related('user', 'photo', 'gallery', 'photo__gallery__event'):
+        for download in queryset.select_related('user', 'photo', 'photo__gallery', 'photo__gallery__event'):
             writer.writerow([
                 download.id,
                 download.user.email if download.user else '',
                 download.photo.title if download.photo else '',
-                download.gallery.title if download.gallery else (
-                    download.photo.gallery.title if (download.photo and download.photo.gallery) else ''
-                ),
+                download.photo.gallery.title if (download.photo and download.photo.gallery) else '',
                 download.photo.gallery.event.name if (
-                    download.photo and download.photo.gallery and download.photo.gallery.event
+                    download.photo and download.photo.gallery and hasattr(download.photo.gallery, 'event') and download.photo.gallery.event
                 ) else '',
                 f"{download.photo.image.size / (1024 * 1024):.2f}" if (
                     download.photo and download.photo.image and hasattr(download.photo.image, 'size')
@@ -833,8 +778,222 @@ class DownloadAdmin(admin.ModelAdmin):
         return response
     export_downloads_csv.short_description = "Export selected downloads to CSV"
 
-# Register models with the admin site
-# Note: Models are now registered using the @admin.register decorator
-# This function is kept for backward compatibility but does nothing
-def register_models():
-    pass
+class TicketAdmin(admin.ModelAdmin):
+    list_display = ('name', 'event_link', 'price', 'quantity_available', 'is_active', 'created_at_short')
+    list_filter = ('is_active', 'event', 'created_at')
+    search_fields = ('name', 'description', 'event__name')
+    list_select_related = ('event',)
+    readonly_fields = ('created_at', 'updated_at', 'event_link')
+    list_per_page = 25
+    date_hierarchy = 'created_at'
+    save_on_top = True
+    
+    fieldsets = (
+        (None, {
+            'fields': ('event', 'name', 'description', 'price', 'quantity_available', 'is_active')
+        }),
+        ('Sale Period', {
+            'fields': ('sale_start', 'sale_end'),
+            'classes': ('collapse',)
+        }),
+        ('Metadata', {
+            'fields': ('event_link', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.select_related('event').annotate(
+            sold_count=Count('registrations')
+        )
+    
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        # Only show events that have tickets enabled
+        if 'event' in form.base_fields:
+            form.base_fields['event'].queryset = Event.objects.filter(has_tickets=True)
+        return form
+    
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == 'event':
+            kwargs["queryset"] = Event.objects.filter(has_tickets=True)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+    
+    def event_link(self, obj):
+        if obj.event:
+            url = reverse('admin:gallery_event_change', args=[obj.event.id])
+            return format_html('<a href="{}">{}</a>', url, str(obj.event))
+        return "-"
+    event_link.short_description = 'Event'
+    event_link.allow_tags = True
+    
+    def created_at_short(self, obj):
+        return obj.created_at.strftime('%Y-%m-%d %H:%M')
+    created_at_short.short_description = 'Created'
+    created_at_short.admin_order_field = 'created_at'
+
+
+class EventRegistrationAdmin(admin.ModelAdmin):
+    list_display = ('id', 'event_link', 'ticket_type', 'attendee_name', 'email', 'status_badge', 'checked_in_badge', 'registration_date_short')
+    list_filter = ('status', 'checked_in', 'event', 'ticket', 'registration_date')
+    search_fields = ('first_name', 'last_name', 'email', 'event__name', 'ticket__name')
+    list_select_related = ('event', 'ticket', 'user', 'payment')
+    readonly_fields = ('registration_date', 'checked_in_at', 'registration_details')
+    list_per_page = 30
+    date_hierarchy = 'registration_date'
+    save_on_top = True
+    actions = ['mark_confirmed', 'mark_attended', 'mark_no_show', 'check_in', 'export_registrations_csv']
+    
+    fieldsets = (
+        ('Attendee Information', {
+            'fields': (('first_name', 'last_name'), 'email', 'user')
+        }),
+        ('Event & Ticket', {
+            'fields': ('event', 'ticket')
+        }),
+        ('Status', {
+            'fields': ('status', 'checked_in', 'checked_in_at')
+        }),
+        ('Additional Information', {
+            'fields': ('notes', 'registration_details'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.select_related('event', 'ticket', 'user', 'payment')
+    
+    def event_link(self, obj):
+        if obj.event:
+            url = reverse('admin:gallery_event_change', args=[obj.event.id])
+            return format_html('<a href="{}">{}</a>', url, str(obj.event))
+        return "-"
+    event_link.short_description = 'Event'
+    event_link.admin_order_field = 'event__name'
+    
+    def attendee_name(self, obj):
+        return f"{obj.first_name} {obj.last_name}"
+    attendee_name.short_description = 'Attendee'
+    attendee_name.admin_order_field = 'last_name'
+    
+    def ticket_type(self, obj):
+        return obj.ticket.name if obj.ticket else "-"
+    ticket_type.short_description = 'Ticket Type'
+    ticket_type.admin_order_field = 'ticket__name'
+    
+    def status_badge(self, obj):
+        status_colors = {
+            'pending': 'orange',
+            'confirmed': 'green',
+            'cancelled': 'red',
+            'attended': 'blue',
+            'no_show': 'gray'
+        }
+        color = status_colors.get(obj.status, 'gray')
+        return format_html(
+            '<span style="display: inline-block; padding: 3px 8px; border-radius: 12px; '
+            'background: {}; color: white; font-size: 12px; text-transform: capitalize;">'
+            '{}</span>', color, obj.status
+        )
+    status_badge.short_description = 'Status'
+    status_badge.allow_tags = True
+    
+    def checked_in_badge(self, obj):
+        if obj.checked_in:
+            return format_html(
+                '<span style="display: inline-block; padding: 3px 8px; border-radius: 12px; '
+                'background: green; color: white; font-size: 12px;">'
+                'Checked In</span>'
+            )
+        return format_html(
+            '<span style="display: inline-block; padding: 3px 8px; border-radius: 12px; '
+            'background: #ccc; color: #666; font-size: 12px;">'
+            'Not Checked In</span>'
+        )
+    checked_in_badge.short_description = 'Check-in Status'
+    checked_in_badge.allow_tags = True
+    
+    def registration_date_short(self, obj):
+        return obj.registration_date.strftime('%Y-%m-%d %H:%M')
+    registration_date_short.short_description = 'Registered'
+    registration_date_short.admin_order_field = 'registration_date'
+    
+    def registration_details(self, obj):
+        details = [
+            f'<strong>Registration ID:</strong> {obj.id}',
+            f'<strong>Date:</strong> {obj.registration_date.strftime("%Y-%m-%d %H:%M")}'
+        ]
+        if obj.payment:
+            details.append(f'<strong>Payment:</strong> {obj.payment.get_status_display()} (ID: {obj.payment.id})')
+        if obj.checked_in and obj.checked_in_at:
+            details.append(f'<strong>Checked in at:</strong> {obj.checked_in_at.strftime("%Y-%m-%d %H:%M")}')
+        return mark_safe('<br>'.join(details))
+    registration_details.short_description = 'Registration Details'
+    registration_details.allow_tags = True
+    
+    def mark_confirmed(self, request, queryset):
+        updated = queryset.filter(status='pending').update(status='confirmed')
+        self.message_user(request, f"{updated} registration(s) marked as confirmed.", messages.SUCCESS)
+    mark_confirmed.short_description = "Mark selected registrations as confirmed"
+    
+    def mark_attended(self, request, queryset):
+        updated = queryset.update(status='attended', checked_in=True, checked_in_at=timezone.now())
+        self.message_user(request, f"{updated} registration(s) marked as attended.", messages.SUCCESS)
+    mark_attended.short_description = "Mark selected registrations as attended"
+    
+    def mark_no_show(self, request, queryset):
+        updated = queryset.update(status='no_show')
+        self.message_user(request, f"{updated} registration(s) marked as no-show.", messages.SUCCESS)
+    mark_no_show.short_description = "Mark selected registrations as no-show"
+    
+    def check_in(self, request, queryset):
+        updated = queryset.exclude(checked_in=True).update(
+            checked_in=True, 
+            checked_in_at=timezone.now()
+        )
+        self.message_user(request, f"Checked in {updated} attendee(s).", messages.SUCCESS)
+    check_in.short_description = "Check in selected attendees"
+    
+    def export_registrations_csv(self, request, queryset):
+        import csv
+        from django.http import HttpResponse
+        from io import StringIO
+        
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="event_registrations.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow([
+            'Registration ID', 'Event', 'Ticket Type', 'First Name', 'Last Name', 
+            'Email', 'Status', 'Checked In', 'Checked In At', 'Registration Date'
+        ])
+        
+        for reg in queryset.select_related('event', 'ticket'):
+            writer.writerow([
+                reg.id,
+                reg.event.name,
+                reg.ticket.name if reg.ticket else 'N/A',
+                reg.first_name,
+                reg.last_name,
+                reg.email,
+                reg.get_status_display(),
+                'Yes' if reg.checked_in else 'No',
+                reg.checked_in_at.strftime('%Y-%m-%d %H:%M') if reg.checked_in_at else '',
+                reg.registration_date.strftime('%Y-%m-%d %H:%M')
+            ])
+        
+        return response
+    export_registrations_csv.short_description = "Export selected registrations to CSV"
+
+
+# Unregister default models that we don't need
+admin.site.unregister(Group)
+admin.site.unregister(Site)
+
+# Register models that aren't already registered with @admin.register()
+admin.site.register(Ticket, TicketAdmin)
+admin.site.register(EventRegistration, EventRegistrationAdmin)
+
+# Ticket models are registered in ticket_admin.py

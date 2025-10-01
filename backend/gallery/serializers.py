@@ -1,7 +1,73 @@
 from django.db.models import Count
 from rest_framework import serializers
 from .models import Event, Gallery, Photo, Download, Like
+from .ticket_models.models import EventTicket, TicketType
 from accounts.serializers import UserSerializer
+
+class TicketTypeSerializer(serializers.ModelSerializer):
+    """Serializer for ticket types."""
+    class Meta:
+        model = TicketType
+        fields = ['id', 'name', 'description', 'group', 'level', 'is_active']
+        read_only_fields = ['id']
+
+
+class EventTicketSerializer(serializers.ModelSerializer):
+    """Serializer for event tickets with type information."""
+    ticket_type = TicketTypeSerializer(read_only=True)
+    remaining_quantity = serializers.IntegerField(read_only=True)
+    event_id = serializers.PrimaryKeyRelatedField(source='event', read_only=True)
+    
+    class Meta:
+        model = EventTicket
+        fields = [
+            'id', 'ticket_type', 'price', 'quantity_available', 'sale_start', 
+            'sale_end', 'is_active', 'remaining_quantity', 'event_id'
+        ]
+        read_only_fields = ['id', 'remaining_quantity', 'event_id']
+
+
+
+
+
+class EventTicketListSerializer(serializers.ModelSerializer):
+    """Serializer for listing tickets with event information."""
+    event_id = serializers.PrimaryKeyRelatedField(source='event', read_only=True)
+    event_name = serializers.CharField(source='event.name', read_only=True)
+    event_date = serializers.DateField(source='event.date', read_only=True)
+    event_location = serializers.CharField(source='event.location', read_only=True)
+    ticket_type_name = serializers.CharField(source='ticket_type.name', read_only=True)
+    ticket_type_description = serializers.CharField(source='ticket_type.description', read_only=True)
+    
+    class Meta:
+        model = EventTicket
+        fields = [
+            'id', 'price', 'currency', 'quantity_available', 'sale_start', 'sale_end', 'is_active',
+            'event_id', 'event_name', 'event_date', 'event_location', 'ticket_type_name', 
+            'ticket_type_description', 'remaining_quantity'
+        ]
+        read_only_fields = ['remaining_quantity', 'event_id']
+
+
+class EventWithTicketsSerializer(serializers.ModelSerializer):
+    """Serializer for events with their available tickets."""
+    tickets = EventTicketSerializer(many=True, read_only=True, source='event_tickets')
+    cover_image_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Event
+        fields = [
+            'id', 'name', 'slug', 'description', 'date', 'end_date', 'location',
+            'has_tickets', 'ticket_type', 'max_attendees', 'tickets', 'cover_image_url'
+        ]
+        read_only_fields = ['id', 'slug']
+        
+    def get_cover_image_url(self, obj):
+        request = self.context.get('request')
+        if request is not None and hasattr(obj, 'cover_image_url'):
+            return request.build_absolute_uri(obj.cover_image_url)
+        return obj.cover_image_url if hasattr(obj, 'cover_image_url') else None
+
 
 class LikeSerializer(serializers.ModelSerializer):
     """Serializer for photo likes."""
