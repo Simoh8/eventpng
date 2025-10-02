@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { API_ENDPOINTS } from '../config';
+import { api } from '../services/authService';
 import { 
   Box, 
   VStack, 
@@ -33,6 +35,23 @@ import {
 } from '@chakra-ui/react';
 import { FaArrowLeft, FaLock, FaTicketAlt, FaCheckCircle, FaEnvelope, FaUser, FaPhone } from 'react-icons/fa';
 import { processPaystackPayment } from '../utils/paystack';
+
+// Helper function to get CSRF token from cookies
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      // Does this cookie string begin with the name we want?
+      if (cookie.substring(0, name.length + 1) === (name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
 
 // Currency utilities
 const CURRENCY_SYMBOLS = {
@@ -189,8 +208,103 @@ const CheckoutPage = () => {
     }
   };
 
+  // Register tickets with the backend
+  const registerTickets = async (ticketDetails, isPaid = false) => {
+    try {
+      console.log('Registering tickets with details:', ticketDetails);
+      
+      if (!Array.isArray(ticketDetails) || ticketDetails.length === 0) {
+        const error = new Error('No valid ticket details provided');
+        error.userMessage = 'Please select at least one ticket to continue.';
+        throw error;
+      }
+
+      // Ensure all required fields are present
+      const validatedTickets = ticketDetails.map(ticket => {
+        if (!ticket || !ticket.ticket_id || !ticket.event_id) {
+          console.error('Invalid ticket data:', ticket);
+          throw new Error('Invalid ticket data: missing required fields');
+        }
+        return {
+          ticket_id: ticket.ticket_id,
+          event_id: ticket.event_id,
+          quantity: ticket.quantity || 1,
+          price: ticket.price || 0,
+          ticket_type: ticket.ticket_type || 'general',
+          event_ticket_id: ticket.ticket_id // This is the ID the backend expects
+        };
+      });
+
+      // Format the request data to match the backend's expected format
+      // For free tickets, use 'cash' as the payment method since 'free' is not a valid choice
+      const payload = {
+        event_ticket_id: validatedTickets[0].ticket_id,
+        quantity: validatedTickets[0].quantity,
+        payment_method: isPaid ? 'card' : 'cash' // Use 'cash' for free tickets since 'free' is not a valid choice
+      };
+      
+      // Only add payment_intent_id if this is a paid ticket
+      if (isPaid && paymentReference) {
+        payload.payment_intent_id = paymentReference;
+      }
+
+      console.log('Sending ticket purchase request:', payload);
+
+      // Use the api instance which has the auth interceptor
+      const response = await api.post(API_ENDPOINTS.TICKETS_PURCHASE, payload);
+      
+      console.log('Successfully registered tickets:', response.data);
+      return response.data;
+      
+    } catch (error) {
+      console.error('Error in registerTickets:', {
+        error: error.message,
+        response: error.response?.data,
+        stack: error.stack,
+        ticketDetails: ticketDetails
+      });
+      
+      // Enhance the error with user-friendly message if available from backend
+      if (error.response?.data?.details) {
+        const details = error.response.data.details;
+        if (typeof details === 'object') {
+          // Handle field-specific validation errors
+          const errorMessages = Object.entries(details).map(([field, errors]) => 
+            `${field}: ${Array.isArray(errors) ? errors.join(', ') : errors}`
+          );
+          error.userMessage = `Validation error: ${errorMessages.join('; ')}`;
+        } else if (typeof details === 'string') {
+          error.userMessage = details;
+        }
+      } else if (error.response?.data?.error) {
+        error.userMessage = error.response.data.error;
+      } else if (!error.userMessage) {
+        error.userMessage = 'Failed to process ticket purchase. Please try again.';
+      }
+      
+      throw error;
+    }
+  };
+
   // Process ticket order (payment or RSVP/Free registration)
   const processTicketOrder = useCallback(async () => {
+    // Check if user is authenticated
+    const token = localStorage.getItem('access');
+    if (!token) {
+      toast({
+        title: 'Authentication Required',
+        description: 'Please log in to purchase tickets',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+      navigate('/login', { state: { from: location.pathname } });
+      return false;
+    }
+    
+    // Set loading state
+    setIsSubmitting(true);
+    setError(null);
     // Enhanced email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!formData.email || !emailRegex.test(formData.email)) {
@@ -212,24 +326,76 @@ const CheckoutPage = () => {
     }
 
     try {
+      console.log('Processing ticket order with data:', {
+        paymentRequired,
+        selectedTickets,
+        tickets,
+        formData
+      });
+
       // For free or RSVP tickets, we don't process payment
       if (!paymentRequired) {
         // Process free/RSVP ticket registration
-        const ticketDetails = Object.entries(selectedTickets)
-          .filter(([_, qty]) => qty > 0)
-          .map(([ticketId, qty]) => {
-            const ticket = tickets.find(t => t.id === ticketId);
-            return {
-              id: ticketId,
-              name: ticket?.name || `Ticket ${ticketId}`,
-              quantity: qty,
-              price: 0,
-              type: ticketType
-            };
-          });
+        const ticketDetails = [];
         
-        // Simulate API call to register tickets
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log('Processing free/RSVP tickets. Selected tickets:', selectedTickets);
+        console.log('Available tickets:', tickets);
+        
+        // Process each selected ticket
+        for (const [ticketId, quantity] of Object.entries(selectedTickets)) {
+          console.log(`Processing ticket ${ticketId} with quantity ${quantity}`);
+          
+          if (quantity <= 0) {
+            console.log(`Skipping ticket ${ticketId} - invalid quantity:`, quantity);
+            continue;
+          }
+          
+          // Try both string and number comparison for ticket ID
+          const ticket = tickets.find(t => t.id == ticketId || t.id.toString() === ticketId.toString());
+          
+          if (!ticket) {
+            console.error(`Ticket not found:`, {
+              ticketId,
+              ticketIdType: typeof ticketId,
+              availableTicketIds: tickets.map(t => ({
+                id: t.id,
+                idType: typeof t.id,
+                name: t.name
+              }))
+            });
+            continue;
+          }
+          
+          console.log('Processing ticket for registration:', {
+            ticketId,
+            quantity,
+            ticketData: ticket,
+            ticketType: ticket.ticket_type
+          });
+          
+          ticketDetails.push({
+            ticket_id: ticketId,
+            event_id: ticket.event_id,
+            quantity: quantity,
+            price: 0, // Free ticket
+            ticket_type: ticket.ticket_type || 'general',
+            ticket_name: ticket.name || `Ticket ${ticketId}`
+          });
+        }
+        
+        console.log('Processed ticket details:', ticketDetails);
+        
+        if (ticketDetails.length === 0) {
+          console.error('No valid tickets found for registration. Details:', {
+            selectedTickets,
+            tickets,
+            ticketDetails
+          });
+          throw new Error('No valid tickets found for registration. Please try again or contact support.');
+        }
+        
+        // Register tickets with the backend
+        await registerTickets(ticketDetails, false);
         
         // Clear cart and show success
         clearCart();
@@ -269,13 +435,77 @@ const CheckoutPage = () => {
               // Verify payment with backend
               await verifyPayment(response.reference);
               
-              // Clear cart on successful payment
+              console.log('Processing paid tickets. Selected tickets:', selectedTickets);
+              console.log('Available tickets:', tickets);
+              
+              const ticketDetails = [];
+              
+              // Process each selected ticket
+              for (const [ticketId, quantity] of Object.entries(selectedTickets)) {
+                console.log(`Processing ticket ${ticketId} with quantity ${quantity}`);
+                
+                if (quantity <= 0) {
+                  console.log(`Skipping ticket ${ticketId} - invalid quantity:`, quantity);
+                  continue;
+                }
+                
+                // Try both string and number comparison for ticket ID
+                const ticket = tickets.find(t => t.id == ticketId || t.id.toString() === ticketId.toString());
+                
+                if (!ticket) {
+                  console.error(`Ticket not found:`, {
+                    ticketId,
+                    ticketIdType: typeof ticketId,
+                    availableTicketIds: tickets.map(t => ({
+                      id: t.id,
+                      idType: typeof t.id,
+                      name: t.name,
+                      price: t.price
+                    }))
+                  });
+                  continue;
+                }
+                
+                console.log('Processing paid ticket for registration:', {
+                  ticketId,
+                  quantity,
+                  ticketData: ticket,
+                  ticketType: ticket.ticket_type,
+                  price: ticket.price
+                });
+                
+                ticketDetails.push({
+                  ticket_id: ticketId,
+                  event_id: ticket.event_id,
+                  quantity: quantity,
+                  price: ticket.price || 0,
+                  ticket_type: ticket.ticket_type || 'general',
+                  ticket_name: ticket.name || `Ticket ${ticketId}`
+                });
+              }
+              
+              console.log('Processed paid ticket details:', ticketDetails);
+              
+              if (ticketDetails.length === 0) {
+                console.error('No valid paid tickets found for registration. Details:', {
+                  selectedTickets,
+                  tickets,
+                  ticketDetails,
+                  paymentReference
+                });
+                throw new Error('No valid tickets found for registration. Please try again or contact support.');
+              }
+
+              await registerTickets(ticketDetails, true);
+              
+              // Clear cart on successful payment and registration
               clearCart();
               
               // Show success modal
               onSuccessModalOpen();
             } catch (error) {
-              console.error('Payment verification failed:', error);
+              console.error('Payment verification or ticket registration failed:', error);
+              // Still clear cart and show success if payment was successful but ticket registration failed
               clearCart();
               onSuccessModalOpen();
             }
@@ -371,34 +601,38 @@ const CheckoutPage = () => {
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsSubmitting(true);
     
     try {
-      const success = await processTicketOrder();
-      if (success) {
-        setFormData(prev => ({
-          ...prev,
-          name: '',
-          phone: '',
-          terms: false
-        }));
-      }
-    } catch (error) {
-      console.error('Order processing error:', error);
-      setError(error.message || 'An error occurred while processing your order');
+      // ... existing form validation ...
       
+      // Process the order
+      await processTicketOrder();
+      
+    } catch (error) {
+      console.error('Error processing ticket order:', error);
+      
+      // Use the enhanced error message if available
+      const errorMessage = error.userMessage || error.message || 'An unknown error occurred';
+      setError(errorMessage);
+      
+      // Show error toast with more details
       toast({
-        title: 'Error',
-        description: error.message || 'Failed to process your order. Please try again.',
+        title: 'Error Processing Order',
+        description: errorMessage,
         status: 'error',
-        duration: 5000,
+        duration: 10000, // longer duration for error messages
         isClosable: true,
+        position: 'top',
       });
+      
+      // If it's an authentication error, redirect to login
+      if (error.response?.status === 401) {
+        navigate('/login', { state: { from: location.pathname } });
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
-
   // Handle back to events
   const handleBackToEvents = () => {
     navigate('/events');
@@ -633,7 +867,7 @@ const CheckoutPage = () => {
                 width="100%"
                 onClick={() => {
                   onSuccessModalClose();
-                  navigate('/my-tickets');
+                  navigate('/tickets/my-tickets');
                 }}
               >
                 View My Tickets

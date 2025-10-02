@@ -18,6 +18,7 @@ export const API_ENDPOINTS = {
   
   // Gallery endpoints - public access
   EVENTS: `${API_BASE_URL}api/gallery/events/`,
+  TICKETS_PURCHASE: `${API_BASE_URL}api/tickets/purchase/`,
   PUBLIC_EVENTS: `${API_BASE_URL}api/gallery/public/events/`,
   STATS: `${API_BASE_URL}api/gallery/stats/`,
   RECENT_GALLERIES: `${API_BASE_URL}api/gallery/recent-galleries/`,

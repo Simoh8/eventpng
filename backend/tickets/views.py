@@ -116,11 +116,24 @@ class TicketPurchaseView(generics.CreateAPIView):
     serializer_class = CreateTicketPurchaseSerializer
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        
+        # Log the incoming request data
+        logger.info(f'Received ticket purchase request: {request.data}')
+        
+        if not serializer.is_valid():
+            # Log validation errors
+            logger.error(f'Validation errors: {serializer.errors}')
+            return Response(
+                {'error': 'Validation error', 'details': serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         try:
             # The serializer will handle the actual creation
             purchase = serializer.save()
+            
+            # Log successful creation
+            logger.info(f'Successfully created ticket purchase: {purchase.id}')
             
             # Return the created purchase with the appropriate status
             return Response(
@@ -129,9 +142,10 @@ class TicketPurchaseView(generics.CreateAPIView):
             )
             
         except Exception as e:
-            logger.error(f'Error creating ticket purchase: {str(e)}')
+            # Log the full error with traceback
+            logger.error(f'Error creating ticket purchase: {str(e)}', exc_info=True)
             return Response(
-                {'error': 'Failed to process ticket purchase. Please try again.'},
+                {'error': 'Failed to process ticket purchase. Please try again.', 'details': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
