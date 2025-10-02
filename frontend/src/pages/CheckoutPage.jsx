@@ -88,6 +88,7 @@ const CheckoutPage = () => {
   const [success, setSuccess] = useState(false);
   const [paymentInProgress, setPaymentInProgress] = useState(false);
   const [paymentReference, setPaymentReference] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
   
   // Success modal
   const { isOpen: isSuccessModalOpen, onOpen: onSuccessModalOpen, onClose: onSuccessModalClose } = useDisclosure();
@@ -463,6 +464,7 @@ const CheckoutPage = () => {
             
             try {
               // Verify payment with backend
+              setIsVerifying(true);
               await verifyPayment(response.reference);
               
               console.log('Processing paid tickets. Selected tickets:', selectedTickets);
@@ -535,9 +537,21 @@ const CheckoutPage = () => {
               onSuccessModalOpen();
             } catch (error) {
               console.error('Payment verification or ticket registration failed:', error);
+              
+              // Show error but still show success modal since payment was successful
+              toast({
+                title: 'Payment Successful',
+                description: 'Payment was processed successfully. Please check your email for ticket confirmation.',
+                status: 'info',
+                duration: 7000,
+                isClosable: true,
+              });
+              
               // Still clear cart and show success if payment was successful but ticket registration failed
               clearCart();
               onSuccessModalOpen();
+            } finally {
+              setIsVerifying(false);
             }
           },
           onClose: () => {
@@ -587,36 +601,51 @@ const CheckoutPage = () => {
     }
   }, [formData, tickets, selectedTickets, onSuccessModalOpen]);
 
-  // Verify payment with backend using the authService api instance
-  const verifyPayment = async (reference) => {
+  // Verify payment with backend using the authService api instance with retry logic
+  const verifyPayment = async (reference, retries = 5, delay = 3000) => {
+    setIsVerifying(true);
     try {
       // Remove any trailing slashes from the reference
       const cleanReference = reference.endsWith('/') ? reference.slice(0, -1) : reference;
-      
-      console.log('Verifying payment with reference:', cleanReference);
-      
+
+      console.log(`Verifying payment with reference: ${cleanReference} (${retries} retries left)`);
+
       // Use the api instance from authService which includes token refresh logic
       const response = await api.get(`/api/payments/paystack/verify/${cleanReference}/`);
-      
+
       console.log('Verification response:', response.data);
-      
-      if (response.data.status !== 'success') {
+
+      if (response.data.status === 'success') {
+        // Show success toast
+        toast({
+          title: 'Payment Verified',
+          description: response.data.message || 'Your payment has been verified and your ticket has been issued.',
+          status: 'success',
+          duration: 5000,
+          isClosable: true,
+        });
+
+        return response.data;
+      } else if (response.data.status === 'pending' && retries > 0) {
+        // If payment is still processing, wait and retry
+        console.log(`Payment still processing. Retrying in ${delay/1000} seconds...`);
+
+        toast({
+          title: 'Payment Processing',
+          description: `Payment is still being processed. Retrying in ${delay/1000} seconds...`,
+          status: 'info',
+          duration: 2000,
+          isClosable: true,
+        });
+
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return await verifyPayment(cleanReference, retries - 1, delay);
+      } else {
         throw new Error(response.data.message || 'Payment verification failed');
       }
-      
-      // Show success toast
-      toast({
-        title: 'Payment Verified',
-        description: response.data.message || 'Your payment has been verified and your ticket has been issued.',
-        status: 'success',
-        duration: 5000,
-        isClosable: true,
-      });
-      
-      return response.data;
     } catch (error) {
       console.error('Error verifying payment:', error);
-      
+
       toast({
         title: 'Verification Error',
         description: error.message || 'There was an issue verifying your payment. Please contact support if the problem persists.',
@@ -624,8 +653,10 @@ const CheckoutPage = () => {
         duration: 5000,
         isClosable: true,
       });
-      
+
       throw error;
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -836,16 +867,24 @@ const CheckoutPage = () => {
                 fontSize="md"
                 fontWeight="semibold"
                 leftIcon={paymentRequired ? <FaLock /> : <FaTicketAlt />}
-                isLoading={isSubmitting}
-                loadingText={paymentRequired ? 'Processing Payment...' : 'Processing...'}
-                isDisabled={!formData.terms || isSubmitting || (paymentRequired && !formData.phone)}
+                isLoading={isSubmitting || isVerifying}
+                loadingText={
+                  isVerifying
+                    ? 'Verifying Payment...'
+                    : paymentRequired
+                      ? 'Processing Payment...'
+                      : 'Processing...'
+                }
+                isDisabled={!formData.terms || isSubmitting || isVerifying || (paymentRequired && !formData.phone)}
                 mt={4}
               >
-                {paymentRequired 
-                  ? `Pay ${totalAmount} Securely` 
-                  : ticketType === 'rsvp' 
-                    ? 'Complete RSVP' 
-                    : 'Get Free Ticket'}
+                {isVerifying
+                  ? 'Verifying Payment...'
+                  : paymentRequired
+                    ? `Pay ${totalAmount} Securely`
+                    : ticketType === 'rsvp'
+                      ? 'Complete RSVP'
+                      : 'Get Free Ticket'}
               </Button>
               
               {paymentRequired && (
