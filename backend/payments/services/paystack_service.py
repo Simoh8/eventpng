@@ -1,5 +1,4 @@
 import logging
-from django.conf import settings
 from paystackapi.paystack import Paystack
 from paystackapi.transaction import Transaction as PaystackTransaction
 from paystackapi.customer import Customer as PaystackCustomer
@@ -18,38 +17,22 @@ class PaystackService:
         return cls._instance
 
     def __init__(self):
-        if not self._initialized:
-            self._initialized = True
-            self.paystack = None
+        self.config = None
+        self.paystack = None
 
-    @property
-    def config(self):
-        if self._config is None:
-            try:
-                self._config = PaystackConfig.get_solo()
-                # Initialize Paystack with the config
-                secret_key = self._config.live_secret_key if self._config.is_live else self._config.test_secret_key
-                if not secret_key:
-                    raise ValueError("Paystack secret key is not configured")
-                self.paystack = Paystack(secret_key=secret_key)
-            except Exception as e:
-                logger.error(f"Error initializing Paystack config: {str(e)}")
-                # Create a dummy config to prevent repeated errors
-                self._config = PaystackConfig(
-                    is_live=False,
-                    test_secret_key='dummy_key',
-                    live_secret_key='dummy_key'
-                )
-        return self._config
+    def _load_config(self):
+        if not self.config:
+            # Will only query DB when needed
+            self.config, _ = PaystackConfig.objects.get_or_create(pk=1)
+        return self.config
 
-    def _ensure_initialized(self):
-        """Ensure the service is properly initialized before making API calls"""
-        if self.paystack is None:
-            _ = self.config  # This will initialize the config and paystack client
+    def _get_paystack(self):
+        if not self.paystack:
+            config = self._load_config()
+            self.paystack = Paystack(secret_key=config.secret_key)
+        return self.paystack
 
     def initialize_payment(self, email, amount, reference, callback_url, metadata=None):
-        """Initialize a Paystack payment"""
-        self._ensure_initialized()
         try:
             response = PaystackTransaction.initialize(
                 email=email,
@@ -64,8 +47,6 @@ class PaystackService:
             raise
 
     def verify_payment(self, reference):
-        """Verify a Paystack payment"""
-        self._ensure_initialized()
         try:
             response = PaystackTransaction.verify(reference)
             return response
@@ -74,8 +55,6 @@ class PaystackService:
             raise
 
     def create_customer(self, email, first_name=None, last_name=None, phone=None):
-        """Create a Paystack customer"""
-        self._ensure_initialized()
         try:
             customer_data = {
                 'email': email,
@@ -91,7 +70,6 @@ class PaystackService:
             raise
 
     def get_payment_link(self, amount, email, reference, callback_url, metadata=None):
-        """Get a payment link for Paystack"""
         try:
             response = self.initialize_payment(
                 email=email,
@@ -105,5 +83,5 @@ class PaystackService:
             logger.error(f"Error getting Paystack payment link: {str(e)}")
             raise
 
-# Create a singleton instance
+# Singleton instance (safe now)
 paystack_service = PaystackService()
