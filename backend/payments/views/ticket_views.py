@@ -67,13 +67,14 @@ class CreateTicketPaymentView(generics.CreateAPIView):
                 )
                 
                 # Create transaction
-                reference = f"TKT-{uuid.uuid4().hex.upper()}"
+                reference = f"TXN-{int(timezone.now().timestamp() * 1000)}"  # More readable reference
                 txn = Transaction.objects.create(
                     order=order,
                     amount=total_amount / 100,  # Convert back to naira
                     payment_method='paystack',
                     status=Transaction.STATUS_PENDING,
                     reference=reference,
+                    stripe_payment_intent_id=reference,  # Store the same reference in stripe_payment_intent_id
                     user=request.user
                 )
                 

@@ -298,6 +298,9 @@ class Ticket(models.Model):
 class EventRegistration(models.Model):
     """
     Tracks event registrations/ticket sales.
+    
+    This model stores information about users who have registered for an event,
+    including their ticket details, payment status, and check-in information.
     """
     STATUS_CHOICES = [
         ('pending', 'Pending'),
@@ -350,9 +353,11 @@ class EventRegistration(models.Model):
         ordering = ['-registration_date']
         verbose_name = 'Event Registration'
         verbose_name_plural = 'Event Registrations'
-    
+        
     def __str__(self):
-        return f"{self.first_name} {self.last_name} - {self.event.name}"
+        """Return a string representation of the registration."""
+        ticket_name = self.ticket.name if self.ticket else 'No Ticket'
+        return f"{self.first_name} {self.last_name} - {ticket_name} - {self.event}"
 
 
 class EventCoverImage(models.Model):

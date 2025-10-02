@@ -1,13 +1,13 @@
 Hello {{ ticket.user.get_full_name|default:"there" }},
 
-We're sorry to see you go! Your ticket(s) for {{ event.title }} have been cancelled as requested.
+We're sorry to see you go! Your ticket(s) for {{ event.name }} have been cancelled as requested.
 
 Order Details:
 - Order #: {{ ticket.id }}
-- Event: {{ event.title }}
+- Event: {{ event.name }}
 - Ticket Type: {{ ticket_type.name }}
 - Quantity: {{ ticket.quantity }}
-- Refund Amount: ${{ refund_amount|floatformat:2 }}
+- Refund Amount: {{ refund_amount|floatformat:2 }} {{ ticket.event_ticket.currency }}
 
 Your refund has been processed and should appear in your account within 5-7 business days, depending on your payment method and financial institution.
 

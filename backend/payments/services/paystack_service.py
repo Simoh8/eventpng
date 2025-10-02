@@ -7,6 +7,15 @@ from ..models.paystack_config import PaystackConfig
 logger = logging.getLogger(__name__)
 
 class PaystackService:
+    _instance = None
+    _initialized = False
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._config = None
+        return cls._instance
+
     def __init__(self):
         self.config = None
         self.paystack = None

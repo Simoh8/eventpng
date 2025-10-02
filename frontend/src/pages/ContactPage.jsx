@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { EnvelopeIcon, PhoneIcon, MapPinIcon } from '@heroicons/react/24/outline';
-import { toast } from 'react-toastify';
+import toast from 'react-hot-toast';
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
 import PhoneInput from 'react-phone-number-input';
@@ -59,15 +59,7 @@ const ContactPage = () => {
       if (response.status === 201 || (response.status >= 200 && response.status < 300)) {
         // Success case - show success message
         toast.success(
-          response.data?.message || "Thank you! We've received your message and will get back to you soon.",
-          { 
-            autoClose: 5000, 
-            position: 'top-center',
-            hideProgressBar: false,
-            closeOnClick: true,
-            pauseOnHover: true,
-            draggable: true
-          }
+          response.data?.message || "Thank you! We've received your message and will get back to you soon."
         );
         
         reset();
@@ -76,7 +68,7 @@ const ContactPage = () => {
         const errorMessage = response.data ? 
           formatValidationErrors(response.data) : 
           'Please check your input and try again.';
-        toast.error(errorMessage, { autoClose: 5000 });
+        toast.error(errorMessage);
       } else {
         // Other error cases
         throw new Error('Failed to send message');
@@ -85,7 +77,7 @@ const ContactPage = () => {
       const errorMessage = error.response?.data ? 
         formatValidationErrors(error.response.data) : 
         'Failed to send message. Please try again.';
-      toast.error(errorMessage, { autoClose: 5000 });
+      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }

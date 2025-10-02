@@ -26,7 +26,6 @@ const MyTickets = () => {
         setTickets(ticketsData);
       } catch (err) {
         setError('Failed to load your tickets');
-        console.error('Error:', err);
         setTickets([]); // Ensure tickets is always an array
       } finally {
         setLoading(false);

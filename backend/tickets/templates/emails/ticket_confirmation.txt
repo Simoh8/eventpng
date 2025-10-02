@@ -2,16 +2,16 @@ Thank you for your purchase, {{ ticket.user.get_full_name|default:ticket.user.em
 
 You have successfully purchased the following ticket:
 
-Event: {{ event.title }}
+Event: {{ event.name }}
 Ticket Type: {{ ticket_type.name }}
 Quantity: {{ ticket.quantity }}
-Total: ${{ ticket.total_price|floatformat:2 }}
+Total: {{ ticket.event_ticket.price_with_currency }}
 
 Event Details:
 {{ event.description|linebreaksbr }}
 
-Date: {{ event.start_date|date:"F j, Y" }}
-Time: {{ event.start_date|time:"g:i A" }} - {{ event.end_date|time:"g:i A" }}
+Date: {{ event.date|date:"F j, Y" }}
+Time: {{ event.date|time:"g:i A" }} - {{ event.end_date|time:"g:i A" }}
 Location: {{ event.location }}
 
 Your ticket(s) are attached to this email as a PDF. You can also view your ticket online at:

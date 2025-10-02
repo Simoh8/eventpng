@@ -38,6 +38,8 @@ export const processPaystackPayment = async ({
   onSuccess,
   onClose,
   metadata = {},
+  orderId,
+  ticketDetails = [],
 }) => {
   if (!email) throw new Error('Email is required for payment.');
   if (!amount || isNaN(amount) || amount <= 0)
@@ -47,13 +49,37 @@ export const processPaystackPayment = async ({
 
   await ensurePaystackScript();
 
+  // Prepare metadata with order and ticket information
+  const paymentMetadata = {
+    ...metadata,
+    custom_fields: [
+      {
+        display_name: 'Order ID',
+        variable_name: 'order_id',
+        value: orderId || 'N/A',
+      },
+      ...(ticketDetails.length > 0 ? [{
+        display_name: 'Tickets',
+        variable_name: 'ticket_count',
+        value: ticketDetails.length.toString(),
+      }] : []),
+    ],
+    ticket_details: ticketDetails.map(ticket => ({
+      ticket_id: ticket.id,
+      quantity: ticket.quantity,
+      name: ticket.name,
+      price: ticket.price,
+      event_id: ticket.eventId,
+    })),
+  };
+
   const handler = window.PaystackPop.setup({
     key: PAYSTACK_PUBLIC_KEY,
     email,
     amount: formatAmount(amount),
     currency: 'KES',
     ref: `TXN-${Date.now()}`,
-    metadata,
+    metadata: paymentMetadata,
     callback: (response) => {
       if (response.status === 'success') {
         onSuccess(response);
@@ -79,5 +105,5 @@ export const formatAmount = (amount) => {
   if (isNaN(parsed) || parsed <= 0) {
     throw new Error(`Invalid amount: ${amount}`);
   }
-  return Math.round(parsed * 100);
+  return Math.round(parsed * 1);
 };

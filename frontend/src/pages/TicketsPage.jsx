@@ -78,7 +78,8 @@ const EventSection = ({ event, tickets, selectedTickets, onSelectTicket: handleS
                     </div>
                     <div className="flex flex-col sm:flex-row items-end sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
                       <div className="text-xl font-bold text-primary-600">
-                        {CURRENCY_SYMBOLS[ticket.currency] || ticket.currency || '$'}{Number(ticket.price).toFixed(2)}
+                        {CURRENCY_SYMBOLS[ticket.currency] || ticket.currency || 'KSh'}{' '}
+                        {new Intl.NumberFormat('en-US').format(ticket.price)}
                       </div>
                       <div className="flex items-center space-x-2">
                         <button

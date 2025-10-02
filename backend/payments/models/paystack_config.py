@@ -48,19 +48,21 @@ class PaystackConfig(models.Model):
     class Meta:
         verbose_name = _('Paystack Configuration')
         verbose_name_plural = _('Paystack Configuration')
+        
+    @property
+    def secret_key(self):
+        """Get the appropriate secret key based on the environment"""
+        return self.live_secret_key if self.is_live else self.test_secret_key
+        
+    @property
+    def public_key(self):
+        """Get the appropriate public key based on the environment"""
+        return self.live_public_key if self.is_live else self.test_public_key
 
     def __str__(self):
         return 'Paystack Configuration (Live Mode: {})'.format(
             'Enabled' if self.is_live else 'Disabled'
         )
-
-    @property
-    def secret_key(self):
-        return self.live_secret_key if self.is_live else self.test_secret_key
-
-    @property
-    def public_key(self):
-        return self.live_public_key if self.is_live else self.test_public_key
 
     def save(self, *args, **kwargs):
         # Ensure only one instance exists
