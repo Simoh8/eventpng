@@ -99,7 +99,7 @@ const ContactForm = ({ onClose }) => {
         subject: formData.subject?.trim() || 'Bulk Download Inquiry'
       };
       
-      const apiUrl = `${API_BASE_URL}/api/contact/`;
+      const apiUrl = `${API_BASE_URL}api/contact/`;
       
       const response = await axios({
         method: 'post',

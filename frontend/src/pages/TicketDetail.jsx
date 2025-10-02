@@ -163,7 +163,7 @@ const TicketDetail = () => {
             left={0}
             right={0}
             h="4px"
-            bgGradient="linear(to-r, #ff6b6b, #ffa500, #ffff00, #32cd32, #1e90ff, #9370db)"
+            bgGradient="linear(to-r, #ff6b6b, #ffa500, #ffff00, #32cd32, #1e90ff,rgb(23, 45, 238))"
           />
 
           {/* Compact Header */}
@@ -218,7 +218,7 @@ const TicketDetail = () => {
                 {/* Compact Ticket Badge */}
                 <Box position="relative">
                   <Badge
-                    bgGradient="linear(to-r, purple.500, pink.500)"
+                    bgGradient="linear(to-r, blue.500, blue.500)"
                     color="white"
                     px={4}
                     py={1}
@@ -329,9 +329,9 @@ const TicketDetail = () => {
 
                   <Box
                     p={2}
-                    bgGradient="linear(to-br, purple.500, pink.500)"
+                    bgGradient="linear(to-br, blue.500, blue.500)"
                     borderRadius="8px"
-                    boxShadow="0 4px 12px rgba(168, 85, 247, 0.3)"
+                    boxShadow="0 4px 12px rgba(17, 52, 250, 0.3)"
                     color="white"
                   >
                     <Text
@@ -415,7 +415,7 @@ const TicketDetail = () => {
                       borderColor="purple.600"
                       borderRadius="12px"
                       display="inline-block"
-                      boxShadow="0 6px 15px rgba(168, 85, 247, 0.2)"
+                      boxShadow="0 6px 15px rgba(5, 88, 212, 0.2)"
                     >
                       <Image
                         src={ticket.qr_code}
@@ -460,7 +460,7 @@ const TicketDetail = () => {
             {/* Compact Event Info Footer */}
             <Box
               p={3}
-              bgGradient="linear(to-r, purple.600, pink.600)"
+              bgGradient="linear(to-r, blue.600, blue.600)"
               color="white"
               textAlign="center"
             >
@@ -493,10 +493,10 @@ const TicketDetail = () => {
       {/* Compact Action Buttons */}
       <HStack spacing={3} mt={4} w="100%">
         <Button
-          bgGradient="linear(to-r, purple.500, pink.500)"
+          bgGradient="linear(to-r, blue.500, blue.500)"
           color="white"
           _hover={{
-            bgGradient: 'linear(to-r, purple.600, pink.600)',
+            bgGradient: 'linear(to-r, blue.600, blue.600)',
             transform: "translateY(-1px)",
             boxShadow: "lg"
           }}
