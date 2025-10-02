@@ -164,33 +164,6 @@ const TicketDetails = ({ ticket, secondaryText = 'gray.600', onViewDetails }) =>
           </Flex>
         )}
 
-        {/* Price Information */}
-        <Flex align="center" gap={2} mt={2}>
-          <Box
-            p={1.5}
-            bg="green.50"
-            borderRadius="md"
-          >
-            <Icon as={CurrencyDollarIcon} w={3.5} h={3.5} color="green.500" />
-          </Box>
-          <Box>
-            <Text fontSize="xs" fontWeight="medium" color={secondaryText} textTransform="uppercase">
-              Price
-            </Text>
-            <Flex align="baseline" gap={1}>
-              <Text fontSize="lg" fontWeight="bold" color="gray.800">
-                {ticket.ticket_type?.price || ticket.price ? 
-                  formatPrice(ticket.ticket_type?.price || ticket.price)
-                  : 'Free'}
-              </Text>
-              {ticket.currency && ticket.currency !== 'KES' && (
-                <Text fontSize="xs" color="gray.500" ml={1}>
-                  ({ticket.currency})
-                </Text>
-              )}
-            </Flex>
-          </Box>
-        </Flex>
 
         <Divider my={3} borderColor="gray.100" />
 

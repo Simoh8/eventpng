@@ -1,11 +1,13 @@
 import logging
+import uuid
+from django.conf import settings
+from django.shortcuts import get_object_or_404
+from django.db.models import Q
 from rest_framework import generics, status, permissions, viewsets, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework.decorators import action
-from django.shortcuts import get_object_or_404
-from django.db.models import Q
 
 logger = logging.getLogger(__name__)
 from .models import TicketPurchase
@@ -114,14 +116,32 @@ class TicketPurchaseView(generics.CreateAPIView):
     """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = CreateTicketPurchaseSerializer
+    
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        # Make a mutable copy of the request data
+        data = request.data.copy()
         
-        # Log the incoming request data
-        logger.info(f'Received ticket purchase request: {request.data}')
+        # If payment method is card, ensure we have a payment_intent_id
+        payment_method = data.get('payment_method')
+        if payment_method == 'card' and not data.get('payment_intent_id'):
+            # Try to get payment_intent_id from headers if not in body
+            data['payment_intent_id'] = request.META.get('HTTP_X_PAYMENT_INTENT_ID')
+            
+            # If still no payment_intent_id, check if we're in test mode
+            if not data['payment_intent_id'] and settings.DEBUG:
+                # For testing purposes, generate a test payment_intent_id
+                data['payment_intent_id'] = f'test_pi_{uuid.uuid4().hex}'
+                logger.warning('Using test payment_intent_id in development mode')
         
+        # Log the incoming request data (without sensitive info)
+        log_data = data.copy()
+        if 'payment_intent_id' in log_data:
+            log_data['payment_intent_id'] = f"{log_data['payment_intent_id'][:8]}..."
+        logger.info(f'Processing ticket purchase request: {log_data}')
+        
+        # Validate the request data
+        serializer = self.get_serializer(data=data)
         if not serializer.is_valid():
-            # Log validation errors
             logger.error(f'Validation errors: {serializer.errors}')
             return Response(
                 {'error': 'Validation error', 'details': serializer.errors},
@@ -130,22 +150,46 @@ class TicketPurchaseView(generics.CreateAPIView):
         
         try:
             # The serializer will handle the actual creation
-            purchase = serializer.save()
+            purchase = serializer.save(user=request.user)
             
             # Log successful creation
-            logger.info(f'Successfully created ticket purchase: {purchase.id}')
+            logger.info(f'Successfully created ticket purchase: {purchase.id} for user {request.user.id}')
             
-            # Return the created purchase with the appropriate status
-            return Response(
-                TicketPurchaseSerializer(purchase, context={'request': request}).data,
-                status=status.HTTP_201_CREATED
-            )
+            # Get the full URL for the ticket if available
+            ticket_url = None
+            if hasattr(purchase, 'get_absolute_url'):
+                ticket_url = request.build_absolute_uri(purchase.get_absolute_url())
+            
+            # Prepare response data
+            response_data = {
+                'id': purchase.id,
+                'status': purchase.status,
+                'ticket_url': ticket_url,
+                'message': 'Ticket purchase successful',
+                'details': TicketPurchaseSerializer(purchase, context={'request': request}).data
+            }
+            
+            # If this is a card payment, include the payment status
+            if payment_method == 'card' and hasattr(purchase, 'payment_status'):
+                response_data['payment_status'] = purchase.payment_status
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
             
         except Exception as e:
             # Log the full error with traceback
             logger.error(f'Error creating ticket purchase: {str(e)}', exc_info=True)
+            
+            # Provide more specific error messages for common issues
+            error_message = 'Failed to process ticket purchase. Please try again.'
+            error_details = str(e)
+            
+            if 'insufficient' in str(e).lower():
+                error_message = 'Insufficient funds or payment method declined.'
+            elif 'timeout' in str(e).lower():
+                error_message = 'Payment processing timed out. Please check if the payment was completed.'
+            
             return Response(
-                {'error': 'Failed to process ticket purchase. Please try again.', 'details': str(e)},
+                {'error': error_message, 'details': error_details},
                 status=status.HTTP_400_BAD_REQUEST
             )
 

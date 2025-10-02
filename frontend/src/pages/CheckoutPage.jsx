@@ -417,15 +417,45 @@ const CheckoutPage = () => {
         // Ensure email is trimmed and in lowercase
         const cleanedEmail = formData.email.trim().toLowerCase();
         
+        // Prepare ticket details for metadata
+        const ticketDetails = [];
+        for (const [ticketId, quantity] of Object.entries(selectedTickets)) {
+          if (quantity <= 0) continue;
+          const ticket = tickets.find(t => t.id == ticketId || t.id.toString() === ticketId.toString());
+          if (!ticket) continue;
+          
+          ticketDetails.push({
+            id: ticket.id,
+            eventId: ticket.event_id,
+            name: ticket.name || `Ticket ${ticket.id}`,
+            price: ticket.price || 0,
+            quantity: quantity
+          });
+        }
+        
+        // Generate a unique order ID
+        const orderId = `ORDER-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
         const paymentResult = await processPaystackPayment({
           email: cleanedEmail,
           amount: amountInKobo,
+          orderId: orderId,
+          ticketDetails: ticketDetails,
           metadata: {
             customer_name: formData.name || 'Customer',
             customer_phone: formData.phone || '',
             ticket_ids: tickets.map(t => t.id).join(','),
             total_amount: amount,
-            currency: currency || 'KES'
+            currency: currency || 'KES',
+            event_id: tickets[0]?.event_id || '',
+            order_id: orderId,
+            ticket_details: JSON.stringify(ticketDetails.map(t => ({
+              id: t.id,
+              name: t.name,
+              price: t.price,
+              quantity: t.quantity,
+              event_id: t.eventId
+            })))
           },
           onSuccess: async (response) => {
             setPaymentReference(response.reference);
@@ -557,32 +587,33 @@ const CheckoutPage = () => {
     }
   }, [formData, tickets, selectedTickets, onSuccessModalOpen]);
 
-  // Verify payment with backend
+  // Verify payment with backend using the authService api instance
   const verifyPayment = async (reference) => {
     try {
-      const response = await fetch(`/api/payments/paystack/verify/${reference}/`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
+      // Remove any trailing slashes from the reference
+      const cleanReference = reference.endsWith('/') ? reference.slice(0, -1) : reference;
       
-      const data = await response.json();
+      console.log('Verifying payment with reference:', cleanReference);
       
-      if (!response.ok || data.status !== 'success') {
-        throw new Error(data.message || 'Payment verification failed');
+      // Use the api instance from authService which includes token refresh logic
+      const response = await api.get(`/api/payments/paystack/verify/${cleanReference}/`);
+      
+      console.log('Verification response:', response.data);
+      
+      if (response.data.status !== 'success') {
+        throw new Error(response.data.message || 'Payment verification failed');
       }
       
+      // Show success toast
       toast({
         title: 'Payment Verified',
-        description: data.message || 'Your payment has been verified and your ticket has been issued.',
+        description: response.data.message || 'Your payment has been verified and your ticket has been issued.',
         status: 'success',
         duration: 5000,
         isClosable: true,
       });
       
-      return data;
+      return response.data;
     } catch (error) {
       console.error('Error verifying payment:', error);
       

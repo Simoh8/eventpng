@@ -42,9 +42,14 @@ class Transaction(models.Model):
         choices=STATUS_CHOICES,
         default=STATUS_PENDING
     )
+    # Stripe fields (kept for backward compatibility)
     stripe_payment_intent_id = models.CharField(max_length=100, blank=True)
-    stripe_charge_id = models.CharField(max_length=100, blank=True)
     stripe_refund_id = models.CharField(max_length=100, blank=True)
+    
+    # Paystack fields
+    paystack_transaction_id = models.CharField(max_length=100, blank=True, db_index=True)
+    paystack_reference = models.CharField(max_length=100, blank=True, db_index=True)
+    payment_method = models.CharField(max_length=50, blank=True)
     description = models.TextField(blank=True)
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -59,6 +64,10 @@ class Transaction(models.Model):
             amount = f"{float(self.amount):.2f}" if self.amount is not None else "0.00"
             currency = getattr(self, 'currency', 'USD')
             status = self.get_status_display()
-            return f"{transaction_type} - {amount} {currency} ({status})"
+            
+            # Use Paystack reference or generic ID
+            reference = self.paystack_reference or str(self.id)
+            
+            return f"{transaction_type} - {amount} {currency} ({status}) - Ref: {reference}"
         except Exception as e:
             return f"Transaction {getattr(self, 'id', 'unknown')} - error"
