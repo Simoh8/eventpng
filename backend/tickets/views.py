@@ -135,7 +135,7 @@ class TicketPurchaseView(generics.CreateAPIView):
         
         # Log the incoming request data (without sensitive info)
         log_data = data.copy()
-        if 'payment_intent_id' in log_data:
+        if log_data.get('payment_intent_id'):
             log_data['payment_intent_id'] = f"{log_data['payment_intent_id'][:8]}..."
         logger.info(f'Processing ticket purchase request: {log_data}')
         
