@@ -121,23 +121,34 @@ class TicketPurchaseView(generics.CreateAPIView):
         # Make a mutable copy of the request data
         data = request.data.copy()
         
-        # If payment method is card, ensure we have a payment_intent_id
-        payment_method = data.get('payment_method')
-        if payment_method == 'card' and not data.get('payment_intent_id'):
-            # Try to get payment_intent_id from headers if not in body
-            data['payment_intent_id'] = request.META.get('HTTP_X_PAYMENT_INTENT_ID')
-            
-            # If still no payment_intent_id, check if we're in test mode
-            if not data['payment_intent_id'] and settings.DEBUG:
-                # For testing purposes, generate a test payment_intent_id
-                data['payment_intent_id'] = f'test_pi_{uuid.uuid4().hex}'
-                logger.warning('Using test payment_intent_id in development mode')
-        
         # Log the incoming request data (without sensitive info)
         log_data = data.copy()
-        if log_data.get('payment_intent_id'):
+        if 'payment_intent_id' in log_data:
             log_data['payment_intent_id'] = f"{log_data['payment_intent_id'][:8]}..."
         logger.info(f'Processing ticket purchase request: {log_data}')
+        
+        # For Paystack payments, we can use the payment reference as payment_intent_id
+        payment_method = data.get('payment_method', '').lower()
+        payment_reference = data.get('payment_reference')
+        
+        # If payment method is card but no payment_intent_id, try to use payment_reference
+        if payment_method == 'card' and not data.get('payment_intent_id') and payment_reference:
+            data['payment_intent_id'] = payment_reference
+            logger.info(f'Using payment reference as payment_intent_id: {payment_reference[:8]}...')
+        
+        # If still no payment_intent_id and payment is not free, handle accordingly
+        if not data.get('payment_intent_id') and payment_method != 'free':
+            if settings.DEBUG:
+                # In development, generate a test payment_intent_id
+                data['payment_intent_id'] = f'test_pi_{uuid.uuid4().hex}'
+                logger.warning(f'Using test payment_intent_id in development mode: {data["payment_intent_id"]}')
+            else:
+                # In production, this is an error for non-free payments
+                logger.error('Missing payment_intent_id for non-free payment')
+                return Response(
+                    {'error': 'Payment intent ID or reference is required for non-free payments'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
         # Validate the request data
         serializer = self.get_serializer(data=data)

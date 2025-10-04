@@ -114,6 +114,7 @@ class CreateTicketPurchaseSerializer(serializers.ModelSerializer):
     quantity = serializers.IntegerField(min_value=1, default=1)
     payment_method = serializers.ChoiceField(choices=TicketPurchase.PAYMENT_METHODS)
     payment_intent_id = serializers.CharField(required=False, allow_blank=True)
+    payment_reference = serializers.CharField(required=False, allow_blank=True)
     
     class Meta:
         model = TicketPurchase
@@ -121,7 +122,8 @@ class CreateTicketPurchaseSerializer(serializers.ModelSerializer):
             'event_ticket_id', 
             'quantity', 
             'payment_method', 
-            'payment_intent_id'
+            'payment_intent_id',
+            'payment_reference'
         ]
 
 
@@ -184,13 +186,17 @@ class CreateTicketPurchaseSerializer(serializers.ModelSerializer):
                 'payment_method': f'Invalid payment method. Must be one of: {", ".join(valid_payment_methods)}'
             })
             
-        if payment_method == 'card' and not data.get('payment_intent_id'):
-            raise serializers.ValidationError({
-                'payment_intent_id': 'Payment intent ID is required for card payments'
-            })
+        if payment_method == 'card':
+            # For card payments, we need either payment_intent_id or payment_reference
+            if not data.get('payment_intent_id') and not data.get('payment_reference'):
+                raise serializers.ValidationError({
+                    'payment_intent_id': 'Payment intent ID or reference is required for card payments'
+                })
             
-        return data
-
+            # If we have a payment_reference but no payment_intent_id, use the reference
+            if not data.get('payment_intent_id') and data.get('payment_reference'):
+                data['payment_intent_id'] = data['payment_reference']
+            
         return data
 
     def create(self, validated_data):
