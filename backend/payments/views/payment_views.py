@@ -670,15 +670,31 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
                         if hasattr(Order, 'tax_amount'):
                             order_data['tax_amount'] = 0
                             
-                        # Add billing information if required
+                        # Set billing information with proper fallbacks
                         if hasattr(Order, 'billing_email'):
-                            order_data['billing_email'] = request.user.email
+                            order_data['billing_email'] = getattr(request.user, 'email', '')
+                            
+                        # Ensure billing_name is always set with a valid value
                         if hasattr(Order, 'billing_name'):
-                            order_data['billing_name'] = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
+                            first_name = getattr(request.user, 'first_name', '')
+                            last_name = getattr(request.user, 'last_name', '')
+                            username = getattr(request.user, 'username', 'Customer')
+                            
+                            # Create billing name from first and last name if available
+                            billing_name = f"{first_name} {last_name}".strip()
+                            # Fall back to username if no name is available
+                            billing_name = billing_name if billing_name else username
+                            # Final fallback to a generic name if everything else is empty
+                            billing_name = billing_name or 'Customer'
+                            
+                            order_data['billing_name'] = billing_name
+                            
+                        # Set billing address with reference
                         if hasattr(Order, 'billing_address'):
                             order_data['billing_address'] = {
                                 'created_from_paystack_verification': True,
-                                'paystack_reference': reference
+                                'paystack_reference': reference,
+                                'auto_generated': True
                             }
                         
                         # Create the order
