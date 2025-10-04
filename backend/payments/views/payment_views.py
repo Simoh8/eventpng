@@ -293,7 +293,7 @@ class PaystackWebhookView(APIView):
                 if txn is None:
                     logger.info(f'Creating new transaction for reference: {reference}')
                     
-                    # Get customer email from event data
+                    # Get customer email from event data (customer field)
                     customer_email = event_data.get('customer', {}).get('email')
                     
                     # Get metadata from event data
@@ -308,7 +308,7 @@ class PaystackWebhookView(APIView):
                         'ticket_ids': event_metadata.get('ticket_ids'),
                         'order_id': event_metadata.get('order_id'),
                         'ticket_details': event_metadata.get('ticket_details'),
-                        'event_id': event_metadata.get('event_id'),
+                        'event_id': str(event_metadata.get('event_id')) if event_metadata.get('event_id') else None,  # Convert to string and handle None
                         'customer_name': event_metadata.get('customer_name'),
                         'customer_phone': event_metadata.get('customer_phone')
                     }
@@ -414,11 +414,11 @@ class PaystackWebhookView(APIView):
                             amount = float(event_data.get('amount', 0)) / 100  # Convert from kobo to naira
                             currency = event_data.get('currency', 'KES')
                             
-                            # Ensure we have required Paystack fields
-                            paystack_reference = str(event_data.get('reference', f'TXN-{int(time.time())}'))
+                            # Ensure we have required Paystack fields - USE THE ORIGINAL REFERENCE
+                            paystack_reference = reference  # Use the original reference from webhook, not a new one
                             paystack_transaction_id = str(event_data.get('id', f'txn_{uuid.uuid4().hex}'))
                             payment_method = event_data.get('channel', 'card')
-                            
+
                             logger.info(f'Creating transaction - Amount: {amount} {currency}, Reference: {paystack_reference}')
                             
                             # Prepare transaction metadata
@@ -515,11 +515,31 @@ class PaystackWebhookView(APIView):
                     )
                     
                     # Get event ID from transaction metadata
-                    event_id = txn.metadata.get('event_id')
+                    event_id = txn.metadata.get('event_id') if txn.metadata and txn.metadata.get('event_id') else None
+                    
+                    # Also check in the original metadata from webhook
+                    if not event_id:
+                        event_id = event_metadata.get('event_id')
+                    
+                    # Convert to string if it's an integer or other type
+                    if event_id and event_id != 'None':
+                        event_id = str(event_id)
+                    
+                    if event_id and event_id != 'None':
+                        logger.info(f'Found event_id: {event_id}')
+                    else:
+                        logger.warning('No event ID found in transaction metadata, skipping registration update')
+                        event_id = None
+                    
+                    # Get ticket IDs from transaction metadata
+                    ticket_ids = txn.metadata.get('ticket_ids') if txn.metadata else None
+                    
+                    # Also check in the original metadata from webhook
+                    if not ticket_ids:
+                        ticket_ids = event_metadata.get('ticket_ids')
                     
                     # Create ticket purchase if we have an event ID and ticket IDs
-                    ticket_ids = txn.metadata.get('ticket_ids')
-                    if event_id and ticket_ids:
+                    if event_id and event_id != 'None' and ticket_ids:
                         try:
                             # Convert ticket_ids to a list if it's a string
                             if isinstance(ticket_ids, str):
@@ -553,7 +573,7 @@ class PaystackWebhookView(APIView):
                     from gallery.models import EventRegistration
                     
                     # Find registrations by email if available, or by order items
-                    if customer_email and event_id:
+                    if customer_email and event_id and event_id != 'None':
                         updated = EventRegistration.objects.filter(
                             email=customer_email,
                             status__in=['pending', 'reserved', 'pending_payment'],
@@ -563,8 +583,8 @@ class PaystackWebhookView(APIView):
                             payment=payment
                         )
                         logger.info('Updated %d registrations to confirmed for email %s', updated, customer_email)
-                    elif not event_id:
-                        logger.warning('No event ID found in transaction metadata, skipping registration update')
+                    elif not event_id or event_id == 'None':
+                        logger.warning('No valid event ID found in transaction metadata, skipping registration update')
                 
                 logger.info('Successfully processed payment for reference: %s', reference)
                 return Response(
@@ -854,7 +874,6 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
                     quantity = int(ticket_data.get('quantity', 1))
                     price = float(ticket_data.get('price', 0))
                     amount_paid = price * quantity
-                    
                     # Get event ID from ticket data or fall back to ticket type
                     event_id = ticket_data.get('event_id')
                     if not event_id and hasattr(ticket_type, 'event_id'):
@@ -868,7 +887,7 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
                             quantity=quantity,
                             status='confirmed',
                             payment_method='paystack',
-                            transaction_reference=transaction.paystack_reference or f'txn-{transaction.id}',
+                            transaction_reference=transaction.reference or f'txn-{transaction.id}',  # Use transaction.reference instead of paystack_reference
                             amount_paid=amount_paid,
                             metadata={
                                 'order_id': str(order.id) if hasattr(order, 'id') else 'N/A',
@@ -886,13 +905,12 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
                     except Exception as e:
                         logger.error(f'Error creating ticket purchase for ticket {ticket_id}: {str(e)}', exc_info=True)
                         continue
-                        
                 except Exception as e:
                     logger.error(f'Error processing ticket data: {str(e)}', exc_info=True)
                     continue
             
             if tickets_created == 0:
-                logger.warning('No ticket purchases were created')
+                logger.warning(f'No ticket purchases were created for order {order.id} and transaction {transaction.id}')
             else:
                 logger.info(f'Successfully created {tickets_created} ticket purchase(s)')
                     
