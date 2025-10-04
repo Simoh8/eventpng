@@ -51,8 +51,8 @@ FRONTEND_URL = os.getenv("FRONTEND_URL")
 SITE_URL = os.getenv("SITE_URL")
 
 CORS_ALLOWED_ORIGINS = [
-    "https://eventpng.vercel.app",
-    "https://eventpng.ledgerctrl.com",
+    FRONTEND_URL,
+    SITE_URL,
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -61,30 +61,3 @@ CSRF_TRUSTED_ORIGINS = [
     "https://eventpng.vercel.app",
     "https://eventpng.ledgerctrl.com",
 ]
-
-# Additional CORS settings for OAuth
-CORS_ALLOW_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
-    'x-session-id',
-]
-
-CORS_ALLOW_METHODS = [
-    'DELETE',
-    'GET',
-    'OPTIONS',
-    'PATCH',
-    'POST',
-    'PUT',
-]
-
-# Security headers for OAuth
-SECURE_CROSS_ORIGIN_OPENER_POLICY = None  # Allow OAuth popups
-SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
