@@ -164,12 +164,16 @@ EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@eventpng.ledgerctrl.com")
 
-# ✅ CORS and CSRF Settings
+# CORS and Security Settings
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "https://eventpng.vercel.app").split(",")
+CORS_ALLOWED_ORIGINS = os.getenv(
+    "CORS_ALLOWED_ORIGINS", 
+    "https://eventpng.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
+).split(",")
+
 CSRF_TRUSTED_ORIGINS = os.getenv(
     "CSRF_TRUSTED_ORIGINS",
-    "https://eventpng.vercel.app,https://eventpng.ledgerctrl.com"
+    "https://eventpng.vercel.app,https://eventpng.ledgerctrl.com,http://localhost:3000,http://127.0.0.1:3000"
 ).split(",")
 
 # Security Headers
@@ -177,18 +181,35 @@ SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin-allow-popups'
 SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 X_FRAME_OPTIONS = 'SAMEORIGIN'
 
-# Cookies
+# Cookie settings - important for OAuth
 CSRF_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'  # or 'None' if you need cross-site cookies
+SESSION_COOKIE_SAMESITE = 'Lax'  # or 'None' if you need cross-site cookies
 SESSION_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SECURE = True
-SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = not DEBUG  # Should be True in production with HTTPS
+SESSION_COOKIE_SECURE = not DEBUG  # Should be True in production with HTTPS
 
-# Force HTTPS in prod
+# For OAuth to work properly
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'X-CSRFToken',
+    'Content-Type',
+    'x-csrftoken',
+    'authorization',
+    'credentials',
+    'x-requested-with',
+]
+
+# Security settings
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_SSL_REDIRECT = not DEBUG
+SESSION_COOKIE_DOMAIN = os.getenv('SESSION_COOKIE_DOMAIN', None)
+
+# For Google OAuth
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_DOMAIN = '.ledgerctrl.com'  # Change to your domain
+    CSRF_COOKIE_DOMAIN = '.ledgerctrl.com'  # Change to your domain
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"

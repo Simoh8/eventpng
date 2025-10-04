@@ -281,31 +281,81 @@ class CustomUserAdmin(BaseUserAdmin):
                 "An error occurred while deleting the user. Please try again or contact support if the problem persists."
             )
     
+    def get_deleted_objects(self, objs, request):
+        """
+        Override to handle the case when __str__ fails on related objects.
+        """
+        from django.contrib.admin.utils import get_deleted_objects as base_get_deleted_objects
+        from django.contrib.admin.utils import NestedObjects
+        from django.db import router
+        
+        try:
+            # Try the default implementation first
+            return base_get_deleted_objects(objs, request, self.admin_site)
+        except (TypeError, AttributeError) as e:
+            # If the default implementation fails, use a more robust approach
+            collector = NestedObjects(using=router.db_for_write(objs[0]))
+            collector.collect(objs)
+            
+            def format_callback(obj):
+                try:
+                    return str(obj)
+                except Exception:
+                    return f"{obj._meta.verbose_name} (ID: {obj.pk})"
+            
+            to_delete = collector.nested(format_callback)
+            protected = [format_callback(obj) for obj in collector.protected]
+            model_count = {model._meta.verbose_name_plural: len(objs) for model, objs in collector.model_objs.items()}
+            
+            return to_delete, model_count, set(), protected
+
     def delete_queryset(self, request, queryset):
         """
         Handle bulk deletion of users.
         """
-        deleted_count = 0
-        for user in queryset:
-            try:
-                self._safe_delete_related_objects(user)
-                user.delete()
-                deleted_count += 1
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-        
         from django.contrib import messages
+        from django.db import transaction
+        
+        deleted_count = 0
+        errors = []
+        
+        with transaction.atomic():
+            for user in queryset:
+                try:
+                    # First, handle related objects that might cause issues
+                    self._safe_delete_related_objects(user)
+                    
+                    # Get user email before deletion for the success message
+                    user_email = getattr(user, 'email', f'User ID: {user.id}')
+                    
+                    # Delete the user
+                    user_pk = user.pk
+                    user.delete()
+                    deleted_count += 1
+                    
+                    self.log_deletion(request, user, f'Deleted user {user_email}')
+                    
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.exception(f"Error deleting user {getattr(user, 'id', 'unknown')}")
+                    errors.append(str(e))
+        
+        # Show appropriate messages
         if deleted_count > 0:
             messages.success(
                 request,
                 f"Successfully deleted {deleted_count} user(s)."
             )
-        if deleted_count < len(queryset):
-            messages.warning(
-                request,
-                f"Could not delete {len(queryset) - deleted_count} user(s). Please check the logs for more details."
-            )
+        
+        if errors:
+            error_msg = f"Could not delete {len(errors)} user(s). "
+            if len(errors) > 5:
+                error_msg += f"First error: {errors[0]}"
+            else:
+                error_msg += "; ".join(errors)
+            
+            messages.error(request, error_msg)
 
 # Unregister the default User model if it's already registered
 try:
