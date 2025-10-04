@@ -293,7 +293,7 @@ class PaystackWebhookView(APIView):
                 if txn is None:
                     logger.info(f'Creating new transaction for reference: {reference}')
                     
-                    # Get customer email from event data
+                    # Get customer email from event data (customer field)
                     customer_email = event_data.get('customer', {}).get('email')
                     
                     # Get metadata from event data
@@ -308,7 +308,7 @@ class PaystackWebhookView(APIView):
                         'ticket_ids': event_metadata.get('ticket_ids'),
                         'order_id': event_metadata.get('order_id'),
                         'ticket_details': event_metadata.get('ticket_details'),
-                        'event_id': event_metadata.get('event_id'),  # Ensure event_id is properly stored
+                        'event_id': str(event_metadata.get('event_id')) if event_metadata.get('event_id') else None,  # Convert to string and handle None
                         'customer_name': event_metadata.get('customer_name'),
                         'customer_phone': event_metadata.get('customer_phone')
                     }
@@ -515,20 +515,31 @@ class PaystackWebhookView(APIView):
                     )
                     
                     # Get event ID from transaction metadata
-                    event_id = txn.metadata.get('event_id') if txn.metadata else None
+                    event_id = txn.metadata.get('event_id') if txn.metadata and txn.metadata.get('event_id') else None
                     
                     # Also check in the original metadata from webhook
                     if not event_id:
                         event_id = event_metadata.get('event_id')
                     
-                    # Convert to string if it's an integer
-                    if event_id:
+                    # Convert to string if it's an integer or other type
+                    if event_id and event_id != 'None':
                         event_id = str(event_id)
                     
-                    if event_id:
+                    if event_id and event_id != 'None':
                         logger.info(f'Found event_id: {event_id}')
                     else:
                         logger.warning('No event ID found in transaction metadata, skipping registration update')
+                        event_id = None
+                    
+                    # Get ticket IDs from transaction metadata
+                    ticket_ids = txn.metadata.get('ticket_ids') if txn.metadata else None
+                    
+                    # Also check in the original metadata from webhook
+                    if not ticket_ids:
+                        ticket_ids = event_metadata.get('ticket_ids')
+                    
+                    # Create ticket purchase if we have an event ID and ticket IDs
+                    if event_id and event_id != 'None' and ticket_ids:
                         try:
                             # Convert ticket_ids to a list if it's a string
                             if isinstance(ticket_ids, str):
@@ -562,7 +573,7 @@ class PaystackWebhookView(APIView):
                     from gallery.models import EventRegistration
                     
                     # Find registrations by email if available, or by order items
-                    if customer_email and event_id:
+                    if customer_email and event_id and event_id != 'None':
                         updated = EventRegistration.objects.filter(
                             email=customer_email,
                             status__in=['pending', 'reserved', 'pending_payment'],
@@ -572,8 +583,8 @@ class PaystackWebhookView(APIView):
                             payment=payment
                         )
                         logger.info('Updated %d registrations to confirmed for email %s', updated, customer_email)
-                    elif not event_id:
-                        logger.warning('No event ID found in transaction metadata, skipping registration update')
+                    elif not event_id or event_id == 'None':
+                        logger.warning('No valid event ID found in transaction metadata, skipping registration update')
                 
                 logger.info('Successfully processed payment for reference: %s', reference)
                 return Response(

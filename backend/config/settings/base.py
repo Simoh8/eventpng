@@ -12,11 +12,12 @@ SECRET_KEY = os.getenv("SECRET_KEY", "unsafe-secret-key-change-me")
 
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
-# Allow all hosts in development, be more specific in production
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost,0d4899f33889.ngrok-free.app").split(",")
+# ✅ Backend domain only
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "eventpng.ledgerctrl.com").split(",")
 
-SITE_URL = os.getenv("SITE_URL", "http://localhost:3000")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+# ✅ URLs
+SITE_URL = os.getenv("SITE_URL", "https://eventpng.ledgerctrl.com")   # backend
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://eventpng.vercel.app")  # frontend
 SITE_NAME = os.getenv("SITE_NAME", "EventPNG")
 
 CACHE_CONTROL_MAX_AGE = 60 * 60 * 24 * 7  # 1 week
@@ -46,6 +47,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "storages",
     "model_utils",
+
     # Local apps
     "accounts",
     "gallery",
@@ -107,8 +109,9 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
 
-# Database (env-based)
+# Database (MySQL, env-driven)
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
@@ -152,30 +155,40 @@ REST_AUTH = {
     "LOGIN_SERIALIZER": "accounts.serializers.CustomLoginSerializer",
 }
 
-# Email (override in prod/dev)
+# Email
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@example.com")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@eventpng.ledgerctrl.com")
 
+# ✅ CORS and CSRF Settings
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if os.getenv("CORS_ALLOWED_ORIGINS") else [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-    "https://0d4899f33889.ngrok-free.app"
-]
-CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if os.getenv("CSRF_TRUSTED_ORIGINS") else [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://0d4899f33889.ngrok-free.app"
-]
-CSRF_COOKIE_SAMESITE = "Lax"
-SESSION_COOKIE_SAMESITE = "Lax"
+CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "https://eventpng.vercel.app").split(",")
+CSRF_TRUSTED_ORIGINS = os.getenv(
+    "CSRF_TRUSTED_ORIGINS",
+    "https://eventpng.vercel.app,https://eventpng.ledgerctrl.com"
+).split(",")
+
+# Security Headers
+SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin-allow-popups'
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+X_FRAME_OPTIONS = 'SAMEORIGIN'
+
+# Cookies
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True
+
+# Force HTTPS in prod
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_SSL_REDIRECT = not DEBUG
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
@@ -209,7 +222,7 @@ FILE_UPLOAD_PERMISSIONS = 0o644
 MAX_IMAGE_SIZE = 50 * 1024 * 1024
 ALLOWED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"]
 
-# Stripe settings
+# Stripe
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PUBLIC_KEY = os.getenv("STRIPE_PUBLIC_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
@@ -236,6 +249,3 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
     "x-csrftoken",
     "x-requested-with",
 ]
-ROOT_URLCONF = "config.urls"   
-WSGI_APPLICATION = "config.wsgi.application"
-ASGI_APPLICATION = "config.asgi.application"
