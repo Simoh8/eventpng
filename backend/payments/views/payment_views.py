@@ -14,7 +14,9 @@ from rest_framework.viewsets import ViewSet
 from rest_framework.permissions import AllowAny
 from rest_framework.exceptions import NotFound, ValidationError
 
-# Import ticket models
+import os
+import hmac
+import hashlib
 from tickets.models import TicketPurchase, EventTicket
 
 # Local imports
@@ -185,335 +187,353 @@ class PaystackWebhookView(APIView):
             raise
 
     def verify_webhook_signature(self, payload, signature):
-        """Verify the webhook signature from Paystack"""
+        """Securely verify the Paystack webhook signature"""
         if not signature:
-            logger.warning('No signature provided in webhook request')
+            logger.warning("Webhook missing signature header")
             return False
-            
-        # In production, you should verify the signature using your Paystack secret key
-        # For now, we'll just log that we're skipping verification in development
-        logger.warning('Skipping webhook signature verification in development')
-        return True  # In production, implement proper signature verification
-        
-        # Uncomment this in production:
-        # from django.conf import settings
-        # import hmac
-        # import hashlib
-        # 
-        # paystack_secret = getattr(settings, 'PAYSTACK_SECRET_KEY', '')
-        # if not paystack_secret:
-        #     logger.error('PAYSTACK_SECRET_KEY not configured')
-        #     return False
-        # 
-        # # Compute signature
-        # computed_signature = hmac.new(
-        #     paystack_secret.encode('utf-8'),
-        #     json.dumps(payload, separators=(',', ':')).encode('utf-8'),
-        #     digestmod=hashlib.sha512
-        # ).hexdigest()
-        # 
-        # # Compare signatures
-        # if not hmac.compare_digest(computed_signature, signature):
-        #     logger.error(f'Invalid webhook signature. Expected {computed_signature}, got {signature}')
-        #     return False
-        # 
-        # return True
-    
-    def handle_successful_charge(self, data):
-        """Handle successful payment"""
-        # Extract data from webhook payload
-        event_data = data.get('data', {})
-        reference = data.get('reference') or event_data.get('reference')
-        
-        if not reference:
-            logger.error('No reference found in webhook data')
-            return Response(
-                {'status': 'error', 'message': 'No reference provided'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        logger.info('Processing successful charge for reference: %s', reference)
-        logger.debug('Webhook data: %s', data)
-        
+
+        secret_key = os.getenv("PAYSTACK_SECRET_KEY")
+        if not secret_key:
+            logger.error("PAYSTACK_SECRET_KEY not set in environment")
+            return False
+
         try:
-            with transaction.atomic():
-                txn = None  # Initialize txn as None
-                order = None
-                
-                # 1. First try to find by paystack_reference field directly
-                try:
-                    txn = Transaction.objects.select_for_update().get(
-                        paystack_reference=reference
-                    )
-                    logger.info(f'Found existing transaction by Paystack reference: {reference}')
-                except Transaction.DoesNotExist:
-                    logger.info(f'No transaction found with paystack_reference: {reference}')
-                    # 2. Try to find by order ID in metadata if no transaction found
-                    metadata = event_data.get('metadata', {})
-                    order_id = metadata.get('order_id')
-                    
-                    # Try to extract order_id from custom_fields if not directly in metadata
-                    if not order_id and 'custom_fields' in metadata:
-                        custom_fields = metadata.get('custom_fields', [])
-                        if isinstance(custom_fields, list):
-                            for field in custom_fields:
-                                if field.get('variable_name') == 'order_id':
-                                    order_id = field.get('value')
-                                    break
-                    
-                    # If we have an order_id, try to find the order
-                    if order_id:
-                        logger.info(f'Looking up order by order_id: {order_id}')
-                        try:
-                            order = Order.objects.select_for_update().get(id=order_id)
-                            logger.info(f'Found order by order_id: {order_id}')
-                            
-                            # Try to find existing transaction for this order
-                            txn = Transaction.objects.filter(
-                                order=order,
-                                status=Transaction.STATUS_PENDING
-                            ).first()
-                            
-                            if txn:
-                                logger.info(f'Found existing transaction for order {order_id}')
-                            
-                        except Order.DoesNotExist:
-                            logger.warning(f'No order found with id: {order_id}')
-                
-                # If we still don't have a transaction, create a new one
-                if txn is None:
-                    logger.info(f'Creating new transaction for reference: {reference}')
-                    
-                    # Get customer email from event data (customer field)
-                    customer_email = event_data.get('customer', {}).get('email')
-                    if not customer_email:
-                        # Fallback to metadata if customer email not found
-                        customer_email = metadata.get('customer_email')
-                    
-                    if not customer_email:
-                        logger.warning(f'No customer email found in webhook data or metadata, using fallback')
-                        customer_email = f'system+{reference}@example.com'
-                    
-                    # If we have an order, use it to create the transaction
-                    if order:
-                        txn = Transaction(
-                            order=order,
-                            status=Transaction.STATUS_SUCCEEDED,
-                            transaction_type=Transaction.TYPE_CHARGE,
-                            amount=float(event_data.get('amount', 0)) / 100,  # Convert from kobo to naira
-                            currency=event_data.get('currency', 'NGN'),
-                            stripe_charge_id=event_data.get('id'),
-                            paystack_reference=reference,  # Add this field
-                            metadata=metadata
-                        )
-                        txn.save()
-                        logger.info(f'Created new transaction {txn.id} for order {order.id} with reference: {reference}')
-                        
-                        try:
-                            # Don't create tickets in webhook - just store metadata for verification
-                            logger.info(f'Ticket details stored in metadata for later processing by verification')
-                        except Exception as e:
-                            logger.error(f'Error storing ticket metadata: {str(e)}', exc_info=True)
-                            # Don't fail the transaction, just log the error
-                            pass
-                        
-                    else:
-                        # If no order, create a placeholder order first
-                        from django.contrib.auth import get_user_model
-                        
-                        try:
-                            # Try to find a user with the customer email
-                            User = get_user_model()
-                            user = User.objects.filter(email=customer_email).first()
-                            
-                            if not user:
-                                # If no user found, use the first admin user or create a system user
-                                user = User.objects.filter(is_staff=True).first()
-                                if not user:
-                                    user = User.objects.create_user(
-                                        username=f'system_{reference[:10]}',
-                                        email=f'system+{reference}@example.com',
-                                        password=User.objects.make_random_password()
-                                    )
-                            
-                            # Create a new order
-                            from ..models.order import Order
-                            amount = float(event_data.get('amount', 0)) / 100  # Convert from kobo to naira
-                            
-                            # Get customer details from metadata
-                            metadata = event_data.get('metadata', {})
-                            customer_name = metadata.get('customer_name', 'Customer')
-                            
-                            # Create the order with required fields
-                            # Ensure we have a valid email address
-                            if not customer_email:
-                                customer_email = f'system+{reference}@example.com'  # Fallback email
-                                logger.warning(f'No customer email found, using fallback: {customer_email}')
-                            
-                            # Ensure we have a valid name
-                            if not customer_name or customer_name == ' ':
-                                customer_name = f'Customer-{reference[:8]}'  # Fallback name
-                                logger.warning(f'No customer name found, using fallback: {customer_name}')
-                            
-                            order = Order(
-                                user=user,
-                                status='paid',
-                                subtotal=amount,  # Use amount as subtotal (adjust if you have tax)
-                                tax_amount=0,     # Set to 0 if not applicable
-                                total=amount,     # Same as subtotal if no tax
-                                currency=event_data.get('currency', 'KES'),
-                                billing_email=customer_email,
-                                billing_name=customer_name,
-                                billing_address={
-                                    'created_from_paystack_webhook': True,
-                                    'paystack_reference': reference,
-                                    'customer_email': customer_email,
-                                    'customer_phone': metadata.get('customer_phone', '')
-                                }
-                            )
-                            order.save()  # Save to generate the ID
-                            
-                        except Exception as e:
-                            logger.error(f'Error creating order and transaction: {str(e)}', exc_info=True)
-                            # If we can't create an order, we can't proceed
-                            return Response(
-                                {'status': 'error', 'message': 'Failed to create order for payment'},
-                                status=status.HTTP_400_BAD_REQUEST
-                            )
-                
-                # At this point, we should have a transaction - either found or created
-                if txn is None:
-                    logger.error(f'Failed to find or create transaction for reference: {reference}')
-                    return Response(
-                        {
-                            'status': 'error', 
-                            'message': 'Failed to process payment',
-                            'reference': reference
-                        },
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-                
-                # Update transaction status and store Paystack data
-                txn.status = Transaction.STATUS_SUCCEEDED
-                if not txn.paystack_transaction_id:
-                    txn.paystack_transaction_id = event_data.get('id')
-                
-                # Update metadata with latest data
-                txn_metadata = txn.metadata or {}
-                txn_metadata.update({
-                    'paystack_reference': reference,
-                    'paystack_data': data,
-                    'last_updated': timezone.now().isoformat()
-                })
-                txn.metadata = txn_metadata
-                txn.save(update_fields=['status', 'paystack_transaction_id', 'metadata', 'updated_at'])
-                
-                # Update the related order status if it exists
-                if hasattr(txn, 'order') and txn.order:
-                    logger.info('Updating order %s status to paid', txn.order.id)
-                    txn.order.status = 'paid'
-                    txn.order.save(update_fields=['status', 'updated_at'])
-                    
-                    # Get customer email from webhook data
-                    customer_email = data.get('customer', {}).get('email')
-                    if not customer_email:
-                        logger.warning('No customer email found in webhook data, using fallback')
-                        customer_email = f'system+{reference}@example.com'
-                    
-                    # Update transaction metadata with customer email if not already set
-                    if customer_email and not txn_metadata.get('customer_email'):
-                        txn_metadata['customer_email'] = customer_email
-                        txn.metadata = txn_metadata
-                        txn.save(update_fields=['metadata', 'updated_at'])
-                    
-                    # Create a Payment record for the transaction
-                    from gallery.models import Payment, PaymentStatus, EventRegistration
-                    
-                    payment = Payment.objects.create(
-                        user=txn.order.user if hasattr(txn.order, 'user') else None,
-                        amount=txn.amount,
-                        status=PaymentStatus.COMPLETED,
-                        payment_intent_id=txn.paystack_transaction_id or txn.reference,
-                        payment_method='card'  # Default to card for Paystack
-                    )
-                    
-                    # Get metadata from event data
-                    event_metadata = event_data.get('metadata', {})
-                    
-                    # Get event ID from transaction metadata
-                    event_id = txn.metadata.get('event_id') if txn.metadata and txn.metadata.get('event_id') else None
-                    
-                    # Also check in the original metadata from webhook
-                    if not event_id:
-                        event_id = event_metadata.get('event_id')
-                    
-                    # Convert to string if it's an integer or other type
-                    if event_id and event_id != 'None':
-                        event_id = str(event_id)
-                    
-                    if event_id and event_id != 'None':
-                        logger.info(f'Found event_id: {event_id}')
-                    else:
-                        logger.warning('No event ID found in transaction metadata, skipping registration update')
-                        event_id = None
-                    
-                    # Get ticket IDs from transaction metadata
-                    ticket_ids = txn.metadata.get('ticket_ids') if txn.metadata else None
-                    
-                    # Also check in the original metadata from webhook
-                    if not ticket_ids:
-                        ticket_ids = event_metadata.get('ticket_ids')
-                    
-                    # Create ticket purchases if we have an event ID and ticket IDs
-                    if event_id and event_id != 'None' and ticket_ids:
-                        try:
-                            # Convert ticket_ids to a list if it's a string
-                            if isinstance(ticket_ids, str):
-                                ticket_ids = [tid.strip() for tid in ticket_ids.split(',') if tid.strip()]
-                            
-                            # Get the first ticket ID for now (you might want to handle multiple tickets)
-                            ticket_id = ticket_ids[0] if ticket_ids else None
-                            
-                            if ticket_id:
-                                # Get the event ticket
-                                event_ticket = EventTicket.objects.get(id=ticket_id, event_id=event_id)
-                                
-                                # Don't create ticket purchase in webhook - just log that we found the ticket
-                                logger.info('Found event ticket %s for event %s - ticket creation will be handled by verification', ticket_id, event_id)
-                            
-                        except EventTicket.DoesNotExist:
-                            logger.error('Event ticket %s not found for event %s', ticket_id, event_id)
-                        except Exception as e:
-                            logger.error('Error processing ticket creation: %s', str(e), exc_info=True)
-                    
-                    # Update related event registrations if needed
-                    from gallery.models import EventRegistration
-                    
-                    # Find registrations by email if available, or by order items
-                    if customer_email and event_id and event_id != 'None':
-                        updated = EventRegistration.objects.filter(
-                            email=customer_email,
-                            status__in=['pending', 'reserved', 'pending_payment'],
-                            event_id=event_id
-                        ).update(
-                            status='confirmed',
-                            payment=payment
-                        )
-                        logger.info('Updated %d registrations to confirmed for email %s', updated, customer_email)
-                    elif not event_id or event_id == 'None':
-                        logger.warning('No valid event ID found in transaction metadata, skipping registration update')
-                
-                logger.info('Successfully processed payment for reference: %s', reference)
-                return Response(
-                    {'status': 'success', 'message': 'Payment processed successfully'},
-                    status=status.HTTP_200_OK
-                )
+            # Compute hash
+            computed_hash = hmac.new(
+                secret_key.encode("utf-8"),
+                msg=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+                digestmod=hashlib.sha512
+            ).hexdigest()
+
+            if not hmac.compare_digest(computed_hash, signature):
+                logger.error("Webhook signature mismatch")
+                return False
+            return True
         except Exception as e:
-            logger.error('Error processing webhook: %s', str(e), exc_info=True)
-            return Response(
-                {'status': 'error', 'message': 'Error processing payment'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            logger.exception(f"Error verifying webhook signature: {e}")
+            return False
+            """Verify the webhook signature from Paystack"""
+            if not signature:
+                logger.warning('No signature provided in webhook request')
+                return False
+                
+            # In production, you should verify the signature using your Paystack secret key
+
+            
+            paystack_secret = os.getenv('PAYSTACK_SECRET_KEY', '')
+            if not paystack_secret:
+                logger.error('PAYSTACK_SECRET_KEY not configured')
+                return False
+            
+            # Compute signature
+            computed_signature = hmac.new(
+                paystack_secret.encode('utf-8'),
+                json.dumps(payload, separators=(',', ':')).encode('utf-8'),
+                digestmod=hashlib.sha512
+            ).hexdigest()
+            
+            # Compare signatures
+            if not hmac.compare_digest(computed_signature, signature):
+                logger.error(f'Invalid webhook signature. Expected {computed_signature}, got {signature}')
+                return False
+            
+            return True
+        
+        def handle_successful_charge(self, data):
+            """Handle successful payment"""
+            # Extract data from webhook payload
+            event_data = data.get('data', {})
+            reference = data.get('reference') or event_data.get('reference')
+            
+            if not reference:
+                logger.error('No reference found in webhook data')
+                return Response(
+                    {'status': 'error', 'message': 'No reference provided'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            logger.info('Processing successful charge for reference: %s', reference)
+            logger.debug('Webhook data: %s', data)
+            
+            try:
+                with transaction.atomic():
+                    txn = None  # Initialize txn as None
+                    order = None
+                    
+                    # 1. First try to find by paystack_reference field directly
+                    try:
+                        txn = Transaction.objects.select_for_update().get(
+                            paystack_reference=reference
+                        )
+                        logger.info(f'Found existing transaction by Paystack reference: {reference}')
+                    except Transaction.DoesNotExist:
+                        logger.info(f'No transaction found with paystack_reference: {reference}')
+                        # 2. Try to find by order ID in metadata if no transaction found
+                        metadata = event_data.get('metadata', {})
+                        order_id = metadata.get('order_id')
+                        
+                        # Try to extract order_id from custom_fields if not directly in metadata
+                        if not order_id and 'custom_fields' in metadata:
+                            custom_fields = metadata.get('custom_fields', [])
+                            if isinstance(custom_fields, list):
+                                for field in custom_fields:
+                                    if field.get('variable_name') == 'order_id':
+                                        order_id = field.get('value')
+                                        break
+                        
+                        # If we have an order_id, try to find the order
+                        if order_id:
+                            logger.info(f'Looking up order by order_id: {order_id}')
+                            try:
+                                order = Order.objects.select_for_update().get(id=order_id)
+                                logger.info(f'Found order by order_id: {order_id}')
+                                
+                                # Try to find existing transaction for this order
+                                txn = Transaction.objects.filter(
+                                    order=order,
+                                    status=Transaction.STATUS_PENDING
+                                ).first()
+                                
+                                if txn:
+                                    logger.info(f'Found existing transaction for order {order_id}')
+                                
+                            except Order.DoesNotExist:
+                                logger.warning(f'No order found with id: {order_id}')
+                    
+                    # If we still don't have a transaction, create a new one
+                    if txn is None:
+                        logger.info(f'Creating new transaction for reference: {reference}')
+                        
+                        # Get customer email from event data (customer field)
+                        customer_email = event_data.get('customer', {}).get('email')
+                        if not customer_email:
+                            # Fallback to metadata if customer email not found
+                            customer_email = metadata.get('customer_email')
+                        
+                        if not customer_email:
+                            logger.warning(f'No customer email found in webhook data or metadata, using fallback')
+                            customer_email = f'system+{reference}@example.com'
+                        
+                        # If we have an order, use it to create the transaction
+                        if order:
+                            txn = Transaction(
+                                order=order,
+                                status=Transaction.STATUS_SUCCEEDED,
+                                transaction_type=Transaction.TYPE_CHARGE,
+                                amount=float(event_data.get('amount', 0)) / 100,  # Convert from kobo to naira
+                                currency=event_data.get('currency', 'NGN'),
+                                stripe_charge_id=event_data.get('id'),
+                                paystack_reference=reference,  # Add this field
+                                metadata=metadata
+                            )
+                            txn.save()
+                            logger.info(f'Created new transaction {txn.id} for order {order.id} with reference: {reference}')
+                            
+                            try:
+                                # Don't create tickets in webhook - just store metadata for verification
+                                logger.info(f'Ticket details stored in metadata for later processing by verification')
+                            except Exception as e:
+                                logger.error(f'Error storing ticket metadata: {str(e)}', exc_info=True)
+                                # Don't fail the transaction, just log the error
+                                pass
+                            
+                        else:
+                            # If no order, create a placeholder order first
+                            from django.contrib.auth import get_user_model
+                            
+                            try:
+                                # Try to find a user with the customer email
+                                User = get_user_model()
+                                user = User.objects.filter(email=customer_email).first()
+                                
+                                if not user:
+                                    # If no user found, use the first admin user or create a system user
+                                    user = User.objects.filter(is_staff=True).first()
+                                    if not user:
+                                        user = User.objects.create_user(
+                                            username=f'system_{reference[:10]}',
+                                            email=f'system+{reference}@example.com',
+                                            password=User.objects.make_random_password()
+                                        )
+                                
+                                # Create a new order
+                                from ..models.order import Order
+                                amount = float(event_data.get('amount', 0)) / 100  # Convert from kobo to naira
+                                
+                                # Get customer details from metadata
+                                metadata = event_data.get('metadata', {})
+                                customer_name = metadata.get('customer_name', 'Customer')
+                                
+                                # Create the order with required fields
+                                # Ensure we have a valid email address
+                                if not customer_email:
+                                    customer_email = f'system+{reference}@example.com'  # Fallback email
+                                    logger.warning(f'No customer email found, using fallback: {customer_email}')
+                                
+                                # Ensure we have a valid name
+                                if not customer_name or customer_name == ' ':
+                                    customer_name = f'Customer-{reference[:8]}'  # Fallback name
+                                    logger.warning(f'No customer name found, using fallback: {customer_name}')
+                                
+                                order = Order(
+                                    user=user,
+                                    status='paid',
+                                    subtotal=amount,  # Use amount as subtotal (adjust if you have tax)
+                                    tax_amount=0,     # Set to 0 if not applicable
+                                    total=amount,     # Same as subtotal if no tax
+                                    currency=event_data.get('currency', 'KES'),
+                                    billing_email=customer_email,
+                                    billing_name=customer_name,
+                                    billing_address={
+                                        'created_from_paystack_webhook': True,
+                                        'paystack_reference': reference,
+                                        'customer_email': customer_email,
+                                        'customer_phone': metadata.get('customer_phone', '')
+                                    }
+                                )
+                                order.save()  # Save to generate the ID
+                                
+                            except Exception as e:
+                                logger.error(f'Error creating order and transaction: {str(e)}', exc_info=True)
+                                # If we can't create an order, we can't proceed
+                                return Response(
+                                    {'status': 'error', 'message': 'Failed to create order for payment'},
+                                    status=status.HTTP_400_BAD_REQUEST
+                                )
+                    
+                    # At this point, we should have a transaction - either found or created
+                    if txn is None:
+                        logger.error(f'Failed to find or create transaction for reference: {reference}')
+                        return Response(
+                            {
+                                'status': 'error', 
+                                'message': 'Failed to process payment',
+                                'reference': reference
+                            },
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    
+                    # Update transaction status and store Paystack data
+                    txn.status = Transaction.STATUS_SUCCEEDED
+                    if not txn.paystack_transaction_id:
+                        txn.paystack_transaction_id = event_data.get('id')
+                    
+                    # Update metadata with latest data
+                    txn_metadata = txn.metadata or {}
+                    txn_metadata.update({
+                        'paystack_reference': reference,
+                        'paystack_data': data,
+                        'last_updated': timezone.now().isoformat()
+                    })
+                    txn.metadata = txn_metadata
+                    txn.save(update_fields=['status', 'paystack_transaction_id', 'metadata', 'updated_at'])
+                    
+                    # Update the related order status if it exists
+                    if hasattr(txn, 'order') and txn.order:
+                        logger.info('Updating order %s status to paid', txn.order.id)
+                        txn.order.status = 'paid'
+                        txn.order.save(update_fields=['status', 'updated_at'])
+                        
+                        # Get customer email from webhook data
+                        customer_email = data.get('customer', {}).get('email')
+                        if not customer_email:
+                            logger.warning('No customer email found in webhook data, using fallback')
+                            customer_email = f'system+{reference}@example.com'
+                        
+                        # Update transaction metadata with customer email if not already set
+                        if customer_email and not txn_metadata.get('customer_email'):
+                            txn_metadata['customer_email'] = customer_email
+                            txn.metadata = txn_metadata
+                            txn.save(update_fields=['metadata', 'updated_at'])
+                        
+                        # Create a Payment record for the transaction
+                        from gallery.models import Payment, PaymentStatus, EventRegistration
+                        
+                        payment = Payment.objects.create(
+                            user=txn.order.user if hasattr(txn.order, 'user') else None,
+                            amount=txn.amount,
+                            status=PaymentStatus.COMPLETED,
+                            payment_intent_id=txn.paystack_transaction_id or txn.reference,
+                            payment_method='card'  # Default to card for Paystack
+                        )
+                        
+                        # Get metadata from event data
+                        event_metadata = event_data.get('metadata', {})
+                        
+                        # Get event ID from transaction metadata
+                        event_id = txn.metadata.get('event_id') if txn.metadata and txn.metadata.get('event_id') else None
+                        
+                        # Also check in the original metadata from webhook
+                        if not event_id:
+                            event_id = event_metadata.get('event_id')
+                        
+                        # Convert to string if it's an integer or other type
+                        if event_id and event_id != 'None':
+                            event_id = str(event_id)
+                        
+                        if event_id and event_id != 'None':
+                            logger.info(f'Found event_id: {event_id}')
+                        else:
+                            logger.warning('No event ID found in transaction metadata, skipping registration update')
+                            event_id = None
+                        
+                        # Get ticket IDs from transaction metadata
+                        ticket_ids = txn.metadata.get('ticket_ids') if txn.metadata else None
+                        
+                        # Also check in the original metadata from webhook
+                        if not ticket_ids:
+                            ticket_ids = event_metadata.get('ticket_ids')
+                        
+                        # Create ticket purchases if we have an event ID and ticket IDs
+                        if event_id and event_id != 'None' and ticket_ids:
+                            try:
+                                # Convert ticket_ids to a list if it's a string
+                                if isinstance(ticket_ids, str):
+                                    ticket_ids = [tid.strip() for tid in ticket_ids.split(',') if tid.strip()]
+                                
+                                # Get the first ticket ID for now (you might want to handle multiple tickets)
+                                ticket_id = ticket_ids[0] if ticket_ids else None
+                                
+                                if ticket_id:
+                                    # Get the event ticket
+                                    event_ticket = EventTicket.objects.get(id=ticket_id, event_id=event_id)
+                                    
+                                    # Don't create ticket purchase in webhook - just log that we found the ticket
+                                    logger.info('Found event ticket %s for event %s - ticket creation will be handled by verification', ticket_id, event_id)
+                                
+                            except EventTicket.DoesNotExist:
+                                logger.error('Event ticket %s not found for event %s', ticket_id, event_id)
+                            except Exception as e:
+                                logger.error('Error processing ticket creation: %s', str(e), exc_info=True)
+                        
+                        # Update related event registrations if needed
+                        from gallery.models import EventRegistration
+                        
+                        # Find registrations by email if available, or by order items
+                        if customer_email and event_id and event_id != 'None':
+                            updated = EventRegistration.objects.filter(
+                                email=customer_email,
+                                status__in=['pending', 'reserved', 'pending_payment'],
+                                event_id=event_id
+                            ).update(
+                                status='confirmed',
+                                payment=payment
+                            )
+                            logger.info('Updated %d registrations to confirmed for email %s', updated, customer_email)
+                        elif not event_id or event_id == 'None':
+                            logger.warning('No valid event ID found in transaction metadata, skipping registration update')
+                    
+                    logger.info('Successfully processed payment for reference: %s', reference)
+                    return Response(
+                        {'status': 'success', 'message': 'Payment processed successfully'},
+                        status=status.HTTP_200_OK
+                    )
+            except Exception as e:
+                logger.error('Error processing webhook: %s', str(e), exc_info=True)
+                return Response(
+                    {'status': 'error', 'message': 'Error processing payment'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
 
 class PaystackVerifyPaymentView(RetrieveAPIView):
     """Verify a Paystack payment using the reference"""
