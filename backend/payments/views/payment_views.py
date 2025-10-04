@@ -294,23 +294,13 @@ class PaystackWebhookView(APIView):
                     
                     # Get customer email from event data (customer field)
                     customer_email = event_data.get('customer', {}).get('email')
+                    if not customer_email:
+                        # Fallback to metadata if customer email not found
+                        customer_email = event_metadata.get('customer_email')
                     
-                    # Get metadata from event data
-                    event_metadata = event_data.get('metadata', {})
-                    
-                    # Create metadata for the transaction
-                    metadata = {
-                        'paystack_reference': reference,
-                        'paystack_data': data,
-                        'created_from_webhook': True,
-                        'customer_email': customer_email,
-                        'ticket_ids': event_metadata.get('ticket_ids'),
-                        'order_id': event_metadata.get('order_id'),
-                        'ticket_details': event_metadata.get('ticket_details'),
-                        'event_id': str(event_metadata.get('event_id')) if event_metadata.get('event_id') else None,  # Convert to string and handle None
-                        'customer_name': event_metadata.get('customer_name'),
-                        'customer_phone': event_metadata.get('customer_phone')
-                    }
+                    if not customer_email:
+                        logger.warning(f'No customer email found in webhook data or metadata, using fallback')
+                        customer_email = f'system+{reference}@example.com'
                     
                     # If we have an order, use it to create the transaction
                     if order:
@@ -391,63 +381,6 @@ class PaystackWebhookView(APIView):
                             )
                             order.save()  # Save to generate the ID
                             
-                            # Update billing_address with additional metadata
-                            if not order.billing_address:
-                                order.billing_address = {}
-                            
-                            order.billing_address.update({
-                                'created_from_paystack_webhook': True,
-                                'paystack_reference': reference,
-                                'paystack_data': {
-                                    'event_id': event_data.get('id'),
-                                    'payment_method': event_data.get('channel'),
-                                    'ip_address': event_data.get('ip_address')
-                                }
-                            })
-                            
-                            # Save the order with updated billing_address
-                            order.save(update_fields=['billing_address'])
-                            
-                            # Create the transaction with the new order using Paystack fields
-                            amount = float(event_data.get('amount', 0)) / 100  # Convert from kobo to naira
-                            currency = event_data.get('currency', 'KES')
-                            
-                            # Ensure we have required Paystack fields - USE THE ORIGINAL REFERENCE
-                            paystack_reference = reference  # Use the original reference from webhook, not a new one
-                            paystack_transaction_id = str(event_data.get('id', f'txn_{uuid.uuid4().hex}'))
-                            payment_method = event_data.get('channel', 'card')
-
-                            logger.info(f'Creating transaction - Amount: {amount} {currency}, Reference: {paystack_reference}')
-                            
-                            # Prepare transaction metadata
-                            transaction_metadata = {
-                                'paystack_data': {
-                                    'customer_code': event_data.get('customer', {}).get('customer_code'),
-                                    'authorization_code': event_data.get('authorization', {}).get('authorization_code'),
-                                    'ip_address': event_data.get('ip_address'),
-                                    'fees': event_data.get('fees'),
-                                    'paid_at': event_data.get('paid_at'),
-                                    'channel': payment_method,
-                                    'bank': event_data.get('authorization', {}).get('bank'),
-                                    'card_type': event_data.get('authorization', {}).get('card_type')
-                                },
-                                **metadata
-                            }
-                            
-                            txn = Transaction(
-                                order=order,
-                                status=Transaction.STATUS_SUCCEEDED,
-                                transaction_type=Transaction.TYPE_CHARGE,
-                                amount=amount,
-                                currency=currency,
-                                paystack_reference=paystack_reference,
-                                paystack_transaction_id=paystack_transaction_id,
-                                payment_method=payment_method,
-                                metadata=transaction_metadata
-                            )
-                            txn.save()
-                            logger.info(f'Created new order {order.id} and transaction {txn.id} for reference: {reference}')
-                            
                         except Exception as e:
                             logger.error(f'Error creating order and transaction: {str(e)}', exc_info=True)
                             # If we can't create an order, we can't proceed
@@ -511,6 +444,9 @@ class PaystackWebhookView(APIView):
                         payment_intent_id=txn.paystack_transaction_id or txn.reference,
                         payment_method='card'  # Default to card for Paystack
                     )
+                    
+                    # Get metadata from event data
+                    event_metadata = event_data.get('metadata', {})
                     
                     # Get event ID from transaction metadata
                     event_id = txn.metadata.get('event_id') if txn.metadata and txn.metadata.get('event_id') else None
@@ -595,16 +531,13 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
         # First try to find transactions for the current user
         user_transactions = Transaction.objects.select_related('order').filter(order__user=self.request.user)
         
-        # If no user transactions found, also include transactions that might be associated with this user
-        # via email in metadata (for webhook-created transactions)
+        # Also include any transactions with this reference (for webhook-created transactions)
+        # This allows verification to find transactions created by webhooks even if they're associated with different users
         reference = self.kwargs.get('reference')
         if reference:
-            metadata_transactions = Transaction.objects.select_related('order').filter(
-                paystack_reference=reference,
-                metadata__customer_email=self.request.user.email
-            )
-            # Combine querysets and remove duplicates
-            return (user_transactions | metadata_transactions).distinct()
+            ref_transactions = Transaction.objects.select_related('order').filter(paystack_reference=reference)
+            # Combine querysets and remove duplicates, prioritizing user transactions
+            return (user_transactions | ref_transactions).distinct()
         
         return user_transactions
         
@@ -615,9 +548,31 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
             raise ValidationError({'reference': 'This field is required'})
             
         try:
-            return self.get_queryset().get(paystack_reference=reference)
+            txn = self.get_queryset().get(paystack_reference=reference)
+            
+            # Validate that the current user has access to this transaction
+            if not self._user_has_access_to_transaction(txn):
+                raise ValidationError({'reference': 'You do not have access to this transaction'})
+                
+            return txn
         except Transaction.DoesNotExist:
             raise NotFound('Transaction not found')
+    
+    def _user_has_access_to_transaction(self, transaction):
+        """Check if the current user has access to the given transaction"""
+        user = self.request.user
+        
+        # User has access if the transaction belongs to them
+        if hasattr(transaction, 'order') and transaction.order and transaction.order.user == user:
+            return True
+            
+        # User has access if their email matches the customer email in metadata
+        metadata = transaction.metadata or {}
+        customer_email = metadata.get('customer_email')
+        if customer_email and customer_email == user.email:
+            return True
+            
+        return False
     
     def retrieve(self, request, *args, **kwargs):
         reference = self.kwargs.get('reference')
@@ -625,8 +580,12 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
         logger.info(f'[Payment Verification] Verifying payment with reference: {reference} for user: {user_id}')
         
         # Log all transactions with this reference for debugging
-        matching_txns = Transaction.objects.filter(paystack_reference=reference)
-        logger.info(f'[Payment Verification] Found {matching_txns.count()} transactions with reference {reference}')
+        all_txns = Transaction.objects.filter(paystack_reference=reference)
+        logger.info(f'[Payment Verification] Found {all_txns.count()} transactions with reference {reference}')
+        
+        # Debug: Log details of found transactions
+        for txn in all_txns:
+            logger.info(f'[Payment Verification] Transaction {txn.id}: user={getattr(txn.order.user if hasattr(txn, "order") and txn.order else None, "id", "None")}, status={txn.status}, metadata_keys={list(txn.metadata.keys()) if txn.metadata else "None"}')
         
         try:
             # First try to get the transaction using our custom get_object method
@@ -652,7 +611,13 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
                 return Response({
                     'status': 'success',
                     'message': 'Payment already verified',
-                    'data': txn.payment_data or {}
+                    'data': {
+                        'reference': reference,
+                        'transaction_id': str(txn.id),
+                        'amount': txn.amount,
+                        'currency': txn.currency,
+                        'status': txn.status
+                    }
                 })
                 
         except NotFound:
@@ -722,34 +687,22 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
                             
                             order_data['billing_name'] = billing_name
                             
-                        # Set billing address with reference
-                        if hasattr(Order, 'billing_address'):
-                            order_data['billing_address'] = {
-                                'created_from_paystack_verification': True,
-                                'paystack_reference': reference,
-                                'auto_generated': True
-                            }
-                        
-                        # Create the order
                         order = Order.objects.create(**order_data)
                         
-                        # Create transaction with paystack_reference
+                        # Create transaction data
                         txn_data = {
                             'order': order,
+                            'transaction_type': Transaction.TYPE_CHARGE,
                             'amount': amount,
                             'currency': currency,
-                            'payment_method': 'paystack',
                             'status': Transaction.STATUS_SUCCEEDED,
                             'paystack_reference': reference,
-                            'metadata': {
-                                'paystack_data': response['data'],
-                                'verified_directly': True,
-                                'verification_timestamp': timezone.now().isoformat()
-                            }
+                            'metadata': response['data'].get('metadata', {})
                         }
                         
                         # Add paystack_transaction_id if available
-                        if paystack_transaction_id := response['data'].get('id'):
+                        paystack_transaction_id = response['data'].get('id')
+                        if paystack_transaction_id:
                             txn_data['paystack_transaction_id'] = paystack_transaction_id
                             
                         txn = Transaction.objects.create(**txn_data)
