@@ -103,32 +103,28 @@ const GoogleLoginButton = ({ text = 'Continue with Google', isSignUp = false }) 
     );
   }
 
-  // For production, we'll use a more specific width
   const buttonWidth = window.innerWidth > 768 ? '400px' : '300px';
   return (
     <div style={{ width: '100%', maxWidth: '400px', margin: '0 auto' }}>
-      <GoogleOAuthProvider 
-        clientId={clientId}
-        onScriptLoadError={(error) => console.error('Google OAuth script load error:', error)}
-      >
+      <GoogleOAuthProvider clientId={clientId}>
         <GoogleLogin
           onSuccess={handleSuccess}
           onError={handleError}
+          width="300"
           text={text}
-          width={buttonWidth}
+          type="standard"
           theme="outline"
           size="large"
           shape="rectangular"
-          logo_alignment="left"
-          type="standard"
-          useOneTap={false}
+          logo_alignment="center"
+          useOneTap
+          auto_select
           disabled={isLoading}
           state={JSON.stringify({ from: from })}
           cookiePolicy="single_host_origin"
           isSignedIn={false}
-          auto_select={false}
           ux_mode="popup"
-          onRequest={() => {
+          onClick={() => {
             console.log('Google OAuth request initiated');
             setIsLoading(true);
           }}
