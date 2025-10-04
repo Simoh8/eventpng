@@ -296,7 +296,7 @@ class PaystackWebhookView(APIView):
                     customer_email = event_data.get('customer', {}).get('email')
                     if not customer_email:
                         # Fallback to metadata if customer email not found
-                        customer_email = event_metadata.get('customer_email')
+                        customer_email = metadata.get('customer_email')
                     
                     if not customer_email:
                         logger.warning(f'No customer email found in webhook data or metadata, using fallback')
@@ -365,7 +365,7 @@ class PaystackWebhookView(APIView):
                             
                             order = Order(
                                 user=user,
-                                status=Order.STATUS_PAID,
+                                status='paid',
                                 subtotal=amount,  # Use amount as subtotal (adjust if you have tax)
                                 tax_amount=0,     # Set to 0 if not applicable
                                 total=amount,     # Same as subtotal if no tax
@@ -419,7 +419,7 @@ class PaystackWebhookView(APIView):
                 # Update the related order status if it exists
                 if hasattr(txn, 'order') and txn.order:
                     logger.info('Updating order %s status to paid', txn.order.id)
-                    txn.order.status = Order.STATUS_PAID
+                    txn.order.status = 'paid'
                     txn.order.save(update_fields=['status', 'updated_at'])
                     
                     # Get customer email from webhook data
@@ -648,32 +648,33 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
                         # Create order with proper field values - check what fields your Order model actually has
                         order_data = {
                             'user': request.user,
-                            'status': Order.STATUS_PAID,
+                            'status': 'paid',
                             'currency': currency,
                             'paid_at': timezone.now(),
                         }
                         
                         # Add amount fields based on your Order model structure
                         # Try different possible field names for amounts
-                        if hasattr(Order, 'subtotal'):
+                        from payments.models import Order as OrderModel
+                        if hasattr(OrderModel, 'subtotal'):
                             order_data['subtotal'] = amount
-                        if hasattr(Order, 'total'):
+                        if hasattr(OrderModel, 'total'):
                             order_data['total'] = amount
-                        if hasattr(Order, 'total_amount'):
+                        if hasattr(OrderModel, 'total_amount'):
                             order_data['total_amount'] = amount
-                        if hasattr(Order, 'amount'):
+                        if hasattr(OrderModel, 'amount'):
                             order_data['amount'] = amount
                             
                         # Add tax amount if the field exists
-                        if hasattr(Order, 'tax_amount'):
+                        if hasattr(OrderModel, 'tax_amount'):
                             order_data['tax_amount'] = 0
                             
                         # Set billing information with proper fallbacks
-                        if hasattr(Order, 'billing_email'):
+                        if hasattr(OrderModel, 'billing_email'):
                             order_data['billing_email'] = getattr(request.user, 'email', '')
                             
                         # Ensure billing_name is always set with a valid value
-                        if hasattr(Order, 'billing_name'):
+                        if hasattr(OrderModel, 'billing_name'):
                             first_name = getattr(request.user, 'first_name', '')
                             last_name = getattr(request.user, 'last_name', '')
                             username = getattr(request.user, 'username', 'Customer')
@@ -762,7 +763,7 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
                     
                     # Update order status if it exists
                     if hasattr(txn, 'order') and txn.order:
-                        txn.order.status = Order.STATUS_PAID
+                        txn.order.status = 'paid'
                         txn.order.save()
                         
                         # Process ticket purchases if not already done
