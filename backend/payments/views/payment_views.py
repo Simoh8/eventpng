@@ -155,12 +155,12 @@ class PaystackWebhookView(APIView):
                     try:
                         ticket_purchase = TicketPurchase.objects.create(
                             user=user,
-                            ticket=ticket_type,
+                            event_ticket=ticket_type,
                             quantity=quantity,
                             status='confirmed',
                             payment_method='paystack',
-                            transaction_reference=transaction.reference or f'txn-{transaction.id}',
-                            amount_paid=amount_paid,
+                            payment_intent_id=transaction.paystack_reference or transaction.reference or f'txn-{transaction.id}',
+                            total_price=amount_paid,
                             metadata={
                                 'order_id': str(order.id) if hasattr(order, 'id') else 'N/A',
                                 'transaction_id': str(transaction.id),
@@ -248,11 +248,10 @@ class PaystackWebhookView(APIView):
                 txn = None  # Initialize txn as None
                 order = None
                 
-                # 1. First try to find by metadata reference (Paystack reference)
+                # 1. First try to find by paystack_reference field directly
                 try:
                     txn = Transaction.objects.select_for_update().get(
-                        metadata__has_key='paystack_reference',
-                        metadata__paystack_reference=reference
+                        paystack_reference=reference
                     )
                     logger.info(f'Found existing transaction by Paystack reference: {reference}')
                 except Transaction.DoesNotExist:
@@ -329,11 +328,10 @@ class PaystackWebhookView(APIView):
                         logger.info(f'Created new transaction {txn.id} for order {order.id} with reference: {reference}')
                         
                         try:
-                            # Create ticket purchases for each item in the order
-                            self._create_ticket_purchases(order, txn)
-                            logger.info(f'Successfully created ticket purchases for order {order.id}')
+                            # Don't create tickets in webhook - just store metadata for verification
+                            logger.info(f'Ticket details stored in metadata for later processing by verification')
                         except Exception as e:
-                            logger.error(f'Error creating ticket purchases: {str(e)}', exc_info=True)
+                            logger.error(f'Error storing ticket metadata: {str(e)}', exc_info=True)
                             # Don't fail the transaction, just log the error
                             pass
                         
@@ -538,7 +536,7 @@ class PaystackWebhookView(APIView):
                     if not ticket_ids:
                         ticket_ids = event_metadata.get('ticket_ids')
                     
-                    # Create ticket purchase if we have an event ID and ticket IDs
+                    # Create ticket purchases if we have an event ID and ticket IDs
                     if event_id and event_id != 'None' and ticket_ids:
                         try:
                             # Convert ticket_ids to a list if it's a string
@@ -552,22 +550,13 @@ class PaystackWebhookView(APIView):
                                 # Get the event ticket
                                 event_ticket = EventTicket.objects.get(id=ticket_id, event_id=event_id)
                                 
-                                # Create ticket purchase
-                                TicketPurchase.objects.create(
-                                    user=txn.order.user if hasattr(txn.order, 'user') else None,
-                                    event_ticket=event_ticket,
-                                    quantity=1,  # Default to 1, adjust as needed
-                                    status='confirmed',
-                                    payment_method='card',  # Default to card for Paystack
-                                    payment_intent_id=txn.paystack_transaction_id or txn.reference,
-                                    total_price=txn.amount / 100  # Convert from cents to dollars if needed
-                                )
-                                logger.info('Created ticket purchase for event %s, ticket %s', event_id, ticket_id)
+                                # Don't create ticket purchase in webhook - just log that we found the ticket
+                                logger.info('Found event ticket %s for event %s - ticket creation will be handled by verification', ticket_id, event_id)
                             
                         except EventTicket.DoesNotExist:
                             logger.error('Event ticket %s not found for event %s', ticket_id, event_id)
                         except Exception as e:
-                            logger.error('Error creating ticket purchase: %s', str(e), exc_info=True)
+                            logger.error('Error processing ticket creation: %s', str(e), exc_info=True)
                     
                     # Update related event registrations if needed
                     from gallery.models import EventRegistration
@@ -603,8 +592,21 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        # Only allow users to verify their own transactions
-        return Transaction.objects.select_related('order').filter(order__user=self.request.user)
+        # First try to find transactions for the current user
+        user_transactions = Transaction.objects.select_related('order').filter(order__user=self.request.user)
+        
+        # If no user transactions found, also include transactions that might be associated with this user
+        # via email in metadata (for webhook-created transactions)
+        reference = self.kwargs.get('reference')
+        if reference:
+            metadata_transactions = Transaction.objects.select_related('order').filter(
+                paystack_reference=reference,
+                metadata__customer_email=self.request.user.email
+            )
+            # Combine querysets and remove duplicates
+            return (user_transactions | metadata_transactions).distinct()
+        
+        return user_transactions
         
     def get_object(self):
         # Override get_object to use paystack_reference instead of the default lookup_field
@@ -634,6 +636,19 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
             # If transaction is already marked as succeeded, return success
             if txn.status == Transaction.STATUS_SUCCEEDED:
                 logger.info(f'Transaction {txn.id} already marked as succeeded')
+                
+                # Check if tickets need to be created from webhook metadata
+                metadata = txn.metadata or {}
+                if 'ticket_details' in metadata and metadata['ticket_details']:
+                    logger.info(f'Found ticket details in transaction metadata, creating tickets')
+                    try:
+                        # Create tickets from webhook metadata
+                        if hasattr(txn, 'order') and txn.order:
+                            self._create_ticket_purchases(txn.order, txn)
+                            logger.info(f'Successfully created tickets from webhook metadata')
+                    except Exception as e:
+                        logger.error(f'Error creating tickets from webhook metadata: {str(e)}', exc_info=True)
+                
                 return Response({
                     'status': 'success',
                     'message': 'Payment already verified',
@@ -917,12 +932,12 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
                     try:
                         ticket_purchase = TicketPurchase.objects.create(
                             user=user,
-                            ticket=ticket_type,
+                            event_ticket=ticket_type,
                             quantity=quantity,
                             status='confirmed',
                             payment_method='paystack',
-                            transaction_reference=transaction.reference or f'txn-{transaction.id}',  # Use transaction.reference instead of paystack_reference
-                            amount_paid=amount_paid,
+                            payment_intent_id=transaction.paystack_reference or transaction.reference or f'txn-{transaction.id}',
+                            total_price=amount_paid,
                             metadata={
                                 'order_id': str(order.id) if hasattr(order, 'id') else 'N/A',
                                 'transaction_id': str(transaction.id),

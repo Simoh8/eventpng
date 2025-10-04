@@ -193,9 +193,12 @@ class CreateTicketPurchaseSerializer(serializers.ModelSerializer):
                     'payment_intent_id': 'Payment intent ID or reference is required for card payments'
                 })
             
-            # If we have a payment_reference but no payment_intent_id, use the reference
-            if not data.get('payment_intent_id') and data.get('payment_reference'):
+            # If we have a payment_reference but no payment_intent_id, use the reference as payment_intent_id
+            if data.get('payment_reference') and not data.get('payment_intent_id'):
                 data['payment_intent_id'] = data['payment_reference']
+            # If we have payment_intent_id but no payment_reference, use payment_intent_id as reference
+            elif data.get('payment_intent_id') and not data.get('payment_reference'):
+                data['payment_reference'] = data['payment_intent_id']
             
         return data
 
