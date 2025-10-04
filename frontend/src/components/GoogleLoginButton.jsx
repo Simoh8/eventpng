@@ -97,30 +97,44 @@ const GoogleLoginButton = ({ text = 'Continue with Google', isSignUp = false }) 
   
   if (!clientId) {
     return (
-      <div className="w-full p-3 text-center text-red-600 bg-red-100 rounded">
+      <div className="text-center p-4 bg-red-100 text-red-700 rounded">
         Google sign-in is not properly configured. Please contact support.
       </div>
     );
   }
 
+  // For production, we'll use a more specific width
+  const buttonWidth = window.innerWidth > 768 ? '400px' : '300px';
   return (
-    <GoogleOAuthProvider clientId={clientId}>
-      <div className="w-full">
+    <div style={{ width: '100%', maxWidth: '400px', margin: '0 auto' }}>
+      <GoogleOAuthProvider 
+        clientId={clientId}
+        onScriptLoadError={(error) => console.error('Google OAuth script load error:', error)}
+      >
         <GoogleLogin
           onSuccess={handleSuccess}
           onError={handleError}
-          useOneTap
-          auto_select
-          text="continue_with"
-          shape="rectangular"
-          width="100%"
-          size="large"
-          type="standard"
+          text={text}
+          width={buttonWidth}
           theme="outline"
+          size="large"
+          shape="rectangular"
           logo_alignment="left"
+          type="standard"
+          useOneTap={false}
+          disabled={isLoading}
+          state={JSON.stringify({ from: from })}
+          cookiePolicy="single_host_origin"
+          isSignedIn={false}
+          auto_select={false}
+          ux_mode="popup"
+          onRequest={() => {
+            console.log('Google OAuth request initiated');
+            setIsLoading(true);
+          }}
         />
-      </div>
-    </GoogleOAuthProvider>
+      </GoogleOAuthProvider>
+    </div>
   );
 };
 

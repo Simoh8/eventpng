@@ -56,16 +56,22 @@ class CustomUser(AbstractUser):
     objects = UserManager()
     
     def __str__(self):
+        # This method will always return a string, no matter what
         try:
+            # Get the most specific identifier available
             if hasattr(self, 'email') and self.email:
                 return str(self.email)
             if hasattr(self, 'username') and self.username:
                 return str(self.username)
             if hasattr(self, 'id') and self.id:
                 return f"user-{self.id}"
-            return "[deleted user]"
+                
+            # If we can't get any specific identifier, use the object's memory address
+            return f"User-{id(self)}"
+            
         except Exception:
-            return "[user]"
+            # If anything goes wrong, return a generic string
+            return "User (unknown)"
     
     @property
     def display_name(self):
