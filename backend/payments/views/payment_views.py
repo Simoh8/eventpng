@@ -619,12 +619,17 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
     
     def retrieve(self, request, *args, **kwargs):
         reference = self.kwargs.get('reference')
-        logger.info(f'Verifying payment with reference: {reference} for user: {request.user.id}')
+        user_id = request.user.id
+        logger.info(f'[Payment Verification] Verifying payment with reference: {reference} for user: {user_id}')
+        
+        # Log all transactions with this reference for debugging
+        matching_txns = Transaction.objects.filter(paystack_reference=reference)
+        logger.info(f'[Payment Verification] Found {matching_txns.count()} transactions with reference {reference}')
         
         try:
             # First try to get the transaction using our custom get_object method
             txn = self.get_object()
-            logger.info(f'Found transaction: {txn.id} with status: {txn.status}')
+            logger.info(f'[Payment Verification] Found transaction: {txn.id} with status: {txn.status} and order: {getattr(txn, "order", None)}')
             
             # If transaction is already marked as succeeded, return success
             if txn.status == Transaction.STATUS_SUCCEEDED:
@@ -639,6 +644,19 @@ class PaystackVerifyPaymentView(RetrieveAPIView):
             logger.warning(f'Transaction not found for reference: {reference}')
             # Try to verify with Paystack directly
             try:
+                # First check if the transaction was already created by the webhook
+                webhook_txn = Transaction.objects.filter(paystack_reference=reference).first()
+                if webhook_txn:
+                    logger.info(f'Found transaction {webhook_txn.id} created by webhook for reference: {reference}')
+                    return Response({
+                        'status': 'success',
+                        'message': 'Payment verified successfully',
+                        'data': {'status': 'success', 'reference': reference},
+                        'order_id': str(webhook_txn.order.id) if webhook_txn.order else None,
+                        'transaction_id': str(webhook_txn.id)
+                    })
+                
+                # If not found, verify with Paystack directly
                 response = paystack_service.verify_payment(reference)
                 if response.get('status') and response['data'].get('status') == 'success':
                     # Create transaction record if it doesn't exist
