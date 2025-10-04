@@ -211,13 +211,10 @@ class PaystackWebhookView(APIView):
             return True
         except Exception as e:
             logger.exception(f"Error verifying webhook signature: {e}")
-            return False
             """Verify the webhook signature from Paystack"""
             if not signature:
                 logger.warning('No signature provided in webhook request')
-                return False
                 
-            # In production, you should verify the signature using your Paystack secret key
 
             
             paystack_secret = os.getenv('PAYSTACK_SECRET_KEY', '')
@@ -239,7 +236,7 @@ class PaystackWebhookView(APIView):
             
             return True
         
-        def handle_successful_charge(self, data):
+    def handle_successful_charge(self, data):
             """Handle successful payment"""
             # Extract data from webhook payload
             event_data = data.get('data', {})
