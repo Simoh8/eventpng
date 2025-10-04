@@ -135,14 +135,14 @@ class GoogleLogin(APIView):
                 'is_new_user': created
             })
             
-            # Set CORS headers
-            response['Access-Control-Allow-Origin'] = 'http://localhost:3000'
-            response['Access-Control-Allow-Credentials'] = 'true'
-            response['Access-Control-Allow-Headers'] = 'Content-Type, X-CSRFToken, Authorization'
-            
             return response
             
         except Exception as e:
+            # Log the error for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f'Google OAuth error: {str(e)}', exc_info=True)
+            
             # Return a user-friendly error message
             response = Response(
                 {
@@ -152,9 +152,6 @@ class GoogleLogin(APIView):
                 }, 
                 status=status.HTTP_400_BAD_REQUEST
             )
-            response['Access-Control-Allow-Origin'] = 'http://localhost:3000'
-            response['Access-Control-Allow-Credentials'] = 'true'
-            response['Access-Control-Allow-Headers'] = 'Content-Type, X-CSRFToken, Authorization'
             return response
 
     def verify_google_token(self, token):
@@ -283,27 +280,50 @@ class GoogleLogin(APIView):
         first_name = user_info.get('given_name', '')
         last_name = user_info.get('family_name', '')
         
+        if not email:
+            raise ValueError('Email is required from Google user info')
+            
         try:
             # Try to get existing user
             user = User.objects.get(email=email)
             created = False
         except User.DoesNotExist:
             # Create new user
-            user = User.objects.create_user(
-                email=email,
-                first_name=first_name,
-                last_name=last_name,
-                full_name=f"{first_name} {last_name}".strip(),
-                is_active=True
-            )
-            created = True
-            
-            # Create social account
-            SocialAccount.objects.create(
-                user=user,
-                provider='google',
-                uid=user_info.get('sub', ''),
-                extra_data=user_info
-            )
+            try:
+                # Generate a random password for OAuth users
+                import secrets
+                import string
+                alphabet = string.ascii_letters + string.digits
+                password = ''.join(secrets.choice(alphabet) for _ in range(20))
+                
+                user = User.objects.create_user(
+                    email=email,
+                    password=password,  # Set a random password for OAuth users
+                    first_name=first_name,
+                    last_name=last_name,
+                    full_name=f"{first_name} {last_name}".strip(),
+                    is_active=True
+                )
+                created = True
+                
+                # Create social account
+                try:
+                    SocialAccount.objects.create(
+                        user=user,
+                        provider='google',
+                        uid=user_info.get('sub', ''),
+                        extra_data=user_info
+                    )
+                except Exception as e:
+                    # Log the error but don't fail the user creation
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f'Failed to create social account for user {email}: {str(e)}')
+                    
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f'Failed to create user {email}: {str(e)}')
+                raise ValueError(f'Failed to create user account: {str(e)}')
         
         return user, created

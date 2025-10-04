@@ -55,6 +55,9 @@ urlpatterns = [
     path('api-auth/', include('rest_framework.urls')),  # For the browsable API
     path('api/dj-rest-auth/', include('dj_rest_auth.urls')),  # For authentication endpoints
     
+    # Allauth social authentication
+    path('accounts/', include('allauth.urls')),
+    
     # Health check
     path('health/', lambda request: JsonResponse({'status': 'ok'})),
 ]
