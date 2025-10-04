@@ -131,8 +131,16 @@ class CreateTicketPurchaseSerializer(serializers.ModelSerializer):
     def validate_event_ticket_id(self, value):
         """Validate that the event ticket exists and is active"""
         try:
-            return EventTicket.objects.get(id=value, is_active=True)
+            event_ticket = EventTicket.objects.get(id=value, is_active=True)
+            # Log for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Validating event_ticket_id {value}: Found {event_ticket}, quantity_available: {event_ticket.quantity_available}")
+            return event_ticket
         except EventTicket.DoesNotExist:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"EventTicket with id {value} not found or not active")
             raise serializers.ValidationError('Invalid event ticket ID or ticket is not active')
     
     def validate(self, data):
@@ -149,6 +157,12 @@ class CreateTicketPurchaseSerializer(serializers.ModelSerializer):
         quantity = data.get('quantity', 1)
         payment_method = data.get('payment_method')
         
+        # Log validation details for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Validating purchase: event_ticket={event_ticket.id}, quantity={quantity}, payment_method={payment_method}")
+        logger.info(f"Event ticket details: quantity_available={event_ticket.quantity_available}, is_active={event_ticket.is_active}")
+        
         # Validate ticket type
         if not hasattr(event_ticket, 'ticket_type') or not event_ticket.ticket_type:
             raise serializers.ValidationError({
@@ -157,6 +171,7 @@ class CreateTicketPurchaseSerializer(serializers.ModelSerializer):
             
         # Validate ticket availability
         if event_ticket.quantity_available is not None and event_ticket.quantity_available < quantity:
+            logger.error(f"Insufficient quantity: requested {quantity}, available {event_ticket.quantity_available}")
             raise serializers.ValidationError({
                 'quantity': f'Only {event_ticket.quantity_available} tickets available for {event_ticket.ticket_type.name}'
             })
