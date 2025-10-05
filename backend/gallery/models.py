@@ -609,7 +609,32 @@ class Photo(models.Model):
             # Use a default font (you might want to use a custom font)
             try:
                 font_size = int(min(img.size) / 20)
-                font = ImageFont.truetype("arial.ttf", font_size)
+                
+                # Try to load common system fonts in order of preference
+                font_paths = [
+                    'DejaVuSans.ttf',  # Common in Linux systems
+                    'DejaVuSans-Bold.ttf',
+                    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',  # Common Linux path
+                    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+                    'arial.ttf',  # Fallback to original
+                    'Arial.ttf',
+                    'ARIAL.TTF'
+                ]
+                
+                font = None
+                for font_path in font_paths:
+                    try:
+                        font = ImageFont.truetype(font_path, font_size)
+                        break
+                    except (IOError, OSError):
+                        continue
+                
+                # If no font was loaded successfully, use default
+                if font is None:
+                    font = ImageFont.load_default()
+                    
+            except Exception:
+                font = ImageFont.load_default()
             except IOError:
                 font = ImageFont.load_default()
                 

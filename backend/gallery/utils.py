@@ -30,10 +30,36 @@ def add_watermark(image_field, text, position=(10, 10), opacity=0.5):
     # Create a drawing context
     draw = ImageDraw.Draw(watermark)
     
-    # Get a font (using default font for now, you might want to use a custom font)
+    # Get a font (try multiple options for better compatibility across environments)
     try:
         font_size = int(min(image.size) / 20)  # Dynamic font size based on image size
-        font = ImageFont.truetype("arial.ttf", font_size)
+        
+        # Try to load common system fonts in order of preference
+        font_paths = [
+            'DejaVuSans.ttf',  # Common in Linux systems
+            'DejaVuSans-Bold.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',  # Common Linux path
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+            'arial.ttf',  # Fallback to original
+            'Arial.ttf',
+            'ARIAL.TTF'
+        ]
+        
+        font = None
+        for font_path in font_paths:
+            try:
+                font = ImageFont.truetype(font_path, font_size)
+                break
+            except (IOError, OSError):
+                continue
+        
+        # If no font was loaded successfully, use default
+        if font is None:
+            font = ImageFont.load_default()
+            
+    except Exception:
+        # Fallback to default font if anything goes wrong
+        font = ImageFont.load_default()
     except IOError:
         # Fallback to default font
         font = ImageFont.load_default()
